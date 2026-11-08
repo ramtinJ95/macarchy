@@ -14,9 +14,9 @@ package enum MacOSPreference: String, CaseIterable, Codable, Hashable, Sendable 
 }
 
 package struct MacOSPreferencesProfile: Equatable, Decodable, Sendable {
-  package let enabled: Bool
-  package let dockAutohide: Bool?
-  package let finderShowExtensions: Bool?
+  package var enabled: Bool
+  package var dockAutohide: Bool?
+  package var finderShowExtensions: Bool?
 
   package init(
     enabled: Bool = false, dockAutohide: Bool? = nil, finderShowExtensions: Bool? = nil
@@ -45,5 +45,17 @@ package struct MacOSPreferencesProfile: Equatable, Decodable, Sendable {
     case enabled
     case dockAutohide = "dock_autohide"
     case finderShowExtensions = "finder_show_extensions"
+  }
+}
+
+extension MacOSPreferencesProfile: PortableProfileSection {
+  package static let table = "macos_preferences"
+  package static let defaults = Self()
+  package static var fields: [PortableProfileField<Self>] {
+    [
+      .init("enabled", \.enabled),
+      .init("dock_autohide", \.dockAutohide),
+      .init("finder_show_extensions", \.finderShowExtensions),
+    ]
   }
 }

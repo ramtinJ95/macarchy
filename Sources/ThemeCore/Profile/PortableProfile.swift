@@ -2,45 +2,69 @@ import Darwin
 import Foundation
 import TOMLDecoder
 
-package enum DesktopProviderSelection: String, Codable, Sendable {
+package enum DesktopProviderSelection: String, Codable, Sendable, PortableProfileProvider {
   case yabaiSkhd = "yabai-skhd"
   case disabled
+
+  package static let table = "desktop"
+  package static let defaults = Self.yabaiSkhd
 }
 
-package enum TopBarProviderSelection: String, Codable, Sendable {
+package enum TopBarProviderSelection: String, Codable, Sendable, PortableProfileProvider {
   case sketchybar
   case disabled
+
+  package static let table = "top_bar"
+  package static let defaults = Self.sketchybar
 }
 
-package enum FocusRingProviderSelection: String, Codable, Sendable {
+package enum FocusRingProviderSelection: String, Codable, Sendable, PortableProfileProvider {
   case borders
   case lean
   case disabled
+
+  package static let table = "focus_ring"
+  package static let defaults = Self.borders
 }
 
-package enum TerminalProviderSelection: String, Codable, Sendable {
+package enum TerminalProviderSelection: String, Codable, Sendable, PortableProfileProvider {
   case kitty
   case disabled
+
+  package static let table = "terminal"
+  package static let defaults = Self.kitty
 }
 
-package enum ShellProviderSelection: String, Codable, Sendable {
+package enum ShellProviderSelection: String, Codable, Sendable, PortableProfileProvider {
   case zsh
   case disabled
+
+  package static let table = "shell"
+  package static let defaults = Self.zsh
 }
 
-package enum PromptProviderSelection: String, Codable, Sendable {
+package enum PromptProviderSelection: String, Codable, Sendable, PortableProfileProvider {
   case starship
   case disabled
+
+  package static let table = "prompt"
+  package static let defaults = Self.starship
 }
 
-package enum HistoryProviderSelection: String, Codable, Sendable {
+package enum HistoryProviderSelection: String, Codable, Sendable, PortableProfileProvider {
   case atuin
   case disabled
+
+  package static let table = "history"
+  package static let defaults = Self.atuin
 }
 
-package enum EditorProviderSelection: String, Codable, Sendable {
+package enum EditorProviderSelection: String, Codable, Sendable, PortableProfileProvider {
   case neovim
   case disabled
+
+  package static let table = "editor"
+  package static let defaults = Self.neovim
 }
 
 package enum SketchyBarModule: String, Codable, Hashable, Sendable {
@@ -57,129 +81,293 @@ package enum SketchyBarModule: String, Codable, Hashable, Sendable {
 }
 
 package struct SketchyBarProfileOptions: Equatable, Sendable {
-  package let left: [SketchyBarModule]?
-  package let center: [SketchyBarModule]?
-  package let right: [SketchyBarModule]?
-  package let automaticClock: Bool?
-  package let hookURL: URL?
-  package let hookRootURL: URL?
+  package var left: [SketchyBarModule]?
+  package var center: [SketchyBarModule]?
+  package var right: [SketchyBarModule]?
+  package var automaticClock: Bool?
+  package var hookURL: URL?
+  package var hookRootURL: URL?
   package var configurationURL: URL? = nil
   package var configurationRootURL: URL? = nil
 }
 
+extension SketchyBarProfileOptions: PortableProfileSection {
+  package static let table = "sketchybar"
+  package static let defaults = Self()
+  package static var fields: [PortableProfileField<Self>] {
+    [
+      .init("left", \.left),
+      .init("center", \.center),
+      .init("right", \.right),
+      .init("automatic_clock", \.automaticClock),
+      .init("hook", \.hookURL, \.hookRootURL),
+      .init("configuration", \.configurationURL, \.configurationRootURL),
+    ]
+  }
+}
+
 package struct YabaiProfileOptions: Equatable, Sendable {
-  package let layout: String?
-  package let splitRatio: Double?
-  package let topPadding: Int?
-  package let bottomPadding: Int?
-  package let leftPadding: Int?
-  package let rightPadding: Int?
-  package let windowGap: Int?
-  package let mouseFollowsFocus: Bool?
-  package let hookURL: URL?
+  package var layout: String?
+  package var splitRatio: Double?
+  package var topPadding: Int?
+  package var bottomPadding: Int?
+  package var leftPadding: Int?
+  package var rightPadding: Int?
+  package var windowGap: Int?
+  package var mouseFollowsFocus: Bool?
+  package var hookURL: URL?
   package var configurationURL: URL? = nil
+}
+
+extension YabaiProfileOptions: PortableProfileSection {
+  package static let table = "yabai"
+  package static let defaults = Self()
+  package static var fields: [PortableProfileField<Self>] {
+    [
+      .init("layout", \.layout),
+      .init("split_ratio", \.splitRatio),
+      .init("top_padding", \.topPadding),
+      .init("bottom_padding", \.bottomPadding),
+      .init("left_padding", \.leftPadding),
+      .init("right_padding", \.rightPadding),
+      .init("window_gap", \.windowGap),
+      .init("mouse_follows_focus", \.mouseFollowsFocus),
+      .init("hook", \.hookURL),
+      .init("configuration", \.configurationURL),
+    ]
+  }
 }
 
 package struct DesktopProfile: Equatable, Sendable {
-  package let provider: DesktopProviderSelection
-  package let yabai: YabaiProfileOptions
+  package var provider: DesktopProviderSelection
+  package var yabai: YabaiProfileOptions
 }
 
 package struct KittyProfileOptions: Equatable, Sendable {
-  package let fontFamily: String?
-  package let fontSize: Double?
-  package let backgroundOpacity: Double?
-  package let backgroundBlur: Int?
-  package let overrideDirectoryURL: URL?
+  package var fontFamily: String?
+  package var fontSize: Double?
+  package var backgroundOpacity: Double?
+  package var backgroundBlur: Int?
+  package var overrideDirectoryURL: URL?
   package var configurationURL: URL? = nil
+}
+
+extension KittyProfileOptions: PortableProfileSection {
+  package static let table = "kitty"
+  package static let defaults = Self()
+  package static var fields: [PortableProfileField<Self>] {
+    [
+      .init("font_family", \.fontFamily),
+      .init("font_size", \.fontSize),
+      .init("background_opacity", \.backgroundOpacity),
+      .init("background_blur", \.backgroundBlur),
+      .init("override", \.overrideDirectoryURL),
+      .init("configuration", \.configurationURL),
+    ]
+  }
 }
 
 package struct ZshProfileOptions: Equatable, Sendable {
-  package let editor: String?
-  package let hookURL: URL?
+  package var editor: String?
+  package var hookURL: URL?
   package var configurationURL: URL? = nil
 }
 
+extension ZshProfileOptions: PortableProfileSection {
+  package static let table = "zsh"
+  package static let defaults = Self()
+  package static var fields: [PortableProfileField<Self>] {
+    [
+      .init("editor", \.editor),
+      .init("hook", \.hookURL),
+      .init("configuration", \.configurationURL),
+    ]
+  }
+}
+
 package struct StarshipProfileOptions: Equatable, Sendable {
-  package let behaviorURL: URL?
+  package var behaviorURL: URL?
   package var nativeConfigurationURL: URL? = nil
+}
+
+extension StarshipProfileOptions: PortableProfileSection {
+  package static let table = "starship"
+  package static let defaults = Self()
+  package static var fields: [PortableProfileField<Self>] {
+    [
+      .init("behavior", \.behaviorURL),
+      .init("native_configuration", \.nativeConfigurationURL),
+    ]
+  }
 }
 
 package struct AtuinProfileOptions: Equatable, Sendable {
-  package let searchMode: String?
-  package let keymapMode: String?
-  package let enterAccept: Bool?
-  package let daemon: Bool?
-  package let configurationURL: URL?
+  package var searchMode: String?
+  package var keymapMode: String?
+  package var enterAccept: Bool?
+  package var daemon: Bool?
+  package var configurationURL: URL?
   package var nativeConfigurationURL: URL? = nil
 }
 
+extension AtuinProfileOptions: PortableProfileSection {
+  package static let table = "atuin"
+  package static let defaults = Self()
+  package static var fields: [PortableProfileField<Self>] {
+    [
+      .init("search_mode", \.searchMode),
+      .init("keymap_mode", \.keymapMode),
+      .init("enter_accept", \.enterAccept),
+      .init("daemon", \.daemon),
+      .init("configuration", \.configurationURL),
+      .init("native_configuration", \.nativeConfigurationURL),
+    ]
+  }
+}
+
 package struct NeovimProfileOptions: Equatable, Sendable {
-  package let configurationDirectoryURL: URL?
+  package var configurationDirectoryURL: URL?
   package var nativeConfigurationDirectoryURL: URL? = nil
 }
 
+extension NeovimProfileOptions: PortableProfileSection {
+  package static let table = "neovim"
+  package static let defaults = Self()
+  package static var fields: [PortableProfileField<Self>] {
+    [
+      .init("configuration", \.configurationDirectoryURL),
+      .init("native_configuration", \.nativeConfigurationDirectoryURL),
+    ]
+  }
+}
+
 package struct DailyToolsProfile: Equatable, Sendable {
-  package let bat: Bool
-  package let eza: Bool
-  package let btop: Bool
-  package let yazi: Bool
+  package var bat: Bool
+  package var eza: Bool
+  package var btop: Bool
+  package var yazi: Bool
+}
+
+extension DailyToolsProfile: PortableProfileSection {
+  package static let table = "tools"
+  package static let defaults = Self(bat: true, eza: true, btop: true, yazi: true)
+  package static var fields: [PortableProfileField<Self>] {
+    [
+      .init("bat", \.bat),
+      .init("eza", \.eza),
+      .init("btop", \.btop),
+      .init("yazi", \.yazi),
+    ]
+  }
 }
 
 package struct PresetsProfile: Equatable, Sendable {
-  package let codex: Bool
-  package let herdr: Bool
-  package let pi: Bool
-  package let slack: Bool
-  package let spicetify: Bool
-  package let tuicr: Bool
+  package var codex: Bool
+  package var herdr: Bool
+  package var pi: Bool
+  package var slack: Bool
+  package var spicetify: Bool
+  package var tuicr: Bool
+}
+
+extension PresetsProfile: PortableProfileSection {
+  package static let table = "presets"
+  package static let defaults = Self(
+    codex: false, herdr: false, pi: false, slack: false, spicetify: false, tuicr: false)
+  package static var fields: [PortableProfileField<Self>] {
+    [
+      .init("codex", \.codex),
+      .init("herdr", \.herdr),
+      .init("pi", \.pi),
+      .init("slack", \.slack),
+      .init("spicetify", \.spicetify),
+      .init("tuicr", \.tuicr),
+    ]
+  }
 }
 
 package struct BtopProfileOptions: Equatable, Sendable {
-  package let vimKeys: Bool?
+  package var vimKeys: Bool?
+}
+
+extension BtopProfileOptions: PortableProfileSection {
+  package static let table = "btop"
+  package static let defaults = Self()
+  package static var fields: [PortableProfileField<Self>] { [.init("vim_keys", \.vimKeys)] }
 }
 
 package struct YaziProfileOptions: Equatable, Sendable {
-  package let showHidden: Bool?
+  package var showHidden: Bool?
+}
+
+extension YaziProfileOptions: PortableProfileSection {
+  package static let table = "yazi"
+  package static let defaults = Self()
+  package static var fields: [PortableProfileField<Self>] { [.init("show_hidden", \.showHidden)] }
 }
 
 package struct EnvironmentProfile: Equatable, Sendable {
-  package let focusRing: FocusRingProviderSelection
-  package let terminal: TerminalProviderSelection
-  package let shell: ShellProviderSelection
-  package let prompt: PromptProviderSelection
-  package let history: HistoryProviderSelection
-  package let editor: EditorProviderSelection
-  package let kitty: KittyProfileOptions
-  package let zsh: ZshProfileOptions
-  package let starship: StarshipProfileOptions
-  package let atuin: AtuinProfileOptions
-  package let neovim: NeovimProfileOptions
-  package let tools: DailyToolsProfile
-  package let presets: PresetsProfile
-  package let btop: BtopProfileOptions
-  package let yazi: YaziProfileOptions
+  package var focusRing: FocusRingProviderSelection
+  package var terminal: TerminalProviderSelection
+  package var shell: ShellProviderSelection
+  package var prompt: PromptProviderSelection
+  package var history: HistoryProviderSelection
+  package var editor: EditorProviderSelection
+  package var kitty: KittyProfileOptions
+  package var zsh: ZshProfileOptions
+  package var starship: StarshipProfileOptions
+  package var atuin: AtuinProfileOptions
+  package var neovim: NeovimProfileOptions
+  package var tools: DailyToolsProfile
+  package var presets: PresetsProfile
+  package var btop: BtopProfileOptions
+  package var yazi: YaziProfileOptions
+
+  fileprivate static let defaults = EnvironmentProfile(
+    focusRing: .defaults,
+    terminal: .defaults,
+    shell: .defaults,
+    prompt: .defaults,
+    history: .defaults,
+    editor: .defaults,
+    kitty: .defaults,
+    zsh: .defaults,
+    starship: .defaults,
+    atuin: .defaults,
+    neovim: .defaults,
+    tools: .defaults,
+    presets: .defaults,
+    btop: .defaults,
+    yazi: .defaults
+  )
+
+  /// Prompt and history run inside the managed shell, so a disabled shell disables both.
+  fileprivate mutating func disableShellHostedRoles() {
+    guard shell == .disabled else { return }
+    prompt = .disabled
+    history = .disabled
+  }
 }
 
 package struct PortableProfile: Equatable, Sendable {
-  package let sourceURL: URL?
-  package let keybindings: KeybindingProfile
-  package let desktop: DesktopProfile
-  package let topBar: TopBarProviderSelection
-  package let sketchyBar: SketchyBarProfileOptions
-  package let environment: EnvironmentProfile
-  package let packages: PackageProfile
-  package let macOSPreferences: MacOSPreferencesProfile
+  package var sourceURL: URL?
+  package var keybindings: KeybindingProfile
+  package var desktop: DesktopProfile
+  package var topBar: TopBarProviderSelection
+  package var sketchyBar: SketchyBarProfileOptions
+  package var environment: EnvironmentProfile
+  package var packages: PackageProfile
+  package var macOSPreferences: MacOSPreferencesProfile
 
   package static let defaults = PortableProfile(
     sourceURL: nil,
-    keybindings: .empty,
-    desktop: DesktopProfile(provider: .yabaiSkhd, yabai: .empty),
-    topBar: .sketchybar,
-    sketchyBar: .empty,
+    keybindings: .defaults,
+    desktop: DesktopProfile(provider: .defaults, yabai: .defaults),
+    topBar: .defaults,
+    sketchyBar: .defaults,
     environment: .defaults,
     packages: .defaults,
-    macOSPreferences: .init()
+    macOSPreferences: .defaults
   )
 }
 
@@ -223,80 +411,10 @@ package struct PortableProfileLoader: Sendable {
     self.proposedSources = proposedSources
   }
 
-  private static let allowedTables = Set([
-    "keybindings", "desktop", "yabai", "top_bar", "sketchybar", "focus_ring",
-    "terminal", "kitty", "shell", "zsh", "prompt", "starship", "history", "atuin",
-    "editor", "neovim", "tools", "presets", "btop", "yazi", "packages", "macos_preferences",
-  ])
+  private static let allowedTables = Set(PortableProfile.tables.map(\.name))
 
-  private static let allowedFields = Set([
-    "schema_version",
-    "macos_preferences.enabled",
-    "macos_preferences.dock_autohide",
-    "macos_preferences.finder_show_extensions",
-    "keybindings.override",
-    "keybindings.metadata",
-    "keybindings.disabled",
-    "desktop.provider",
-    "yabai.layout",
-    "yabai.split_ratio",
-    "yabai.top_padding",
-    "yabai.bottom_padding",
-    "yabai.left_padding",
-    "yabai.right_padding",
-    "yabai.window_gap",
-    "yabai.mouse_follows_focus",
-    "yabai.hook",
-    "yabai.configuration",
-    "top_bar.provider",
-    "focus_ring.provider",
-    "sketchybar.left",
-    "sketchybar.center",
-    "sketchybar.right",
-    "sketchybar.automatic_clock",
-    "sketchybar.hook",
-    "sketchybar.configuration",
-    "terminal.provider",
-    "kitty.font_family",
-    "kitty.font_size",
-    "kitty.background_opacity",
-    "kitty.background_blur",
-    "kitty.override",
-    "kitty.configuration",
-    "shell.provider",
-    "zsh.editor",
-    "zsh.hook",
-    "zsh.configuration",
-    "prompt.provider",
-    "starship.behavior",
-    "starship.native_configuration",
-    "history.provider",
-    "atuin.search_mode",
-    "atuin.keymap_mode",
-    "atuin.enter_accept",
-    "atuin.daemon",
-    "atuin.configuration",
-    "atuin.native_configuration",
-    "editor.provider",
-    "neovim.configuration",
-    "neovim.native_configuration",
-    "tools.bat",
-    "tools.eza",
-    "tools.btop",
-    "tools.yazi",
-    "presets.codex",
-    "presets.herdr",
-    "presets.pi",
-    "presets.slack",
-    "presets.spicetify",
-    "presets.tuicr",
-    "btop.vim_keys",
-    "yazi.show_hidden",
-    "packages.baseline",
-    "packages.brewfile",
-    "packages.exclude_formulae",
-    "packages.exclude_casks",
-  ])
+  private static let allowedFields = Set(
+    ["schema_version"] + PortableProfile.tables.flatMap(\.fields))
 
   package func load(at source: URL, required: Bool) throws -> PortableProfile {
     guard let loaded = try read(at: source, required: required) else { return .defaults }
@@ -330,7 +448,7 @@ package struct PortableProfileLoader: Sendable {
     }
     // These inputs contribute by package identity; no single field wins.
     // Keep both layer summaries and let the package compiler report provenance.
-    for field in ["packages.brewfile", "packages.exclude_formulae", "packages.exclude_casks"] {
+    for field in PortableProfile.tables.flatMap(\.contributedFields) {
       origins.removeValue(forKey: field)
     }
     return LayeredPortableProfile(
@@ -389,7 +507,7 @@ package struct PortableProfileLoader: Sendable {
       source: sourceURL,
       base: base
     )
-    let topBar = try topBar(document.topBar, source: sourceURL)
+    let topBar: TopBarProviderSelection = try provider(document.topBar, source: sourceURL)
     let sketchyBar = try sketchyBar(document.sketchyBar, source: sourceURL, base: base)
     let environment = try environment(
       document,
@@ -405,7 +523,7 @@ package struct PortableProfileLoader: Sendable {
       sketchyBar: sketchyBar,
       environment: environment,
       packages: try packages(document.packages, kind: layerKind, source: sourceURL, base: base),
-      macOSPreferences: document.macOSPreferences ?? .init()
+      macOSPreferences: document.macOSPreferences ?? .defaults
     )
   }
 
@@ -414,7 +532,7 @@ package struct PortableProfileLoader: Sendable {
   ) throws -> PackageProfile {
     guard let document else { return .defaults }
     return PackageProfile(
-      baseline: document.baseline ?? .core,
+      baseline: document.baseline ?? PackageProfile.defaults.baseline,
       layers: [
         .init(
           kind: kind, sourceURL: source,
@@ -461,12 +579,7 @@ package struct PortableProfileLoader: Sendable {
     source: URL,
     base: URL
   ) throws -> DesktopProfile {
-    let provider = try selection(
-      document?.provider ?? DesktopProviderSelection.yabaiSkhd.rawValue,
-      as: DesktopProviderSelection.self,
-      field: "desktop.provider",
-      source: source
-    )
+    let provider: DesktopProviderSelection = try self.provider(document, source: source)
     if let layout = options?.layout, !["bsp", "stack", "float"].contains(layout) {
       throw PortableProfileError.invalid(
         source,
@@ -513,18 +626,6 @@ package struct PortableProfileLoader: Sendable {
     )
   }
 
-  private func topBar(
-    _ document: ProviderDocument?,
-    source: URL
-  ) throws -> TopBarProviderSelection {
-    try selection(
-      document?.provider ?? TopBarProviderSelection.sketchybar.rawValue,
-      as: TopBarProviderSelection.self,
-      field: "top_bar.provider",
-      source: source
-    )
-  }
-
   private func sketchyBar(
     _ document: SketchyBarDocument?,
     source: URL,
@@ -560,47 +661,22 @@ package struct PortableProfileLoader: Sendable {
     source: URL,
     base: URL
   ) throws -> EnvironmentProfile {
-    let terminal = try selection(
-      document.terminal?.provider ?? TerminalProviderSelection.kitty.rawValue,
-      as: TerminalProviderSelection.self,
-      field: "terminal.provider",
-      source: source
-    )
-    let shell = try selection(
-      document.shell?.provider ?? ShellProviderSelection.zsh.rawValue,
-      as: ShellProviderSelection.self,
-      field: "shell.provider",
-      source: source
-    )
-    let declaredPrompt = try selection(
-      document.prompt?.provider ?? PromptProviderSelection.starship.rawValue,
-      as: PromptProviderSelection.self,
-      field: "prompt.provider",
-      source: source
-    )
-    let declaredHistory = try selection(
-      document.history?.provider ?? HistoryProviderSelection.atuin.rawValue,
-      as: HistoryProviderSelection.self,
-      field: "history.provider",
-      source: source
-    )
-    let editor = try selection(
-      document.editor?.provider ?? EditorProviderSelection.neovim.rawValue,
-      as: EditorProviderSelection.self,
-      field: "editor.provider",
-      source: source
-    )
+    let terminal: TerminalProviderSelection = try provider(document.terminal, source: source)
+    let shell: ShellProviderSelection = try provider(document.shell, source: source)
+    let prompt: PromptProviderSelection = try provider(document.prompt, source: source)
+    let history: HistoryProviderSelection = try provider(document.history, source: source)
+    let editor: EditorProviderSelection = try provider(document.editor, source: source)
     let tools = DailyToolsProfile(
-      bat: document.tools?.bat ?? true,
-      eza: document.tools?.eza ?? true,
-      btop: document.tools?.btop ?? true,
-      yazi: document.tools?.yazi ?? true
+      bat: document.tools?.bat ?? DailyToolsProfile.defaults.bat,
+      eza: document.tools?.eza ?? DailyToolsProfile.defaults.eza,
+      btop: document.tools?.btop ?? DailyToolsProfile.defaults.btop,
+      yazi: document.tools?.yazi ?? DailyToolsProfile.defaults.yazi
     )
     try validateEnvironment(
       terminal: terminal,
       shell: shell,
-      prompt: declaredPrompt,
-      history: declaredHistory,
+      prompt: prompt,
+      history: history,
       editor: editor,
       tools: tools,
       declaredTables: declaredTables,
@@ -623,17 +699,12 @@ package struct PortableProfileLoader: Sendable {
         document.neovim?.nativeConfiguration,
         field: "neovim.native_configuration", base: base, source: source)
     )
-    return EnvironmentProfile(
-      focusRing: try selection(
-        document.focusRing?.provider ?? FocusRingProviderSelection.borders.rawValue,
-        as: FocusRingProviderSelection.self,
-        field: "focus_ring.provider",
-        source: source
-      ),
+    var environment = EnvironmentProfile(
+      focusRing: try provider(document.focusRing, source: source),
       terminal: terminal,
       shell: shell,
-      prompt: shell == .disabled ? .disabled : declaredPrompt,
-      history: shell == .disabled ? .disabled : declaredHistory,
+      prompt: prompt,
+      history: history,
       editor: editor,
       kitty: kitty,
       zsh: zsh,
@@ -642,16 +713,18 @@ package struct PortableProfileLoader: Sendable {
       neovim: neovim,
       tools: tools,
       presets: PresetsProfile(
-        codex: document.presets?.codex ?? false,
-        herdr: document.presets?.herdr ?? false,
-        pi: document.presets?.pi ?? false,
-        slack: document.presets?.slack ?? false,
-        spicetify: document.presets?.spicetify ?? false,
-        tuicr: document.presets?.tuicr ?? false
+        codex: document.presets?.codex ?? PresetsProfile.defaults.codex,
+        herdr: document.presets?.herdr ?? PresetsProfile.defaults.herdr,
+        pi: document.presets?.pi ?? PresetsProfile.defaults.pi,
+        slack: document.presets?.slack ?? PresetsProfile.defaults.slack,
+        spicetify: document.presets?.spicetify ?? PresetsProfile.defaults.spicetify,
+        tuicr: document.presets?.tuicr ?? PresetsProfile.defaults.tuicr
       ),
       btop: BtopProfileOptions(vimKeys: document.btop?.vimKeys),
       yazi: YaziProfileOptions(showHidden: document.yazi?.showHidden)
     )
+    environment.disableShellHostedRoles()
+    return environment
   }
 
   private func kitty(
@@ -758,17 +831,15 @@ package struct PortableProfileLoader: Sendable {
     )
   }
 
-  private func selection<T: RawRepresentable>(
-    _ value: String,
-    as type: T.Type,
-    field: String,
+  /// An undeclared role keeps its default provider.
+  private func provider<Provider: PortableProfileProvider>(
+    _ document: ProviderDocument?,
     source: URL
-  ) throws -> T where T.RawValue == String {
-    guard let selection = T(rawValue: value) else {
-      throw PortableProfileError.invalid(
-        source,
-        "\(field) has unsupported provider '\(value)'"
-      )
+  ) throws -> Provider {
+    guard let value = document?.provider else { return .defaults }
+    guard let selection = Provider(rawValue: value) else {
+      let field = Provider.table + "." + Provider.key(\.self)
+      throw PortableProfileError.invalid(source, "\(field) has unsupported provider '\(value)'")
     }
     return selection
   }
@@ -909,214 +980,42 @@ package struct PortableProfileLoader: Sendable {
     )
   }
 
+  /// Each field takes its value from the last layer that declares it, else its default.
+  /// A layer's undeclared values are never used: its shell may have disabled its prompt and
+  /// history, which the merged shell must decide instead.
   private func merge(
     portable: LoadedLayer,
     machine: LoadedLayer
   ) throws -> PortableProfile {
-    let portableProfile = portable.profile
-    let roles = RoleMerger(
-      portableProfile: portableProfile,
-      machineProfile: machine.profile,
-      portableFields: Set(portable.summary.declaredFields),
-      machineFields: Set(machine.summary.declaredFields)
-    )
-    let sourceURL =
+    var merged = PortableProfile.defaults
+    for layer in [portable, machine] {
+      let declaredFields = Set(layer.summary.declaredFields)
+      for table in PortableProfile.tables {
+        table.replaceDeclared(declaredFields, in: &merged, from: layer.profile)
+      }
+    }
+    merged.sourceURL =
       machine.summary.present
       ? machine.summary.sourceURL
-      : portableProfile.sourceURL
-    let keybindings = roles.mergeKeybindings(machineSourceURL: machine.summary.sourceURL)
-    let yabai = roles.mergeYabai()
-    let sketchyBar = roles.mergeSketchyBar()
+      : portable.profile.sourceURL
+    merged.keybindings.sourceURL =
+      machine.summary.declaredFields.contains { $0.hasPrefix("keybindings.") }
+      ? machine.summary.sourceURL
+      : portable.profile.keybindings.sourceURL
+    merged.packages.layers = portable.profile.packages.layers + machine.profile.packages.layers
 
-    let declaredPrompt = roles.declaredValue(
-      "prompt.provider", \.environment.prompt,
-      default: PortableProfile.defaults.environment.prompt)
-    let declaredHistory = roles.declaredValue(
-      "history.provider", \.environment.history,
-      default: PortableProfile.defaults.environment.history)
-    let shell = roles.value("shell.provider", \.environment.shell)
-    let tools = roles.mergeDailyTools()
-    let terminal = roles.value("terminal.provider", \.environment.terminal)
-    let editor = roles.value("editor.provider", \.environment.editor)
-    let declaredTables = portable.declaredTables.union(machine.declaredTables)
     try validateEnvironment(
-      terminal: terminal,
-      shell: shell,
-      prompt: declaredPrompt,
-      history: declaredHistory,
-      editor: editor,
-      tools: tools,
-      declaredTables: declaredTables,
-      source: sourceURL ?? portable.summary.sourceURL
+      terminal: merged.environment.terminal,
+      shell: merged.environment.shell,
+      prompt: merged.environment.prompt,
+      history: merged.environment.history,
+      editor: merged.environment.editor,
+      tools: merged.environment.tools,
+      declaredTables: portable.declaredTables.union(machine.declaredTables),
+      source: merged.sourceURL ?? portable.summary.sourceURL
     )
-    let environment = roles.mergeEnvironment(
-      terminal: terminal,
-      shell: shell,
-      declaredPrompt: declaredPrompt,
-      declaredHistory: declaredHistory,
-      editor: editor,
-      tools: tools
-    )
-    let result = PortableProfile(
-      sourceURL: sourceURL,
-      keybindings: keybindings,
-      desktop: DesktopProfile(
-        provider: roles.value("desktop.provider", \.desktop.provider),
-        yabai: yabai
-      ),
-      topBar: roles.value("top_bar.provider", \.topBar),
-      sketchyBar: sketchyBar,
-      environment: environment,
-      packages: PackageProfile(
-        baseline: roles.declaredValue("packages.baseline", \.packages.baseline, default: .core),
-        layers: portableProfile.packages.layers + machine.profile.packages.layers),
-      macOSPreferences: MacOSPreferencesProfile(
-        enabled: roles.value("macos_preferences.enabled", \.macOSPreferences.enabled),
-        dockAutohide: roles.value(
-          "macos_preferences.dock_autohide", \.macOSPreferences.dockAutohide),
-        finderShowExtensions: roles.value(
-          "macos_preferences.finder_show_extensions", \.macOSPreferences.finderShowExtensions))
-    )
-    return result
-  }
-
-  // Pure role assembly over already-decoded paths and explicit machine fields.
-  // Cross-role validation stays in merge, before environment options are assembled.
-  private struct RoleMerger {
-    let portableProfile: PortableProfile
-    let machineProfile: PortableProfile
-    let portableFields: Set<String>
-    let machineFields: Set<String>
-
-    func value<T>(_ field: String, _ path: KeyPath<PortableProfile, T>) -> T {
-      machineFields.contains(field) ? machineProfile[keyPath: path] : portableProfile[keyPath: path]
-    }
-
-    /// Unlike `value`, falls back to `defaultValue` when neither layer declares `field`.
-    func declaredValue<T>(
-      _ field: String, _ path: KeyPath<PortableProfile, T>, default defaultValue: T
-    ) -> T {
-      if machineFields.contains(field) { return machineProfile[keyPath: path] }
-      if portableFields.contains(field) { return portableProfile[keyPath: path] }
-      return defaultValue
-    }
-
-    func mergeKeybindings(machineSourceURL: URL) -> KeybindingProfile {
-      let keybindingSourceURL =
-        machineFields.contains { $0.hasPrefix("keybindings.") }
-        ? machineSourceURL
-        : portableProfile.keybindings.sourceURL
-      return KeybindingProfile(
-        sourceURL: keybindingSourceURL,
-        overrideURL: value("keybindings.override", \.keybindings.overrideURL),
-        metadataURL: value("keybindings.metadata", \.keybindings.metadataURL),
-        disabledIdentities: value("keybindings.disabled", \.keybindings.disabledIdentities)
-      )
-    }
-
-    func mergeYabai() -> YabaiProfileOptions {
-      return YabaiProfileOptions(
-        layout: value("yabai.layout", \.desktop.yabai.layout),
-        splitRatio: value("yabai.split_ratio", \.desktop.yabai.splitRatio),
-        topPadding: value("yabai.top_padding", \.desktop.yabai.topPadding),
-        bottomPadding: value("yabai.bottom_padding", \.desktop.yabai.bottomPadding),
-        leftPadding: value("yabai.left_padding", \.desktop.yabai.leftPadding),
-        rightPadding: value("yabai.right_padding", \.desktop.yabai.rightPadding),
-        windowGap: value("yabai.window_gap", \.desktop.yabai.windowGap),
-        mouseFollowsFocus: value("yabai.mouse_follows_focus", \.desktop.yabai.mouseFollowsFocus),
-        hookURL: value("yabai.hook", \.desktop.yabai.hookURL),
-        configurationURL: value("yabai.configuration", \.desktop.yabai.configurationURL)
-      )
-    }
-
-    func mergeSketchyBar() -> SketchyBarProfileOptions {
-      return SketchyBarProfileOptions(
-        left: value("sketchybar.left", \.sketchyBar.left),
-        center: value("sketchybar.center", \.sketchyBar.center),
-        right: value("sketchybar.right", \.sketchyBar.right),
-        automaticClock: value("sketchybar.automatic_clock", \.sketchyBar.automaticClock),
-        hookURL: value("sketchybar.hook", \.sketchyBar.hookURL),
-        hookRootURL: value("sketchybar.hook", \.sketchyBar.hookRootURL),
-        configurationURL: value("sketchybar.configuration", \.sketchyBar.configurationURL),
-        configurationRootURL: value("sketchybar.configuration", \.sketchyBar.configurationRootURL)
-      )
-    }
-
-    func mergeDailyTools() -> DailyToolsProfile {
-      return DailyToolsProfile(
-        bat: value("tools.bat", \.environment.tools.bat),
-        eza: value("tools.eza", \.environment.tools.eza),
-        btop: value("tools.btop", \.environment.tools.btop),
-        yazi: value("tools.yazi", \.environment.tools.yazi)
-      )
-    }
-
-    func mergeEnvironment(
-      terminal: TerminalProviderSelection,
-      shell: ShellProviderSelection,
-      declaredPrompt: PromptProviderSelection,
-      declaredHistory: HistoryProviderSelection,
-      editor: EditorProviderSelection,
-      tools: DailyToolsProfile
-    ) -> EnvironmentProfile {
-      return EnvironmentProfile(
-        focusRing: value("focus_ring.provider", \.environment.focusRing),
-        terminal: terminal,
-        shell: shell,
-        prompt: shell == .disabled ? .disabled : declaredPrompt,
-        history: shell == .disabled ? .disabled : declaredHistory,
-        editor: editor,
-        kitty: KittyProfileOptions(
-          fontFamily: value("kitty.font_family", \.environment.kitty.fontFamily),
-          fontSize: value("kitty.font_size", \.environment.kitty.fontSize),
-          backgroundOpacity: value(
-            "kitty.background_opacity", \.environment.kitty.backgroundOpacity),
-          backgroundBlur: value("kitty.background_blur", \.environment.kitty.backgroundBlur),
-          overrideDirectoryURL: value("kitty.override", \.environment.kitty.overrideDirectoryURL),
-          configurationURL: value("kitty.configuration", \.environment.kitty.configurationURL)
-        ),
-        zsh: ZshProfileOptions(
-          editor: value("zsh.editor", \.environment.zsh.editor),
-          hookURL: value("zsh.hook", \.environment.zsh.hookURL),
-          configurationURL: value("zsh.configuration", \.environment.zsh.configurationURL)
-        ),
-        starship: StarshipProfileOptions(
-          behaviorURL: value("starship.behavior", \.environment.starship.behaviorURL),
-          nativeConfigurationURL: value(
-            "starship.native_configuration", \.environment.starship.nativeConfigurationURL)
-        ),
-        atuin: AtuinProfileOptions(
-          searchMode: value("atuin.search_mode", \.environment.atuin.searchMode),
-          keymapMode: value("atuin.keymap_mode", \.environment.atuin.keymapMode),
-          enterAccept: value("atuin.enter_accept", \.environment.atuin.enterAccept),
-          daemon: value("atuin.daemon", \.environment.atuin.daemon),
-          configurationURL: value("atuin.configuration", \.environment.atuin.configurationURL),
-          nativeConfigurationURL: value(
-            "atuin.native_configuration", \.environment.atuin.nativeConfigurationURL)
-        ),
-        neovim: NeovimProfileOptions(
-          configurationDirectoryURL: value(
-            "neovim.configuration", \.environment.neovim.configurationDirectoryURL),
-          nativeConfigurationDirectoryURL: value(
-            "neovim.native_configuration", \.environment.neovim.nativeConfigurationDirectoryURL)
-        ),
-        tools: tools,
-        presets: PresetsProfile(
-          codex: value("presets.codex", \.environment.presets.codex),
-          herdr: value("presets.herdr", \.environment.presets.herdr),
-          pi: value("presets.pi", \.environment.presets.pi),
-          slack: value("presets.slack", \.environment.presets.slack),
-          spicetify: value("presets.spicetify", \.environment.presets.spicetify),
-          tuicr: value("presets.tuicr", \.environment.presets.tuicr)
-        ),
-        btop: BtopProfileOptions(
-          vimKeys: value("btop.vim_keys", \.environment.btop.vimKeys)
-        ),
-        yazi: YaziProfileOptions(
-          showHidden: value("yazi.show_hidden", \.environment.yazi.showHidden)
-        )
-      )
-    }
+    merged.environment.disableShellHostedRoles()
+    return merged
   }
 
   private func validateEnvironment(
@@ -1172,70 +1071,6 @@ package struct PortableProfileLoader: Sendable {
       throw PortableProfileError.invalid(source, "[yazi] cannot customize a disabled daily tool")
     }
   }
-}
-
-extension YabaiProfileOptions {
-  fileprivate static let empty = YabaiProfileOptions(
-    layout: nil,
-    splitRatio: nil,
-    topPadding: nil,
-    bottomPadding: nil,
-    leftPadding: nil,
-    rightPadding: nil,
-    windowGap: nil,
-    mouseFollowsFocus: nil,
-    hookURL: nil
-  )
-}
-
-extension SketchyBarProfileOptions {
-  fileprivate static let empty = SketchyBarProfileOptions(
-    left: nil,
-    center: nil,
-    right: nil,
-    automaticClock: nil,
-    hookURL: nil,
-    hookRootURL: nil
-  )
-}
-
-extension EnvironmentProfile {
-  fileprivate static let defaults = EnvironmentProfile(
-    focusRing: .borders,
-    terminal: .kitty,
-    shell: .zsh,
-    prompt: .starship,
-    history: .atuin,
-    editor: .neovim,
-    kitty: KittyProfileOptions(
-      fontFamily: nil,
-      fontSize: nil,
-      backgroundOpacity: nil,
-      backgroundBlur: nil,
-      overrideDirectoryURL: nil
-    ),
-    zsh: ZshProfileOptions(editor: nil, hookURL: nil),
-    starship: StarshipProfileOptions(behaviorURL: nil),
-    atuin: AtuinProfileOptions(
-      searchMode: nil,
-      keymapMode: nil,
-      enterAccept: nil,
-      daemon: nil,
-      configurationURL: nil
-    ),
-    neovim: NeovimProfileOptions(configurationDirectoryURL: nil),
-    tools: DailyToolsProfile(bat: true, eza: true, btop: true, yazi: true),
-    presets: PresetsProfile(
-      codex: false,
-      herdr: false,
-      pi: false,
-      slack: false,
-      spicetify: false,
-      tuicr: false
-    ),
-    btop: BtopProfileOptions(vimKeys: nil),
-    yazi: YaziProfileOptions(showHidden: nil)
-  )
 }
 
 private struct PortableProfileDocument: Decodable {
