@@ -25,7 +25,7 @@ struct SetupPackageAdditionCommandRunner: Sendable {
     let installation: SetupPackageInstallationCommandRunner.Inputs?
     let adoption: SetupPackageAdoptionCommandRunner.Prepared?
 
-    var digest: String { get throws { try SetupPackageInstallationStore.digest(self) } }
+    var digest: String { get throws { try canonicalJSONDigest(self) } }
     var noChange: Bool {
       !edits.contains(where: \.changed) && (installation?.targets.isEmpty ?? true)
         && (adoption?.additions.isEmpty ?? true)
@@ -132,8 +132,8 @@ struct SetupPackageAdditionCommandRunner: Sendable {
           } ?? []
         guard
           retainedEntries == (adoption.ledger?.entries ?? []),
-          try SetupPackageInstallationStore.digest(current.candidates)
-            == SetupPackageInstallationStore.digest(adoption.candidates)
+          try canonicalJSONDigest(current.candidates)
+            == canonicalJSONDigest(adoption.candidates)
         else {
           throw SetupPackageAdoptionError(
             "Reviewed installed candidates or prior adoption history changed after saving; preview again before adoption."
@@ -275,7 +275,7 @@ struct SetupPackageAdditionCommandRunner: Sendable {
     var profileDigests: [String: String] = [:]
     for source in layered.layers where source.present {
       let resolved = source.sourceURL.resolvingSymlinksInPath().standardizedFileURL
-      profileDigests[source.sourceURL.path] = try SetupPackageInstallationStore.digest([
+      profileDigests[source.sourceURL.path] = try canonicalJSONDigest([
         resolved.path,
         sha256Digest(BoundedRegularFile.read(at: resolved, maximumSize: 65_536).data),
       ])

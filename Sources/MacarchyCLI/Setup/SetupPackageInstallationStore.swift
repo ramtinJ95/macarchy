@@ -45,10 +45,6 @@ struct SetupPackageInstallationStore: Sendable {
       .contextDigest
   }
 
-  static func digest<T: Encodable>(_ value: T) throws -> String {
-    try canonicalJSONDigest(value)
-  }
-
   func read() throws -> SetupPackageInstallationAttempt? {
     let file: BoundedRegularFile?
     do { file = try BoundedRegularFile.readIfPresent(at: url) } catch {

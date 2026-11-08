@@ -24,7 +24,7 @@ struct HomebrewBundleInstaller: Sendable {
         [ExternalTool.brew.path] + HomebrewBundleInstaller.arguments
         + [Self.fileURL(context: context).path]
       nativeEffects = HomebrewBundleInstaller.nativeEffects(for: packages)
-      approvalDigest = try SetupPackageInstallationStore.digest(
+      approvalDigest = try canonicalJSONDigest(
         [
           "setup_full_brewfile_installation_v1", effectiveBrewfile, brewfile,
           SetupPackageInstallationStore(context: context).contextDigest,
