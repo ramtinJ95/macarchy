@@ -72,14 +72,11 @@ package enum SketchyBarGenerationError: Error, CustomStringConvertible, Sendable
 
 package struct SketchyBarGenerationInspector: Sendable {
   private static let coreArtifactPaths = [
-    "plugins/clock.sh", "plugins/space-indexes.sh", "sketchybarrc",
+    SketchyBarContract.pluginArtifactPath(SketchyBarContract.clockPlugin),
+    SketchyBarContract.pluginArtifactPath(SketchyBarContract.spaceIndexesPlugin), "sketchybarrc",
   ]
-  private static let optionalArtifactPaths = [
-    "plugins/user-hook.sh", "plugins/volume.sh", "plugins/battery.sh",
-    "plugins/cpu.sh", "plugins/memory.sh", "plugins/wifi.sh", "plugins/media.sh",
-    "plugins/apple.sh", "plugins/toggle.sh", "plugins/update.sh", "plugins/keep-awake.sh",
-    "plugins/microphone.sh", "plugins/saver-paused.sh",
-  ]
+  private static let optionalArtifactPaths = SketchyBarContract.optionalPlugins.map(
+    SketchyBarContract.pluginArtifactPath)
   fileprivate static let pluginNames = Set(
     (coreArtifactPaths + optionalArtifactPaths)
       .filter { $0.hasPrefix("plugins/") }

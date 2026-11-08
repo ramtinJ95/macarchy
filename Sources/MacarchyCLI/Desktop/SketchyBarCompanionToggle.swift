@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import ThemeCore
 
@@ -21,7 +22,7 @@ struct CompanionToggle: Equatable {
 
 /// Drives one always-visible clock companion that toggles its feature on click.
 struct SketchyBarCompanionToggle {
-  let companion: ClockCompanion
+  let companion: SketchyBarClockCompanion
   let stateRoot: URL
   let processRunner: ProcessRunner
   let read: () throws -> CompanionToggle
@@ -87,4 +88,25 @@ struct SketchyBarCompanionToggle {
 
 struct CompanionToggleError: Error, CustomStringConvertible {
   let description: String
+}
+
+/// The flags every toggling companion's hidden helper takes. Generated bars on disk pass them.
+struct CompanionToggleOptions: ParsableArguments {
+  @Option var sender = "forced"
+  @Option var stateRoot: String
+  @Option var accent: String
+  /// The dimmed color. Bars generated before the toggles omit it.
+  @Option var muted: String?
+
+  /// Drives `companion` from the state `read` returns for the standardized state root.
+  func execute(
+    _ companion: SketchyBarClockCompanion, read: (URL) -> () throws -> CompanionToggle
+  ) throws {
+    let root = URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
+    try SketchyBarCompanionToggle(
+      companion: companion, stateRoot: root, processRunner: .live, read: read(root),
+      launch: SketchyBarCompanionToggle.launchMacarchy
+    )
+    .execute(sender: sender, accent: accent, muted: muted)
+  }
 }

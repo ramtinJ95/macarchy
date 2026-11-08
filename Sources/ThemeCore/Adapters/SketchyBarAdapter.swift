@@ -30,7 +30,7 @@ struct SketchyBarAdapter: Sendable {
   static let rendererVersion = 3
   static let liveExecutableURL = ExternalTool.sketchybar
   static let initImport = "require(\"init\")"
-  static let readyItem = SketchyBarConfigurationComposer.readyItem
+  static let readyItem = SketchyBarContract.readyItem
   static let readyMarkerDeclaration =
     "sbar.add(\"item\", \"\(readyItem)\", { drawing = false })"
 

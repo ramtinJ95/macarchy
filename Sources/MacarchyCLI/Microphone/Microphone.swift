@@ -42,7 +42,7 @@ struct MicrophoneInput: Equatable {
 /// input level to zero. The silence record is the only state Macarchy owns, and it holds only
 /// while its device is present with every recorded element still at zero.
 struct Microphone {
-  static let barEvent = SketchyBarConfigurationComposer.microphoneEvent
+  static let barEvent = SketchyBarClockCompanion.microphoneEvent
   static let appsNote = "Apps that choose their own input are not affected."
   private static let lock = ProcessScopedFileLock<MessageError>(
     filename: "microphone.lock", lockName: "microphone")

@@ -71,12 +71,12 @@ struct SketchyBarKeepAwakeIndicatorTests {
       "--sender", "mouse.clicked", "--state-root", "/Users/me/.config/macarchy", "--accent",
       "0xffaabbcc",
     ])
-    #expect(older.muted == nil)
+    #expect(older.options.muted == nil)
     let current = try Desktop.KeepAwakeIndicator.parse([
       "--sender", "forced", "--state-root", "/Users/me/.config/macarchy", "--accent",
       "0xffaabbcc", "--muted", "0xff585b70",
     ])
-    #expect(current.muted == "0xff585b70")
+    #expect(current.options.muted == "0xff585b70")
   }
 
   private static func status(_ state: String, expires: Date) -> KeepAwakeStatus {

@@ -207,7 +207,8 @@ struct Desktop: ParsableCommand {
   }
 
   struct WiFi: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "_wifi", shouldDisplay: false)
+    static let configuration = CommandConfiguration(
+      commandName: SketchyBarContract.wifiCommand, shouldDisplay: false)
     @Option var name: String
     @Option var sender: String = "routine"
     @Option var textColor: String
@@ -258,7 +259,8 @@ struct Desktop: ParsableCommand {
   }
 
   struct CPULoad: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "_cpu-load", shouldDisplay: false)
+    static let configuration = CommandConfiguration(
+      commandName: SketchyBarContract.cpuLoadCommand, shouldDisplay: false)
 
     mutating func run() throws {
       let previous = try CPUTicks.read()
@@ -269,7 +271,7 @@ struct Desktop: ParsableCommand {
 
   struct RunSketchyBarHook: ParsableCommand {
     static let configuration = CommandConfiguration(
-      commandName: "_run-sketchybar-hook",
+      commandName: SketchyBarContract.hookCommand,
       shouldDisplay: false
     )
 

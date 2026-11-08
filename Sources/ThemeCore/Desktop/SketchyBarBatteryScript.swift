@@ -8,7 +8,7 @@ enum SketchyBarBatteryScript {
     : "${NAME:?SketchyBar did not provide an item name}"
     SKETCHYBAR=/opt/homebrew/bin/sketchybar
     case "${SENDER-}" in
-      mouse.clicked) exec \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _popup-toggle --popup "$NAME" ;;
+      mouse.clicked) exec \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop \(SketchyBarContract.popupToggleCommand) --popup "$NAME" ;;
       mouse.exited.global) "$SKETCHYBAR" --set "$NAME" popup.drawing=off; exit ;;
     esac
     PALETTE=\(DesktopShellSyntax.literal(palettePath))

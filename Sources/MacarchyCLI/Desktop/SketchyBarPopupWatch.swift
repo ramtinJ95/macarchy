@@ -235,7 +235,7 @@ private func sketchyBar(_ arguments: [String], processRunner: ProcessRunner) thr
 extension Desktop {
   struct PopupToggle: ParsableCommand {
     static let configuration = CommandConfiguration(
-      commandName: "_popup-toggle", shouldDisplay: false)
+      commandName: SketchyBarContract.popupToggleCommand, shouldDisplay: false)
     @Option var popup: BarPopup
 
     mutating func run() throws {

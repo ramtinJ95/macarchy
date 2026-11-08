@@ -64,7 +64,7 @@ struct SaverIdleActivation: Equatable {
 /// Turns idle activation on and off and pauses it. The record's lock serializes every change, so
 /// on, off and pause never interleave, and none lands between an observer's check and its start.
 struct SaverIdle {
-  static let barEvent = SketchyBarConfigurationComposer.saverIdleEvent
+  static let barEvent = SketchyBarClockCompanion.saverIdleEvent
   static let timeout = DurationOption(flag: "--after", maximumMinutes: 4 * 60)
 
   let stateRoot: URL

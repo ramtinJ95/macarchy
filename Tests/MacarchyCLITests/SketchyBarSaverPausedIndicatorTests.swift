@@ -74,21 +74,21 @@ struct SketchyBarSaverPausedIndicatorTests {
 
   @Test func theHelperAcceptsOlderAndCurrentBarArguments() throws {
     let base = ["--state-root", "/Users/me/.config/macarchy", "--accent", "0xffaabbcc"]
-    #expect(try Desktop.SaverPausedIndicator.parse(base).muted == nil)
+    #expect(try Desktop.SaverPausedIndicator.parse(base).options.muted == nil)
     #expect(
-      try Desktop.SaverPausedIndicator.parse(base + ["--muted", "0xff585b70"]).muted
+      try Desktop.SaverPausedIndicator.parse(base + ["--muted", "0xff585b70"]).options.muted
         == "0xff585b70")
   }
 
   @Test func theCompanionSitsLeftOfTheClockAndRefreshesOnIdleChanges() {
-    let companion = ClockCompanion.saverPaused
+    let companion = SketchyBarClockCompanion.saverPaused
     #expect(companion.side == .left)
     #expect(companion.plugin == "saver-paused")
     #expect(companion.updateFrequency == 30)
     #expect(companion.events.last == "macarchy_saver_idle_changed")
     #expect(companion.events.contains("mouse.clicked"))
     #expect(
-      ClockCompanion.all.map(\.item) == [
+      SketchyBarClockCompanion.all.map(\.item) == [
         "macarchy.update", "macarchy.keep-awake", "macarchy.microphone", "macarchy.saver-paused",
       ])
   }

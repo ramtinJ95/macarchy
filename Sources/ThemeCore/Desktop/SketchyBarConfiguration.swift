@@ -108,26 +108,9 @@ package enum SketchyBarConfigurationError: Error, CustomStringConvertible, Senda
 package struct SketchyBarConfigurationComposer: Sendable {
   package static let providerID = "sketchybar"
   package static let paletteArtifactPath = "generated/sketchybar.sh"
-  package static let readyItem = "macarchy.theme.ready"
-  /// Keep-awake changes trigger this event so the indicator refreshes before its timer.
-  package static let keepAwakeEvent = "macarchy_keep_awake_changed"
-  /// SF Symbols cup.and.saucer.fill, drawn by SF Pro at the size of the other toggle icons.
-  package static let keepAwakeIcon = "\u{100E19}"
-  /// Microphone mute changes trigger this event so the indicator refreshes before its timer.
-  package static let microphoneEvent = "macarchy_microphone_changed"
-  /// SF Symbols mic.slash.fill, drawn by the SF Pro font like the bar's other symbol glyphs.
-  package static let microphoneMutedIcon = "\u{1002B3}"
-  /// SF Symbols mic.fill, the live counterpart of `microphoneMutedIcon`.
-  package static let microphoneLiveIcon = "\u{1002B1}"
-  /// Idle screensaver changes trigger this event so its toggle refreshes before its timer.
-  package static let saverIdleEvent = "macarchy_saver_idle_changed"
-  /// SF Symbols pause.fill, drawn by SF Pro like the idle screensaver icon it replaces.
-  package static let saverPausedIcon = "\u{100286}"
-  /// SF Symbols sparkles.tv: a screen showing decorative sparkles, drawn by SF Pro.
-  package static let saverIdleIcon = "\u{10114B}"
   static let paletteSource = ". \"$PALETTE\""
   static let managedReadyMarkerDeclaration =
-    "\"$SKETCHYBAR\" --add item \(readyItem) right --set \(readyItem) drawing=off"
+    "\"$SKETCHYBAR\" --add item \(SketchyBarContract.readyItem) right --set \(SketchyBarContract.readyItem) drawing=off"
 
   package init() {}
 
@@ -222,106 +205,91 @@ package struct SketchyBarConfigurationComposer: Sendable {
         )
       ),
       SketchyBarConfigurationArtifact(
-        path: "plugins/clock.sh",
+        path: SketchyBarContract.pluginArtifactPath(SketchyBarContract.clockPlugin),
         contents: renderClock(
           settings: settings,
           position: automaticClock ? "auto" : (layout.position(of: .clock)?.rawValue ?? "right"),
           palettePath: palettePath, macarchyExecutablePath: macarchyExecutablePath)
       ),
       SketchyBarConfigurationArtifact(
-        path: "plugins/space-indexes.sh",
+        path: SketchyBarContract.pluginArtifactPath(SketchyBarContract.spaceIndexesPlugin),
         contents: renderSpaceIndexes()
       ),
     ]
-    /// Adds `plugins/<name>.sh`, rendered only when `module` is placed in the layout.
+    /// Adds the plugin `name`, rendered only when `module` is placed in the layout.
     func addPlugin(
       _ module: SketchyBarModule, _ name: String, _ contents: @autoclosure () -> String
     ) {
       guard layout.position(of: module) != nil else { return }
       artifacts.append(
-        SketchyBarConfigurationArtifact(path: "plugins/\(name).sh", contents: contents()))
+        SketchyBarConfigurationArtifact(
+          path: SketchyBarContract.pluginArtifactPath(name), contents: contents()))
     }
-    func clockCompanion(item: String, helper: String, options: String, failure: String) -> String {
-      [
+    /// Adds the plugin named after `module`, as `SketchyBarContract.plugins(of:)` declares.
+    func addModulePlugin(_ module: SketchyBarModule, _ contents: @autoclosure () -> String) {
+      addPlugin(module, module.rawValue, contents())
+    }
+    func renderCompanion(_ companion: SketchyBarClockCompanion) -> String {
+      let item = companion.item
+      return [
         "#!/bin/sh",
         "set -eu",
         "[ \"${NAME-}\" = \(item) ] || exit 1",
         ". \(DesktopShellSyntax.literal(palettePath))",
-        "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop \(helper) --sender \"${SENDER-forced}\" --state-root \(DesktopShellSyntax.literal(stateRoot.path)) \(options); then",
+        "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop \(companion.helperCommand) --sender \"${SENDER-forced}\" --state-root \(DesktopShellSyntax.literal(stateRoot.path)) \(companion.helperColorOptions); then",
         "  exit 0",
         "else",
-        "  /opt/homebrew/bin/sketchybar --set \(item) drawing=on icon='!' icon.color=\"$MACARCHY_BATTERY_RED\" --set \(item).detail label='\(failure)'",
+        "  /opt/homebrew/bin/sketchybar --set \(item) drawing=on icon='!' icon.color=\"$MACARCHY_BATTERY_RED\" --set \(companion.detailItem) label='\(companion.failureDetail)'",
         "  exit 1",
         "fi",
       ].joined(separator: "\n") + "\n"
     }
-    addPlugin(
-      .toggle, "toggle",
+    addModulePlugin(
+      .toggle,
       """
       #!/bin/sh
       set -eu
       [ "$#" = 1 ] || exit 1
-      \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _bar-toggle --state-root \(DesktopShellSyntax.literal(stateRoot.standardizedFileURL.path)) --token "$1" </dev/null >/dev/null &
+      \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop \(SketchyBarContract.barToggleCommand) --state-root \(DesktopShellSyntax.literal(stateRoot.standardizedFileURL.path)) --token "$1" </dev/null >/dev/null &
 
       """)
-    addPlugin(
-      .clock, "update",
-      clockCompanion(
-        item: "macarchy.update", helper: "_update-indicator",
-        options: "--accent \"$MACARCHY_ACCENT_COLOR\" --warning \"$MACARCHY_BATTERY_RED\"",
-        failure: "Update indicator failed; see SketchyBar stderr for details."))
-    addPlugin(
-      .clock, "keep-awake",
-      clockCompanion(
-        item: "macarchy.keep-awake", helper: "_keep-awake-indicator",
-        options: "--accent \"$MACARCHY_ACCENT_COLOR\" --muted \"$MACARCHY_MUTED_COLOR\"",
-        failure: "Keep-awake toggle failed; see SketchyBar stderr for details."))
-    addPlugin(
-      .clock, "microphone",
-      clockCompanion(
-        item: "macarchy.microphone", helper: "_microphone-indicator",
-        options: "--accent \"$MACARCHY_ACCENT_COLOR\" --muted \"$MACARCHY_MUTED_COLOR\"",
-        failure: "Microphone toggle failed; see SketchyBar stderr for details."))
-    addPlugin(
-      .clock, "saver-paused",
-      clockCompanion(
-        item: "macarchy.saver-paused", helper: "_saver-paused-indicator",
-        options: "--accent \"$MACARCHY_ACCENT_COLOR\" --muted \"$MACARCHY_MUTED_COLOR\"",
-        failure: "Idle screensaver toggle failed; see SketchyBar stderr for details."))
-    addPlugin(
-      .volume, "volume",
+    for companion in SketchyBarClockCompanion.all {
+      addPlugin(.clock, companion.plugin, renderCompanion(companion))
+    }
+    addModulePlugin(
+      .volume,
       SketchyBarVolumeScript.render(
         palettePath: palettePath, macarchyExecutablePath: macarchyExecutablePath))
-    addPlugin(
-      .battery, "battery",
+    addModulePlugin(
+      .battery,
       SketchyBarBatteryScript.render(
         palettePath: palettePath, macarchyExecutablePath: macarchyExecutablePath))
     for module in [SketchyBarModule.cpu, .memory] {
-      addPlugin(
-        module, module.rawValue,
+      addModulePlugin(
+        module,
         SketchyBarMetricScript.render(
           module: module, palettePath: palettePath,
           macarchyExecutablePath: macarchyExecutablePath))
     }
-    addPlugin(
-      .wifi, "wifi",
+    addModulePlugin(
+      .wifi,
       SketchyBarWiFiScript.render(
         palettePath: palettePath, macarchyExecutablePath: macarchyExecutablePath))
-    addPlugin(
-      .apple, "apple",
+    addModulePlugin(
+      .apple,
       SketchyBarAppleScript.render(
         palettePath: palettePath,
         helperPath: macarchyExecutableURL.deletingLastPathComponent().appending(
           path: "macarchy-menu"
         ).standardizedFileURL.path))
-    addPlugin(
-      .media, "media",
+    addModulePlugin(
+      .media,
       SketchyBarMediaScript.render(
         palettePath: palettePath, macarchyExecutablePath: macarchyExecutablePath))
     if let hook {
       artifacts.append(
         SketchyBarConfigurationArtifact(
-          path: "plugins/user-hook.sh",
+          path: SketchyBarContract.pluginArtifactPath(SketchyBarContract.userHookPlugin),
           contents: native ? "set -e\n" + hook.text : hook.text
         )
       )
@@ -510,27 +478,25 @@ package struct SketchyBarConfigurationComposer: Sendable {
             break
           }
         case .clock:
+          let clock = SketchyBarContract.clockItem
+          let preview = SketchyBarContract.clockPreviewItem
           lines += [
-            "\"$SKETCHYBAR\" --add item macarchy.clock.preview right --set macarchy.clock.preview drawing=off label=0",
-            "\"$SKETCHYBAR\" --add item macarchy.clock \(position.rawValue) \\",
-            "  --set macarchy.clock icon.drawing=off label.font='SF Mono:Semibold:13.0' label.align=center updates=on update_freq=30 script=\"$PLUGIN_DIR/clock.sh\"",
-            "\"$SKETCHYBAR\" --subscribe macarchy.clock mouse.clicked display_change system_woke",
-            "\"$SKETCHYBAR\" --add item macarchy.update \(position.rawValue) --set macarchy.update drawing=off icon='↻' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_ACCENT_COLOR\" label.drawing=off updates=on update_freq=60 script=\"$PLUGIN_DIR/update.sh\" popup.align=center",
-            "\"$SKETCHYBAR\" --add item macarchy.update.detail popup.macarchy.update --set macarchy.update.detail icon.drawing=off label='Checking Macarchy updates…'",
-            "\"$SKETCHYBAR\" --subscribe macarchy.update mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke",
-            "\"$SKETCHYBAR\" --add event \(Self.keepAwakeEvent)",
-            "\"$SKETCHYBAR\" --add item macarchy.keep-awake \(position.rawValue) --set macarchy.keep-awake drawing=on icon='\(Self.keepAwakeIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_MUTED_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/keep-awake.sh\" popup.align=center",
-            "\"$SKETCHYBAR\" --add item macarchy.keep-awake.detail popup.macarchy.keep-awake --set macarchy.keep-awake.detail icon.drawing=off label='Keep-awake is off.'",
-            "\"$SKETCHYBAR\" --subscribe macarchy.keep-awake mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(Self.keepAwakeEvent)",
-            "\"$SKETCHYBAR\" --add event \(Self.microphoneEvent)",
-            "\"$SKETCHYBAR\" --add item macarchy.microphone \(position.rawValue) --set macarchy.microphone drawing=on icon='\(Self.microphoneLiveIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_MUTED_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/microphone.sh\" popup.align=center",
-            "\"$SKETCHYBAR\" --add item macarchy.microphone.detail popup.macarchy.microphone --set macarchy.microphone.detail icon.drawing=off label='Microphone is live.'",
-            "\"$SKETCHYBAR\" --subscribe macarchy.microphone mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(Self.microphoneEvent)",
-            "\"$SKETCHYBAR\" --add event \(Self.saverIdleEvent)",
-            "\"$SKETCHYBAR\" --add item macarchy.saver-paused \(position.rawValue) --set macarchy.saver-paused drawing=on icon='\(Self.saverIdleIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_MUTED_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/saver-paused.sh\" popup.align=center",
-            "\"$SKETCHYBAR\" --add item macarchy.saver-paused.detail popup.macarchy.saver-paused --set macarchy.saver-paused.detail icon.drawing=off label='Idle screensaver is off.'",
-            "\"$SKETCHYBAR\" --subscribe macarchy.saver-paused mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(Self.saverIdleEvent)",
+            "\"$SKETCHYBAR\" --add item \(preview) right --set \(preview) drawing=off label=0",
+            "\"$SKETCHYBAR\" --add item \(clock) \(position.rawValue) \\",
+            "  --set \(clock) icon.drawing=off label.font='SF Mono:Semibold:13.0' label.align=center updates=on update_freq=30 script=\"$PLUGIN_DIR/\(SketchyBarContract.clockPlugin).sh\"",
+            "\"$SKETCHYBAR\" --subscribe \(clock) mouse.clicked display_change system_woke",
           ]
+          for companion in SketchyBarClockCompanion.all {
+            let item = companion.item
+            if let event = companion.refreshEvent {
+              lines.append("\"$SKETCHYBAR\" --add event \(event)")
+            }
+            lines += [
+              "\"$SKETCHYBAR\" --add item \(item) \(position.rawValue) --set \(item) drawing=\(companion.initiallyDrawn ? "on" : "off") icon='\(companion.icon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$\(companion.iconColor)\" label.drawing=off updates=on update_freq=\(companion.updateFrequency) script=\"$PLUGIN_DIR/\(companion.plugin).sh\" popup.align=center",
+              "\"$SKETCHYBAR\" --add item \(companion.detailItem) popup.\(item) --set \(companion.detailItem) icon.drawing=off label='\(companion.initialDetail)'",
+              "\"$SKETCHYBAR\" --subscribe \(item) \(companion.events.joined(separator: " "))",
+            ]
+          }
         case .toggle:
           lines += [
             "TOGGLE_TOKEN=$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')",
@@ -622,7 +588,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
     if hasHook {
       lines += [
         "export SKETCHYBAR YABAI PLUGIN_DIR PALETTE MACARCHY_BAR_COLOR MACARCHY_TEXT_COLOR MACARCHY_MUTED_COLOR MACARCHY_ACCENT_COLOR",
-        "\(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _run-sketchybar-hook \"$PLUGIN_DIR/user-hook.sh\"",
+        "\(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop \(SketchyBarContract.hookCommand) \"$PLUGIN_DIR/\(SketchyBarContract.userHookPlugin).sh\"",
       ]
     }
     lines += [Self.managedReadyMarkerDeclaration, "\"$SKETCHYBAR\" --update"]
@@ -634,16 +600,19 @@ package struct SketchyBarConfigurationComposer: Sendable {
     settings: SketchyBarSettings, position: String, palettePath: String,
     macarchyExecutablePath: String
   ) -> String {
-    [
+    let clock = SketchyBarContract.clockItem
+    let companionFlags = SketchyBarClockCompanion.all.map { "--\($0.calendarFlag)" }
+      .joined(separator: " ")
+    return [
       "#!/bin/sh",
       "set -eu",
-      "[ \"${NAME-}\" = macarchy.clock ] || exit 1",
+      "[ \"${NAME-}\" = \(clock) ] || exit 1",
       ". \(DesktopShellSyntax.literal(palettePath))",
-      "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _calendar --sender \"${SENDER-forced}\" --position \(DesktopShellSyntax.literal(position)) --format \(DesktopShellSyntax.literal(settings.clockFormat)) --update-indicator --keep-awake-indicator --microphone-indicator --saver-paused-indicator; then",
-      "  /opt/homebrew/bin/sketchybar --set macarchy.clock label.color=\"$MACARCHY_TEXT_COLOR\"",
+      "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop \(SketchyBarContract.calendarCommand) --sender \"${SENDER-forced}\" --position \(DesktopShellSyntax.literal(position)) --format \(DesktopShellSyntax.literal(settings.clockFormat)) \(companionFlags); then",
+      "  /opt/homebrew/bin/sketchybar --set \(clock) label.color=\"$MACARCHY_TEXT_COLOR\"",
       "else",
       "  echo 'Macarchy: calendar query failed' >&2",
-      "  /opt/homebrew/bin/sketchybar --set macarchy.clock label=ERR label.color=\"$MACARCHY_BATTERY_RED\" || echo 'Macarchy: calendar error presentation also failed' >&2",
+      "  /opt/homebrew/bin/sketchybar --set \(clock) label=ERR label.color=\"$MACARCHY_BATTERY_RED\" || echo 'Macarchy: calendar error presentation also failed' >&2",
       "  exit 1",
       "fi",
     ].joined(separator: "\n") + "\n"

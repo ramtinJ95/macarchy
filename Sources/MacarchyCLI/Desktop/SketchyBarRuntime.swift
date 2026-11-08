@@ -33,11 +33,41 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
   let toggleStatePresent: Bool?
   let nativeConfiguration: Bool?
 
-  static let wifiItems = [
-    "macarchy.wifi", "macarchy.wifi.up", "macarchy.wifi.down",
-    "macarchy.wifi.ssid", "macarchy.wifi.hostname", "macarchy.wifi.ip",
-    "macarchy.wifi.mask", "macarchy.wifi.router",
-  ]
+  /// Items a valid managed bar may lack, beside the item they need. A present group is complete.
+  private struct OptionalGroup: Sendable {
+    let owner: String
+    let items: [String]
+  }
+
+  /// Older generations lack the clock preview, later clock companions, the volume slider, the
+  /// volume picker's extras and the Wi-Fi bracket. Group padding follows the layout, which the
+  /// evidence does not record.
+  private static let optionalGroups: [OptionalGroup] = {
+    let clock = SketchyBarContract.clockItem
+    var groups = [OptionalGroup(owner: clock, items: [SketchyBarContract.clockPreviewItem])]
+    groups += SketchyBarClockCompanion.all.map { OptionalGroup(owner: clock, items: $0.items) }
+    groups += [
+      OptionalGroup(
+        owner: SketchyBarContract.volumeItem, items: [SketchyBarContract.volumeSliderItem]),
+      OptionalGroup(
+        owner: SketchyBarContract.volumeItem,
+        items: [
+          SketchyBarContract.volumeIconItem, SketchyBarContract.volumeBracketItem,
+          SketchyBarContract.volumePaddingItem,
+        ]),
+      OptionalGroup(
+        owner: SketchyBarContract.wifiItem, items: [SketchyBarContract.wifiBracketItem]),
+      OptionalGroup(
+        owner: SketchyBarContract.batteryItem,
+        items: [SketchyBarContract.groupPaddingItem(.battery)]),
+    ]
+    groups += [SketchyBarModule.cpu, .memory].map {
+      OptionalGroup(
+        owner: SketchyBarContract.metricItem($0),
+        items: [SketchyBarContract.groupPaddingItem($0)])
+    }
+    return groups
+  }()
 
   init(
     status: SketchyBarCoreRuntimeStatus,
@@ -92,79 +122,42 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
       spaceIndices.allSatisfy({ (1..<UInt32.bitWidth).contains($0) })
     else { return false }
     if nativeConfiguration == true {
-      return status == .partial && items.contains(SketchyBarConfigurationComposer.readyItem)
+      return status == .partial && items.contains(SketchyBarContract.readyItem)
         && spaceIndices.isEmpty && !clockLabelPresent && volumeLevelPresent != true
         && batteryStatePresent != true && (metricModules ?? []).isEmpty
         && wifiStatePresent != true && mediaStatePresent != true
         && appleStatePresent != true && toggleStatePresent != true
     }
-    let hasClock = items.contains("macarchy.clock")
-    guard hasClock == clockLabelPresent else { return false }
-    let hasVolume = items.contains("macarchy.volume")
-    guard hasVolume == (volumeLevelPresent ?? false) else { return false }
-    let hasBattery = items.contains("macarchy.battery")
-    guard hasBattery == (batteryStatePresent ?? false),
-      hasBattery == items.contains("macarchy.battery.remaining")
-    else { return false }
-    var managedItems = [SketchyBarConfigurationComposer.readyItem]
-    if hasClock { managedItems.append("macarchy.clock") }
-    if items.contains(SketchyBarCalendar.previewItem) {
-      guard hasClock else { return false }
-      managedItems.append(SketchyBarCalendar.previewItem)
-    }
-    // Older generations lack some companions; a present companion must be complete.
-    for companion in ClockCompanion.all {
-      let companionItems = [companion.item, companion.detailItem]
-      guard companionItems.contains(where: items.contains) else { continue }
-      guard hasClock, companionItems.allSatisfy(items.contains) else { return false }
-      managedItems += companionItems
-    }
-    if hasVolume { managedItems.append("macarchy.volume") }
-    if items.contains("macarchy.volume.slider") {
-      guard hasVolume else { return false }
-      managedItems.append("macarchy.volume.slider")
-    }
-    let volumeExtras = [
-      "macarchy.volume.icon", "macarchy.volume.bracket", "macarchy.volume.padding",
-    ]
-    if volumeExtras.contains(where: items.contains) {
-      guard hasVolume, volumeExtras.allSatisfy(items.contains) else { return false }
-      managedItems += volumeExtras
-    }
-    if hasBattery { managedItems += ["macarchy.battery", "macarchy.battery.remaining"] }
     let metrics = metricModules ?? []
     guard metrics == metrics.sorted(), Set(metrics).count == metrics.count,
       metrics.allSatisfy({ ["cpu", "memory"].contains($0) })
     else { return false }
-    for metric in ["cpu", "memory"] {
-      guard items.contains("macarchy.\(metric)") == metrics.contains(metric) else { return false }
+    // A module's items, apart from its optional groups, are present exactly when its evidence is.
+    let modules: [(module: SketchyBarModule, present: Bool)] = [
+      (.clock, clockLabelPresent), (.volume, volumeLevelPresent ?? false),
+      (.battery, batteryStatePresent ?? false), (.cpu, metrics.contains("cpu")),
+      (.memory, metrics.contains("memory")), (.wifi, wifiStatePresent ?? false),
+      (.media, mediaStatePresent ?? false), (.apple, appleStatePresent ?? false),
+      (.toggle, toggleStatePresent ?? false),
+    ]
+    let optionalItems = Set(Self.optionalGroups.flatMap(\.items))
+    var managedItems = [SketchyBarContract.readyItem]
+    for (module, present) in modules {
+      let required = SketchyBarContract.items(of: module).filter { !optionalItems.contains($0) }
+      guard required.allSatisfy({ items.contains($0) == present }) else { return false }
+      if present { managedItems += required }
     }
-    managedItems += metrics.map { "macarchy.\($0)" }
-    for item in Self.wifiItems {
-      guard items.contains(item) == (wifiStatePresent ?? false) else { return false }
+    for group in Self.optionalGroups where group.items.contains(where: items.contains) {
+      guard items.contains(group.owner), group.items.allSatisfy(items.contains) else {
+        return false
+      }
+      managedItems += group.items
     }
-    if wifiStatePresent == true { managedItems += Self.wifiItems }
-    if items.contains("macarchy.wifi.bracket") {
-      guard wifiStatePresent == true else { return false }
-      managedItems.append("macarchy.wifi.bracket")
-    }
-    for module in ["battery", "cpu", "memory"] where items.contains("macarchy.\(module).padding") {
-      guard items.contains("macarchy.\(module)") else { return false }
-      managedItems.append("macarchy.\(module).padding")
-    }
-    for item in SketchyBarMedia.items {
-      guard items.contains(item) == (mediaStatePresent ?? false) else { return false }
-    }
-    if mediaStatePresent == true { managedItems += SketchyBarMedia.items }
-    guard items.contains("macarchy.apple") == (appleStatePresent ?? false) else { return false }
-    if appleStatePresent == true { managedItems.append("macarchy.apple") }
-    guard items.contains("macarchy.toggle") == (toggleStatePresent ?? false) else { return false }
-    if toggleStatePresent == true { managedItems.append("macarchy.toggle") }
-    if items.contains("macarchy.spaces.unavailable") {
+    if items.contains(SketchyBarContract.spacesUnavailableItem) {
       guard spaceIndices.isEmpty else { return false }
-      managedItems.append("macarchy.spaces.unavailable")
+      managedItems.append(SketchyBarContract.spacesUnavailableItem)
     } else {
-      managedItems += spaceIndices.map { "macarchy.space.\($0)" }
+      managedItems += spaceIndices.map(SketchyBarContract.spaceItem)
     }
     managedItems.sort()
     if status == .converged { return items == managedItems }
@@ -342,48 +335,49 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
           }
         var presentationMatches = inventoryMatches
         if expected.clockLabelPresent {
-          let clock: SketchyBarItemQuery = try query("macarchy.clock")
+          let clock: SketchyBarItemQuery = try query(SketchyBarContract.clockItem)
           presentationMatches =
             presentationMatches && !clock.label.value.isEmpty && clock.label.value != "ERR"
-          if expected.items.contains(SketchyBarCalendar.previewItem) {
+          if expected.items.contains(SketchyBarContract.clockPreviewItem) {
             presentationMatches = try presentationMatches && validClockPreview()
           }
-          for companion in ClockCompanion.all where expected.items.contains(companion.item) {
+          for companion in SketchyBarClockCompanion.all
+          where expected.items.contains(companion.item) {
             presentationMatches =
               try presentationMatches
               && validCompanion(companion, position: clock.geometry.position)
           }
         }
         if expected.toggleStatePresent == true {
-          let toggle: SketchyBarItemQuery = try query("macarchy.toggle")
+          let toggle: SketchyBarItemQuery = try query(SketchyBarContract.toggleItem)
           presentationMatches =
             presentationMatches && validToggleHeartbeat(ToggleHeartbeat.parse(toggle.label.value))
         }
         if expected.appleStatePresent == true {
-          let apple: SketchyBarItemQuery = try query("macarchy.apple")
+          let apple: SketchyBarItemQuery = try query(SketchyBarContract.appleItem)
           presentationMatches =
             presentationMatches && apple.label.drawing == "off" && apple.label.value.isEmpty
         }
         if expected.mediaStatePresent == true {
-          let media: SketchyBarItemQuery = try query("macarchy.media")
+          let media: SketchyBarItemQuery = try query(SketchyBarContract.mediaItem)
           presentationMatches = presentationMatches && Self.validMediaIdentity(media.label.value)
         }
         if expected.volumeLevelPresent == true {
-          let volume: SketchyBarItemQuery = try query("macarchy.volume")
+          let volume: SketchyBarItemQuery = try query(SketchyBarContract.volumeItem)
           presentationMatches = presentationMatches && !volume.label.value.isEmpty
-          if expected.items.contains("macarchy.volume.icon") {
-            let icon: SketchyBarItemQuery = try query("macarchy.volume.icon")
+          if expected.items.contains(SketchyBarContract.volumeIconItem) {
+            let icon: SketchyBarItemQuery = try query(SketchyBarContract.volumeIconItem)
             presentationMatches = presentationMatches && Self.isVolumeIcon(icon.label.value)
           }
-          if expected.items.contains("macarchy.volume.slider") {
-            let slider: SketchyBarItemQuery = try query("macarchy.volume.slider")
+          if expected.items.contains(SketchyBarContract.volumeSliderItem) {
+            let slider: SketchyBarItemQuery = try query(SketchyBarContract.volumeSliderItem)
             presentationMatches =
               presentationMatches && Self.isSliderLevel(slider.slider?.percentage)
           }
         }
         if expected.batteryStatePresent == true {
-          let battery: SketchyBarItemQuery = try query("macarchy.battery")
-          let remaining: SketchyBarItemQuery = try query("macarchy.battery.remaining")
+          let battery: SketchyBarItemQuery = try query(SketchyBarContract.batteryItem)
+          let remaining: SketchyBarItemQuery = try query(SketchyBarContract.batteryRemainingItem)
           presentationMatches =
             presentationMatches && Self.isBatteryLabel(battery.label.value)
             && Self.isBatteryEstimate(remaining.label.value)
@@ -420,7 +414,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     -> SketchyBarCoreRuntimeInspection
   {
     let bar: SketchyBarBarQuery = try query("bar")
-    let ready: SketchyBarItemQuery = try query(SketchyBarConfigurationComposer.readyItem)
+    let ready: SketchyBarItemQuery = try query(SketchyBarContract.readyItem)
     guard bar.drawing == "on", bar.color.lowercased() == palette.color, ready.isReadyMarker
     else {
       return drifted(
@@ -503,15 +497,15 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       let actualPosition =
         composition.automaticClock
         ? (try hasExternalDisplay() ? "center" : "right") : clockPosition.rawValue
-      let clock: SketchyBarItemQuery = try query("macarchy.clock")
-      let expectedClockScript = pluginPath("clock")
+      let clock: SketchyBarItemQuery = try query(SketchyBarContract.clockItem)
+      let expectedClockScript = pluginPath(SketchyBarContract.clockPlugin)
       let clockLabel = clock.label.value
       clockLabelPresent = !clockLabel.isEmpty && clockLabel != "ERR"
       let events: [String: SketchyBarEventQuery] = try query("events")
       let bits = ["mouse.clicked", "display_change", "system_woke"].compactMap { events[$0]?.bit }
       let mask = bits.reduce(0, |)
       guard
-        clock.name == "macarchy.clock",
+        clock.name == SketchyBarContract.clockItem,
         clock.type == "item",
         clock.geometry.drawing == "on",
         clock.geometry.position == actualPosition,
@@ -522,7 +516,9 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         clock.scripting.updates == "on",
         bits.count == 3, clock.scripting.updateMask.map({ $0 & mask == mask }) == true,
         try validClockPreview(),
-        try ClockCompanion.all.allSatisfy({ try validCompanion($0, position: actualPosition) })
+        try SketchyBarClockCompanion.all.allSatisfy({
+          try validCompanion($0, position: actualPosition)
+        })
       else {
         return drift(
           "running SketchyBar clock or its companions are incomplete: "
@@ -534,16 +530,16 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       }
     }
 
-    let ready: SketchyBarItemQuery = try query(SketchyBarConfigurationComposer.readyItem)
+    let ready: SketchyBarItemQuery = try query(SketchyBarContract.readyItem)
     guard ready.isReadyMarker else {
       return drift("running SketchyBar ready marker is missing or visible")
     }
 
     if composition.spaceModule == .disabledWithoutDesktop {
       let expectedPosition = composition.layout.position(of: .spaces)!
-      let fallback: SketchyBarItemQuery = try query("macarchy.spaces.unavailable")
+      let fallback: SketchyBarItemQuery = try query(SketchyBarContract.spacesUnavailableItem)
       guard
-        fallback.name == "macarchy.spaces.unavailable",
+        fallback.name == SketchyBarContract.spacesUnavailableItem,
         fallback.type == "item",
         fallback.geometry.drawing == "on",
         fallback.geometry.position == expectedPosition.rawValue,
@@ -555,7 +551,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     } else if composition.spaceModule == .dynamicYabai {
       let expectedPosition = composition.layout.position(of: .spaces)!
       for index in spaceIndices {
-        let name = "macarchy.space.\(index)"
+        let name = SketchyBarContract.spaceItem(index)
         let space: SketchyBarItemQuery
         do {
           space = try query(name)
@@ -588,7 +584,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     }
 
     if let volumePosition = composition.layout.position(of: .volume) {
-      let volume: SketchyBarItemQuery = try query("macarchy.volume")
+      let volume: SketchyBarItemQuery = try query(SketchyBarContract.volumeItem)
       let events: [String: SketchyBarEventQuery] = try query("events")
       let expectedVolumeScript = pluginPath("volume")
       let volumeEventBit = events["volume_change"]?.bit
@@ -597,9 +593,9 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         events[$0]?.bit
       }
       let requiredEventMask = interactionBits.reduce((volumeEventBit ?? 0) | (wakeEventBit ?? 0), |)
-      let slider: SketchyBarItemQuery = try query("macarchy.volume.slider")
-      let icon: SketchyBarItemQuery = try query("macarchy.volume.icon")
-      let padding: SketchyBarItemQuery = try query("macarchy.volume.padding")
+      let slider: SketchyBarItemQuery = try query(SketchyBarContract.volumeSliderItem)
+      let icon: SketchyBarItemQuery = try query(SketchyBarContract.volumeIconItem)
+      let padding: SketchyBarItemQuery = try query(SketchyBarContract.volumePaddingItem)
       let parent: SketchyBarAudioPicker.Parent = try query(SketchyBarAudioPicker.popupOwner)
       volumeLevelPresent = Self.isVolumeLabel(volume.label.value)
       guard
@@ -607,7 +603,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         parent.geometry.position == volumePosition.rawValue, parent.geometry.drawing == "on",
         parent.label.drawing == "off", parent.scripting.hasNoScript,
         parent.scripting.updateFrequency == 0,
-        icon.name == "macarchy.volume.icon", icon.type == "item",
+        icon.name == SketchyBarContract.volumeIconItem, icon.type == "item",
         icon.geometry.position == volumePosition.rawValue,
         icon.geometry.drawing == "on", icon.label.drawing == "on",
         Self.isVolumeIcon(icon.label.value),
@@ -616,13 +612,13 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
           $0 & ((events["mouse.clicked"]?.bit ?? 0) | (events["mouse.scrolled"]?.bit ?? 0))
             == ((events["mouse.clicked"]?.bit ?? 0) | (events["mouse.scrolled"]?.bit ?? 0))
         }) == true,
-        padding.name == "macarchy.volume.padding", padding.type == "item",
+        padding.name == SketchyBarContract.volumePaddingItem, padding.type == "item",
         padding.geometry.position == volumePosition.rawValue,
         padding.geometry.drawing == "on", padding.geometry.width == 8,
         padding.label.drawing == "off",
         padding.scripting.hasNoScript, padding.scripting.updateFrequency == 0,
         interactionBits.count == 3, interactionBits.allSatisfy({ $0 > 0 }),
-        slider.name == "macarchy.volume.slider", slider.type == "slider",
+        slider.name == SketchyBarContract.volumeSliderItem, slider.type == "slider",
         slider.geometry.drawing == "on", slider.geometry.position == "popup",
         slider.label.drawing == "off", slider.scripting.hasNoScript,
         slider.scripting.clickScript
@@ -631,7 +627,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         slider.scripting.updateFrequency == 0, Self.isSliderLevel(slider.slider?.percentage),
         volumeEventBit.map({ $0 > 0 }) == true,
         wakeEventBit.map({ $0 > 0 }) == true,
-        volume.name == "macarchy.volume",
+        volume.name == SketchyBarContract.volumeItem,
         volume.type == "item",
         volume.geometry.drawing == "on",
         volume.geometry.position == volumePosition.rawValue,
@@ -647,8 +643,8 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
 
     var batteryStatePresent = false
     if let position = composition.layout.position(of: .battery) {
-      let battery: SketchyBarItemQuery = try query("macarchy.battery")
-      let remaining: SketchyBarItemQuery = try query("macarchy.battery.remaining")
+      let battery: SketchyBarItemQuery = try query(SketchyBarContract.batteryItem)
+      let remaining: SketchyBarItemQuery = try query(SketchyBarContract.batteryRemainingItem)
       let events: [String: SketchyBarEventQuery] = try query("events")
       let eventBits = [
         "power_source_change", "system_woke", "mouse.clicked", "mouse.exited.global",
@@ -659,14 +655,14 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         Self.isBatteryLabel(battery.label.value)
         && Self.isBatteryEstimate(remaining.label.value)
       guard eventBits.count == 4,
-        battery.name == "macarchy.battery", battery.type == "item",
+        battery.name == SketchyBarContract.batteryItem, battery.type == "item",
         battery.geometry.drawing == "on", battery.geometry.position == position.rawValue,
         battery.label.drawing == "on", batteryStatePresent,
         battery.scripting.script
           == pluginPath("battery"),
         battery.scripting.updateFrequency == 180,
         battery.scripting.updateMask.map({ $0 & mask == mask }) == true,
-        remaining.name == "macarchy.battery.remaining", remaining.type == "item",
+        remaining.name == SketchyBarContract.batteryRemainingItem, remaining.type == "item",
         remaining.label.drawing == "on"
       else {
         return drift("running SketchyBar battery state, popup, or subscriptions are incomplete")
@@ -676,7 +672,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     var metricModules: [String] = []
     for module in [SketchyBarModule.cpu, .memory] {
       guard let position = composition.layout.position(of: module) else { continue }
-      let name = "macarchy.\(module.rawValue)"
+      let name = SketchyBarContract.metricItem(module)
       let metric: SketchyBarItemQuery = try query(name)
       guard metric.name == name, metric.type == "item",
         metric.geometry.drawing == "on", metric.geometry.position == position.rawValue,
@@ -694,7 +690,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
 
     for module in [SketchyBarModule.battery, .cpu, .memory]
     where composition.layout.hasTrailingGroupPadding(module) {
-      let name = "macarchy.\(module.rawValue).padding"
+      let name = SketchyBarContract.groupPaddingItem(module)
       let padding: SketchyBarItemQuery = try query(name)
       guard padding.name == name, padding.type == "item", padding.geometry.drawing == "on",
         padding.geometry.position == composition.layout.position(of: module)?.rawValue,
@@ -707,8 +703,8 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
 
     var wifiStatePresent = false
     if let position = composition.layout.position(of: .wifi) {
-      let group: SketchyBarItemQuery = try query("macarchy.wifi.bracket")
-      guard group.name == "macarchy.wifi.bracket", group.type == "bracket",
+      let group: SketchyBarItemQuery = try query(SketchyBarContract.wifiBracketItem)
+      guard group.name == SketchyBarContract.wifiBracketItem, group.type == "bracket",
         group.geometry.drawing == "on",
         group.geometry.position == position.rawValue, group.label.drawing == "off",
         group.bracket?.sorted() == ["macarchy.wifi", "macarchy.wifi.down", "macarchy.wifi.up"],
@@ -721,9 +717,9 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         return drift("running SketchyBar Wi-Fi popup group is incomplete")
       }
       let events: [String: SketchyBarEventQuery] = try query("events")
-      for name in SketchyBarCoreRuntimeInspection.wifiItems {
+      for name in SketchyBarContract.wifiItems {
         let item: SketchyBarItemQuery = try query(name)
-        let main = name == "macarchy.wifi"
+        let main = name == SketchyBarContract.wifiItem
         let rate = name == "macarchy.wifi.up" || name == "macarchy.wifi.down"
         let required =
           main ? ["mouse.clicked", "mouse.exited.global", "system_woke"] : ["mouse.clicked"]
@@ -751,12 +747,12 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
 
     var toggleStatePresent = false
     if let position = composition.layout.position(of: .toggle) {
-      let toggle: SketchyBarItemQuery = try query("macarchy.toggle")
+      let toggle: SketchyBarItemQuery = try query(SketchyBarContract.toggleItem)
       let events: [String: SketchyBarEventQuery] = try query("events")
       let bits = ["display_change", "system_woke"].compactMap { events[$0]?.bit }
       let mask = bits.reduce(UInt64(0), |)
       let heartbeat = ToggleHeartbeat.parse(toggle.label.value)
-      guard toggle.name == "macarchy.toggle", toggle.type == "item",
+      guard toggle.name == SketchyBarContract.toggleItem, toggle.type == "item",
         toggle.geometry.drawing == "off",
         toggle.geometry.position == position.rawValue, toggle.label.drawing == "off",
         let heartbeat,
@@ -776,9 +772,10 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     }
     var appleStatePresent = false
     if let position = composition.layout.position(of: .apple) {
-      let apple: SketchyBarItemQuery = try query("macarchy.apple")
+      let apple: SketchyBarItemQuery = try query(SketchyBarContract.appleItem)
       let events: [String: SketchyBarEventQuery] = try query("events")
-      guard apple.name == "macarchy.apple", apple.type == "item", apple.geometry.drawing == "on",
+      guard apple.name == SketchyBarContract.appleItem, apple.type == "item",
+        apple.geometry.drawing == "on",
         apple.geometry.position == position.rawValue, apple.label.drawing == "off",
         apple.label.value.isEmpty,
         apple.scripting.script
@@ -797,10 +794,10 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       let script = pluginPath("media")
       let events: [String: SketchyBarEventQuery] = try query("events")
       var observed: [String: SketchyBarItemQuery] = [:]
-      for name in SketchyBarMedia.items {
+      for name in SketchyBarContract.mediaItems {
         let item: SketchyBarItemQuery = try query(name)
         observed[name] = item
-        let main = name == "macarchy.media"
+        let main = name == SketchyBarContract.mediaItem
         let detail = ["macarchy.media.artist", "macarchy.media.title"].contains(name)
         let preview = name == "macarchy.media.preview"
         let required =
@@ -834,10 +831,10 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
             "running SketchyBar media scripts, controls, preview, or subscriptions are incomplete")
         }
       }
-      let main = observed["macarchy.media"]!
+      let main = observed[SketchyBarContract.mediaItem]!
       let playing = main.label.value != "inactive"
       guard Self.validMediaIdentity(main.label.value), main.label.drawing == "off",
-        ["macarchy.media", "macarchy.media.artist", "macarchy.media.title"].allSatisfy({
+        [SketchyBarContract.mediaItem, "macarchy.media.artist", "macarchy.media.title"].allSatisfy({
           observed[$0]?.geometry.drawing == (playing ? "on" : "off")
         }),
         !playing || observed["macarchy.media.title"]?.label.value.isEmpty == false
@@ -884,7 +881,9 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     value == "inactive" || value.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
   }
 
-  private func validCompanion(_ companion: ClockCompanion, position: String) throws -> Bool {
+  private func validCompanion(_ companion: SketchyBarClockCompanion, position: String) throws
+    -> Bool
+  {
     let item: SketchyBarItemQuery = try query(companion.item)
     let detail: SketchyBarItemQuery = try query(companion.detailItem)
     let events: [String: SketchyBarEventQuery] = try query("events")
@@ -904,8 +903,8 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
   }
 
   private func validClockPreview() throws -> Bool {
-    let item: SketchyBarItemQuery = try query(SketchyBarCalendar.previewItem)
-    return item.name == SketchyBarCalendar.previewItem && item.type == "item"
+    let item: SketchyBarItemQuery = try query(SketchyBarContract.clockPreviewItem)
+    return item.name == SketchyBarContract.clockPreviewItem && item.type == "item"
       && item.geometry.drawing == "off" && item.geometry.position == "right"
       && Self.isCanonicalUInt64(item.label.value)
       && item.scripting.hasNoScript
@@ -982,39 +981,15 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     spaceModule: SketchyBarSpaceModule,
     spaceIndices: [Int]
   ) -> [String] {
-    var names = [SketchyBarConfigurationComposer.readyItem]
-    if layout.position(of: .clock) != nil {
-      names.append("macarchy.clock")
-      names.append(SketchyBarCalendar.previewItem)
-      names += ClockCompanion.all.flatMap { [$0.item, $0.detailItem] }
-    }
-    if layout.position(of: .media) != nil { names += SketchyBarMedia.items }
-    if layout.position(of: .apple) != nil { names.append("macarchy.apple") }
-    if layout.position(of: .toggle) != nil { names.append("macarchy.toggle") }
-    if layout.position(of: .volume) != nil {
-      names += [
-        "macarchy.volume", "macarchy.volume.slider", "macarchy.volume.icon",
-        "macarchy.volume.bracket", "macarchy.volume.padding",
-      ]
-    }
-    if layout.position(of: .battery) != nil {
-      names += ["macarchy.battery", "macarchy.battery.remaining"]
-    }
-    for module in [SketchyBarModule.battery, .cpu, .memory]
-    where layout.hasTrailingGroupPadding(module) {
-      names.append("macarchy.\(module.rawValue).padding")
-    }
-    for module in [SketchyBarModule.cpu, .memory] where layout.position(of: module) != nil {
-      names.append("macarchy.\(module.rawValue)")
-    }
-    if layout.position(of: .wifi) != nil {
-      names += SketchyBarCoreRuntimeInspection.wifiItems + ["macarchy.wifi.bracket"]
-    }
+    let placed = SketchyBarPosition.allCases.flatMap(layout.modules(at:))
+    var names = [SketchyBarContract.readyItem] + placed.flatMap(SketchyBarContract.items(of:))
+    names += placed.filter(layout.hasTrailingGroupPadding).map(
+      SketchyBarContract.groupPaddingItem)
     switch spaceModule {
     case .dynamicYabai:
-      names += spaceIndices.map { "macarchy.space.\($0)" }
+      names += spaceIndices.map(SketchyBarContract.spaceItem)
     case .disabledWithoutDesktop:
-      names.append("macarchy.spaces.unavailable")
+      names.append(SketchyBarContract.spacesUnavailableItem)
     case .hidden:
       break
     }
@@ -1200,7 +1175,7 @@ private struct SketchyBarItemQuery: Decodable {
   let popup: Popup?
 
   var isReadyMarker: Bool {
-    name == SketchyBarConfigurationComposer.readyItem && type == "item"
+    name == SketchyBarContract.readyItem && type == "item"
       && geometry.drawing == "off" && geometry.position == "right"
   }
 }

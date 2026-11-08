@@ -67,7 +67,7 @@ package enum EditorProviderSelection: String, Codable, Sendable, PortableProfile
   package static let defaults = Self.neovim
 }
 
-package enum SketchyBarModule: String, Codable, Hashable, Sendable {
+package enum SketchyBarModule: String, CaseIterable, Codable, Hashable, Sendable {
   case spaces
   case clock
   case volume

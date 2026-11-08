@@ -6,13 +6,10 @@ import ThemeCore
 /// sign while it is paused. The state comes from idle activation's record and launch agent,
 /// never from process names.
 enum SketchyBarSaverPausedIndicator {
-  static let item = "macarchy.saver-paused"
-  static let detailItem = "macarchy.saver-paused.detail"
-
   /// A click resumes paused idle starts and otherwise runs `saver idle toggle`, which refuses a
   /// launch agent Macarchy did not write with its own error alert.
   static func toggle(_ activation: SaverIdleActivation) -> CompanionToggle {
-    let icon = SketchyBarConfigurationComposer.saverIdleIcon
+    let icon = SketchyBarClockCompanion.saverIdleIcon
     let click = ["saver", "idle", "toggle"]
     if case .conflict(let plist) = activation.agent {
       return CompanionToggle(
@@ -31,7 +28,7 @@ enum SketchyBarSaverPausedIndicator {
     if enabled.paused {
       return CompanionToggle(
         lit: true, olderBarClick: ["saver", "resume"],
-        icon: SketchyBarConfigurationComposer.saverPausedIcon,
+        icon: SketchyBarClockCompanion.saverPausedIcon,
         detail: "Idle screensaver paused. Click to resume.", click: ["saver", "resume"])
     }
     return CompanionToggle(
@@ -45,22 +42,14 @@ enum SketchyBarSaverPausedIndicator {
 extension Desktop {
   struct SaverPausedIndicator: ParsableCommand {
     static let configuration = CommandConfiguration(
-      commandName: "_saver-paused-indicator", shouldDisplay: false)
-    @Option var sender = "forced"
-    @Option var stateRoot: String
-    @Option var accent: String
-    /// The dimmed color. Bars generated before the toggles omit it.
-    @Option var muted: String?
+      commandName: SketchyBarClockCompanion.saverPaused.helperCommand, shouldDisplay: false)
+    @OptionGroup var options: CompanionToggleOptions
 
     mutating func run() throws {
-      let root = URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
-      let idle = SaverIdle.live(stateRoot: root)
-      try SketchyBarCompanionToggle(
-        companion: .saverPaused, stateRoot: root, processRunner: .live,
-        read: { try SketchyBarSaverPausedIndicator.toggle(idle.activation()) },
-        launch: SketchyBarCompanionToggle.launchMacarchy
-      )
-      .execute(sender: sender, accent: accent, muted: muted)
+      try options.execute(.saverPaused) { root in
+        let idle = SaverIdle.live(stateRoot: root)
+        return { try SketchyBarSaverPausedIndicator.toggle(idle.activation()) }
+      }
     }
   }
 }

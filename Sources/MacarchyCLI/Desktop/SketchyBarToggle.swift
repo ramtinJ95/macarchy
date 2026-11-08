@@ -187,7 +187,7 @@ enum ToggleError: Error {
 extension Desktop {
   struct Toggle: ParsableCommand {
     static let configuration = CommandConfiguration(
-      commandName: "_bar-toggle", shouldDisplay: false)
+      commandName: SketchyBarContract.barToggleCommand, shouldDisplay: false)
     @Option var token: String
     @Option var stateRoot: String
 

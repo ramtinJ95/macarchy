@@ -19,9 +19,9 @@ struct SketchyBarCompanionToggleTests {
     click: ["saver", "idle", "toggle"])
 
   @Test(
-    arguments: [ClockCompanion.keepAwake, .microphone, .saverPaused],
+    arguments: [SketchyBarClockCompanion.keepAwake, .microphone, .saverPaused],
     ["mouse.entered", "mouse.exited", "mouse.exited.global"])
-  func hoverOnlyTogglesTheDetailPopup(companion: ClockCompanion, sender: String) throws {
+  func hoverOnlyTogglesTheDetailPopup(companion: SketchyBarClockCompanion, sender: String) throws {
     let run = try CompanionToggleHarness.run(companion, sender: sender) {
       Issue.record("hover must not read the feature")
       return Self.off
@@ -150,7 +150,8 @@ enum CompanionToggleHarness {
   }
 
   static func run(
-    _ companion: ClockCompanion, sender: String, muted: String? = CompanionToggleHarness.muted,
+    _ companion: SketchyBarClockCompanion, sender: String,
+    muted: String? = CompanionToggleHarness.muted,
     read: @escaping () throws -> CompanionToggle
   ) throws -> Run {
     let bar = BarCalls()

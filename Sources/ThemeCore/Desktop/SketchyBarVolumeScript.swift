@@ -12,7 +12,7 @@ enum SketchyBarVolumeScript {
     BAR=/opt/homebrew/bin/sketchybar
     case "${NAME-}" in macarchy.volume|macarchy.volume.icon|macarchy.volume.slider|macarchy.volume.device.*) ;; *) exit 1 ;; esac
     picker() {
-      \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _audio-picker --action "$1" --name "$NAME" --plugin-path "$0" --text-color "$MACARCHY_TEXT_COLOR" --muted-color "$MACARCHY_MUTED_COLOR"
+      \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop \(SketchyBarContract.audioPickerCommand) --action "$1" --name "$NAME" --plugin-path "$0" --text-color "$MACARCHY_TEXT_COLOR" --muted-color "$MACARCHY_MUTED_COLOR"
     }
     finish() {
       rc=$?

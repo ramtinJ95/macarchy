@@ -8,7 +8,7 @@ enum SketchyBarWiFiScript {
     : "${NAME:?SketchyBar did not provide an item name}"
     PALETTE=\(DesktopShellSyntax.literal(palettePath))
     . "$PALETTE"
-    exec \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _wifi \\
+    exec \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop \(SketchyBarContract.wifiCommand) \\
       --name "$NAME" --sender "${SENDER:-routine}" \\
       --text-color "$MACARCHY_TEXT_COLOR" --accent-color "$MACARCHY_ACCENT_COLOR" \\
       --muted-color "$MACARCHY_MUTED_COLOR" --error-color "$MACARCHY_BATTERY_RED"
