@@ -1,23 +1,60 @@
 import Foundation
 
+/// Every path is stored standardized, whether set by the initializer or assigned later.
 package struct ThemeConsumerPaths: Sendable {
-  package let kittyConfigurationURL: URL
-  package let sketchyBarConfigurationURL: URL
-  package let shellConfigurationURL: URL
-  package let ezaConfigurationDirectoryURL: URL
-  package let batConfigurationDirectoryURL: URL
-  package let batCacheDirectoryURL: URL
-  package let btopConfigurationDirectoryURL: URL
-  package let yaziConfigurationDirectoryURL: URL
-  package let atuinConfigurationDirectoryURL: URL
-  package let neovimConfigurationDirectoryURL: URL
-  package let starshipConfigurationURL: URL
-  package let starshipBehaviorURL: URL
-  package let piConfigurationDirectoryURL: URL
-  package let herdrConfigurationURL: URL
-  package let tuicrConfigurationDirectoryURL: URL
-  package let codexConfigurationDirectoryURL: URL
-  package let spicetifyConfigurationDirectoryURL: URL
+  package var kittyConfigurationURL: URL {
+    didSet { kittyConfigurationURL = kittyConfigurationURL.standardizedFileURL }
+  }
+  package var sketchyBarConfigurationURL: URL {
+    didSet { sketchyBarConfigurationURL = sketchyBarConfigurationURL.standardizedFileURL }
+  }
+  package var shellConfigurationURL: URL {
+    didSet { shellConfigurationURL = shellConfigurationURL.standardizedFileURL }
+  }
+  package var ezaConfigurationDirectoryURL: URL {
+    didSet { ezaConfigurationDirectoryURL = ezaConfigurationDirectoryURL.standardizedFileURL }
+  }
+  package var batConfigurationDirectoryURL: URL {
+    didSet { batConfigurationDirectoryURL = batConfigurationDirectoryURL.standardizedFileURL }
+  }
+  package var batCacheDirectoryURL: URL {
+    didSet { batCacheDirectoryURL = batCacheDirectoryURL.standardizedFileURL }
+  }
+  package var btopConfigurationDirectoryURL: URL {
+    didSet { btopConfigurationDirectoryURL = btopConfigurationDirectoryURL.standardizedFileURL }
+  }
+  package var yaziConfigurationDirectoryURL: URL {
+    didSet { yaziConfigurationDirectoryURL = yaziConfigurationDirectoryURL.standardizedFileURL }
+  }
+  package var atuinConfigurationDirectoryURL: URL {
+    didSet { atuinConfigurationDirectoryURL = atuinConfigurationDirectoryURL.standardizedFileURL }
+  }
+  package var neovimConfigurationDirectoryURL: URL {
+    didSet { neovimConfigurationDirectoryURL = neovimConfigurationDirectoryURL.standardizedFileURL }
+  }
+  package var starshipConfigurationURL: URL {
+    didSet { starshipConfigurationURL = starshipConfigurationURL.standardizedFileURL }
+  }
+  package var starshipBehaviorURL: URL {
+    didSet { starshipBehaviorURL = starshipBehaviorURL.standardizedFileURL }
+  }
+  package var piConfigurationDirectoryURL: URL {
+    didSet { piConfigurationDirectoryURL = piConfigurationDirectoryURL.standardizedFileURL }
+  }
+  package var herdrConfigurationURL: URL {
+    didSet { herdrConfigurationURL = herdrConfigurationURL.standardizedFileURL }
+  }
+  package var tuicrConfigurationDirectoryURL: URL {
+    didSet { tuicrConfigurationDirectoryURL = tuicrConfigurationDirectoryURL.standardizedFileURL }
+  }
+  package var codexConfigurationDirectoryURL: URL {
+    didSet { codexConfigurationDirectoryURL = codexConfigurationDirectoryURL.standardizedFileURL }
+  }
+  package var spicetifyConfigurationDirectoryURL: URL {
+    didSet {
+      spicetifyConfigurationDirectoryURL = spicetifyConfigurationDirectoryURL.standardizedFileURL
+    }
+  }
 
   package init(
     kittyConfigurationURL: URL,
@@ -56,5 +93,11 @@ package struct ThemeConsumerPaths: Sendable {
     self.codexConfigurationDirectoryURL = codexConfigurationDirectoryURL.standardizedFileURL
     self.spicetifyConfigurationDirectoryURL =
       spicetifyConfigurationDirectoryURL.standardizedFileURL
+  }
+
+  /// The home directory implied by the Pi configuration directory (`<home>/.pi/agent`), found by
+  /// stripping its last two components. An overridden Pi directory moves this home with it.
+  package var piDerivedHomeDirectoryURL: URL {
+    piConfigurationDirectoryURL.deletingLastPathComponent().deletingLastPathComponent()
   }
 }

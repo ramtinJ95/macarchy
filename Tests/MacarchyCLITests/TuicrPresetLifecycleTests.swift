@@ -561,26 +561,10 @@ private struct TuicrFixture: LegacySetupOwnershipFixture {
   }
 
   func runtimeConsumerPaths() -> ThemeConsumerPaths {
-    let paths = testConsumerPaths()
-    return ThemeConsumerPaths(
-      kittyConfigurationURL: paths.kittyConfigurationURL,
-      sketchyBarConfigurationURL: paths.sketchyBarConfigurationURL,
-      shellConfigurationURL: paths.shellConfigurationURL,
-      ezaConfigurationDirectoryURL: paths.ezaConfigurationDirectoryURL,
-      batConfigurationDirectoryURL: paths.batConfigurationDirectoryURL,
-      batCacheDirectoryURL: paths.batCacheDirectoryURL,
-      btopConfigurationDirectoryURL: paths.btopConfigurationDirectoryURL,
-      yaziConfigurationDirectoryURL: paths.yaziConfigurationDirectoryURL,
-      atuinConfigurationDirectoryURL: paths.atuinConfigurationDirectoryURL,
-      neovimConfigurationDirectoryURL: paths.neovimConfigurationDirectoryURL,
-      starshipConfigurationURL: paths.starshipConfigurationURL,
-      starshipBehaviorURL: root.appending(path: "missing-starship-behavior.toml"),
-      piConfigurationDirectoryURL: paths.piConfigurationDirectoryURL,
-      herdrConfigurationURL: paths.herdrConfigurationURL,
-      tuicrConfigurationDirectoryURL: configuration.deletingLastPathComponent(),
-      codexConfigurationDirectoryURL: paths.codexConfigurationDirectoryURL,
-      spicetifyConfigurationDirectoryURL: paths.spicetifyConfigurationDirectoryURL
-    )
+    var paths = testConsumerPaths()
+    paths.starshipBehaviorURL = root.appending(path: "missing-starship-behavior.toml")
+    paths.tuicrConfigurationDirectoryURL = configuration.deletingLastPathComponent()
+    return paths
   }
 
   func activateTheme() throws {

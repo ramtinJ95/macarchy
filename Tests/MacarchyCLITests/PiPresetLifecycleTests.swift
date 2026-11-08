@@ -562,26 +562,9 @@ private struct PiFixture: LegacySetupOwnershipFixture {
   }
 
   private var consumerPaths: ThemeConsumerPaths {
-    let paths = testConsumerPaths()
-    return ThemeConsumerPaths(
-      kittyConfigurationURL: paths.kittyConfigurationURL,
-      sketchyBarConfigurationURL: paths.sketchyBarConfigurationURL,
-      shellConfigurationURL: paths.shellConfigurationURL,
-      ezaConfigurationDirectoryURL: paths.ezaConfigurationDirectoryURL,
-      batConfigurationDirectoryURL: paths.batConfigurationDirectoryURL,
-      batCacheDirectoryURL: paths.batCacheDirectoryURL,
-      btopConfigurationDirectoryURL: paths.btopConfigurationDirectoryURL,
-      yaziConfigurationDirectoryURL: paths.yaziConfigurationDirectoryURL,
-      atuinConfigurationDirectoryURL: paths.atuinConfigurationDirectoryURL,
-      neovimConfigurationDirectoryURL: paths.neovimConfigurationDirectoryURL,
-      starshipConfigurationURL: paths.starshipConfigurationURL,
-      starshipBehaviorURL: paths.starshipBehaviorURL,
-      piConfigurationDirectoryURL: settings.deletingLastPathComponent(),
-      herdrConfigurationURL: paths.herdrConfigurationURL,
-      tuicrConfigurationDirectoryURL: paths.tuicrConfigurationDirectoryURL,
-      codexConfigurationDirectoryURL: paths.codexConfigurationDirectoryURL,
-      spicetifyConfigurationDirectoryURL: paths.spicetifyConfigurationDirectoryURL
-    )
+    var paths = testConsumerPaths()
+    paths.piConfigurationDirectoryURL = settings.deletingLastPathComponent()
+    return paths
   }
 
   private static func realCoordinator(
