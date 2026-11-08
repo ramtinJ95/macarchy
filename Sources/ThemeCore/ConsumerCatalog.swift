@@ -166,7 +166,7 @@ package struct ConsumerRendererRegistration: Sendable {
 
 extension ConsumerRendererRegistration {
   /// One text artifact whose path is shared by its metadata and its rendered output.
-  fileprivate static func text(
+  static func text(
     id: String,
     version: Int,
     path: String,
@@ -429,12 +429,7 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .bat,
       mode: .runtime(.bat, requirement: .required),
-      renderer: .text(
-        id: TextMateThemeArtifact.rendererID, version: TextMateThemeArtifact.rendererVersion,
-        path: TextMateThemeArtifact.outputPath
-      ) { package, _ in
-        TextMateThemeArtifact.render(package: package)
-      },
+      renderer: TextMateThemeArtifact.batRenderer,
       dependencies: [.init(id: BatAdapter.id, role: .requiredAdapter)],
       setupManaged: true
     ),
@@ -645,21 +640,7 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .yazi,
       mode: .runtime(.yazi, requirement: .required),
-      renderer: ConsumerRendererRegistration(
-        id: YaziAdapter.id,
-        version: YaziAdapter.rendererVersion,
-        artifacts: [
-          RenderedArtifactMetadata(path: YaziAdapter.flavorOutputPath),
-          RenderedArtifactMetadata(path: TextMateThemeArtifact.yaziOutputPath),
-        ]
-      ) { package, _, _ in
-        let textMate = TextMateThemeArtifact.render(package: package)
-        return [
-          ConsumerRenderedOutput(
-            path: YaziAdapter.flavorOutputPath, string: YaziAdapter.renderFlavor(package: package)),
-          ConsumerRenderedOutput(path: TextMateThemeArtifact.yaziOutputPath, string: textMate),
-        ]
-      },
+      renderer: TextMateThemeArtifact.yaziRenderer,
       dependencies: [.init(id: YaziAdapter.id, role: .requiredAdapter)],
       setupManaged: true
     ),

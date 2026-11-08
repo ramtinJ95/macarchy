@@ -18,7 +18,6 @@ enum YaziAdapterError: Error, CustomStringConvertible, Sendable {
 package struct YaziAdapter: Sendable {
   static let id = "yazi"
   package static let flavorOutputPath = "generated/yazi-flavor.toml"
-  static let rendererVersion = 1
   package static let flavorName = "macarchy-current"
   package static let selectionTable = "flavor"
   package static let selectionKey = "dark"

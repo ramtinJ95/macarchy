@@ -3,10 +3,18 @@ import Foundation
 public struct ThemeRenderer: Sendable {
   static let capabilitiesOutputPath = "generated/capabilities.json"
   static let themeOutputPath = "theme.json"
-  private static let internalArtifactMetadata = [
-    RenderedArtifactMetadata(path: capabilitiesOutputPath, requirement: .optional),
-    RenderedArtifactMetadata(path: themeOutputPath),
+  // Renderers owned here rather than by the consumer catalog. Their IDs and versions are
+  // persisted in generation manifests.
+  private static let internalRenderers = [
+    (
+      id: "capabilities", version: 1,
+      artifact: RenderedArtifactMetadata(path: capabilitiesOutputPath, requirement: .optional)
+    ),
+    (id: "normalized_theme", version: 1, artifact: RenderedArtifactMetadata(path: themeOutputPath)),
   ]
+  static let internalRendererVersions = Dictionary(
+    uniqueKeysWithValues: internalRenderers.map { ($0.id, $0.version) })
+  private static let internalArtifactMetadata = internalRenderers.map { $0.artifact }
   private let catalog: ConsumerCatalog
 
   static func validatedArtifactMetadata(
