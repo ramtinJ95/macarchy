@@ -69,10 +69,8 @@ package struct SpicetifyAdapter: Sendable {
     executableURL: URL,
     controlIsAvailable: @escaping @Sendable () -> Bool,
     processRunner: ProcessRunner,
-    spicetifyVersionProvider: @escaping @Sendable () throws -> String = {
-      SpicetifyAdapter.minimumVersion
-    },
-    spotifyVersionProvider: @escaping @Sendable () throws -> String = { "1.2.97" },
+    spicetifyVersionProvider: @escaping @Sendable () throws -> String,
+    spotifyVersionProvider: @escaping @Sendable () throws -> String,
     refreshPreparation: @escaping @Sendable () throws -> Void = {},
     waitBetweenProcessChecks: @escaping @Sendable () throws -> Void = {
       try Task.checkCancellation()

@@ -49,9 +49,7 @@ package struct PiAdapter: Sendable {
     configurationDirectoryURL: URL,
     executableURL: URL,
     controlIsAvailable: @escaping @Sendable () -> Bool,
-    processRunner: ProcessRunner = ProcessRunner { _ in
-      ProcessResult(terminationStatus: 0, output: PiAdapter.minimumVersion)
-    },
+    processRunner: ProcessRunner,
     selectionIsApplied: @escaping @Sendable () throws -> Bool = { true },
     themeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true }
   ) {

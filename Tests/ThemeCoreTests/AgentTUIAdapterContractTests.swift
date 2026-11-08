@@ -27,7 +27,10 @@ extension AdapterContractTests {
       root: root,
       configurationDirectoryURL: configuration,
       executableURL: PiAdapter.liveExecutableURL,
-      controlIsAvailable: { true }
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in
+        ProcessResult(terminationStatus: 0, output: PiAdapter.minimumVersion)
+      }
     )
     let outcome = try await adapter.reconciliation().run()
     #expect(outcome.status == .applied)
