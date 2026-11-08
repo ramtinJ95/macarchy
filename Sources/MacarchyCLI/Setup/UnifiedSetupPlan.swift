@@ -437,17 +437,10 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   }
 
   private func providers(_ profile: PortableProfile) -> [String: String] {
-    let environment = profile.environment
-    return [
-      "desktop": profile.desktop.provider.rawValue,
-      "focus_ring": environment.focusRing.rawValue,
-      "editor": environment.editor.rawValue,
-      "history": environment.history.rawValue,
-      "prompt": environment.prompt.rawValue,
-      "shell": environment.shell.rawValue,
-      "terminal": environment.terminal.rawValue,
-      "top_bar": profile.topBar.rawValue,
-    ]
+    var providers = profile.environment.roleProviders
+    providers["desktop"] = profile.desktop.provider.rawValue
+    providers["top_bar"] = profile.topBar.rawValue
+    return providers
   }
 
   private func enabledThemeAdapterIDs(_ profile: PortableProfile) -> [String] {
