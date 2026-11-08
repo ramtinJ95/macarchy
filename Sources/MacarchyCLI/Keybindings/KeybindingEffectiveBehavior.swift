@@ -88,7 +88,7 @@ struct KeybindingProcessInspector: Sendable {
   let inspect: @Sendable () -> KeybindingProcessInspection
 
   static var supportedExecutablePath: String {
-    URL(filePath: "/opt/homebrew/bin/skhd")
+    ExternalTool.skhd
       .resolvingSymlinksInPath().standardizedFileURL.path
   }
 

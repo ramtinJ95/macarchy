@@ -37,7 +37,7 @@ struct KeybindingLifecycleController: Sendable {
 
   static let live = KeybindingLifecycleController(
     preflight: {
-      let executable = "/opt/homebrew/bin/skhd"
+      let executable = ExternalTool.skhd.path
       guard FileManager.default.isExecutableFile(atPath: executable) else {
         throw KeybindingsApplyError.lifecycle("supported skhd is unavailable at \(executable)")
       }
@@ -65,7 +65,7 @@ struct KeybindingLifecycleController: Sendable {
   private static func runSkhd(_ arguments: [String]) throws {
     let result = try ProcessRunner.live.run(
       ProcessRequest(
-        executableURL: URL(filePath: "/opt/homebrew/bin/skhd"),
+        executableURL: ExternalTool.skhd,
         arguments: arguments,
         timeout: 10
       )

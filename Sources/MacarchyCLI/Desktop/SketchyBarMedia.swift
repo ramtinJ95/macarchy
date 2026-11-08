@@ -104,14 +104,14 @@ struct SketchyBarMedia {
     ]
     if let command = controls[sender] {
       guard name == sender else { throw MediaError.invalidInvocation }
-      _ = try run("/opt/homebrew/bin/nowplaying-cli", [command])
+      _ = try run(ExternalTool.nowplayingCLI.path, [command])
     } else if name != "macarchy.media" {
       return
     }
     // nowplaying-cli 2.1.0 polls the inactive controller for ~2.5s and has a
     // 3.5s hard deadline. Let it report genuine empty metadata before timing out.
     let media = try NowPlayingMedia.parse(
-      run("/opt/homebrew/bin/nowplaying-cli", ["get-raw"], timeout: 5))
+      run(ExternalTool.nowplayingCLI.path, ["get-raw"], timeout: 5))
     guard media.playing else {
       try bar([
         "--set", "macarchy.media", "drawing=off", "label=inactive", "label.drawing=off",
@@ -175,7 +175,7 @@ struct SketchyBarMedia {
   }
 
   @discardableResult private func bar(_ arguments: [String]) throws -> String {
-    try run("/opt/homebrew/bin/sketchybar", arguments)
+    try run(ExternalTool.sketchybar.path, arguments)
   }
 
   private func run(_ path: String, _ arguments: [String], timeout: TimeInterval = 2) throws

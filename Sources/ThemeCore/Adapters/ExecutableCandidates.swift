@@ -7,7 +7,7 @@ package func externalThenHomebrewExecutableURLs(
 ) -> [URL] {
   [
     homeDirectory.standardizedFileURL.appending(path: externalRelativePath),
-    URL(filePath: "/opt/homebrew/bin/\(homebrewExecutableName)"),
+    ExternalTool.homebrewExecutable(homebrewExecutableName),
   ]
 }
 

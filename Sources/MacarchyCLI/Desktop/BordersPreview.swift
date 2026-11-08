@@ -134,7 +134,7 @@ enum BordersPreviewError: Error, CustomStringConvertible {
   var description: String {
     switch self {
     case .unavailable:
-      "JankyBorders is missing at /opt/homebrew/bin/borders; review installation of felixkratz/formulae/borders first."
+      "JankyBorders is missing at \(ExternalTool.borders.path); review installation of felixkratz/formulae/borders first."
     case .unsupportedVersion(let version):
       "Preview supports borders-v1.9.0; observed '\(version)'."
     case .incumbent(let detail):
@@ -195,7 +195,7 @@ struct BordersPreviewRunner {
 
   static func live(
     root: URL,
-    executable: URL = URL(filePath: "/opt/homebrew/bin/borders"),
+    executable: URL = ExternalTool.borders,
     home: URL = FileManager.default.homeDirectoryForCurrentUser,
     processRunner: ProcessRunner = .live
   ) -> Self {

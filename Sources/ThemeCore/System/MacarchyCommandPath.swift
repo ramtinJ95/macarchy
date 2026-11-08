@@ -12,7 +12,7 @@ package enum MacarchyCommandPath {
     {
       // Keep a broken/missing Homebrew link visible to normal command preflight;
       // falling back to this Cellar version would recreate the upgrade defect.
-      return URL(filePath: "/opt/homebrew/bin/\(components[7])")
+      return ExternalTool.homebrewExecutable(components[7])
     }
     // Preserve a supplied non-Homebrew helper entry point. If the caller already
     // resolved a source-build symlink, we cannot reconstruct its stable alias.

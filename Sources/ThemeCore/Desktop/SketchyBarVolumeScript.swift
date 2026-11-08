@@ -2,7 +2,7 @@ import Foundation
 
 enum SketchyBarVolumeScript {
   static func render(
-    palettePath: String, macarchyExecutablePath: String = "/opt/homebrew/bin/macarchy"
+    palettePath: String, macarchyExecutablePath: String = ExternalTool.macarchy.path
   ) -> String {
     """
     #!/bin/sh

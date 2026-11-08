@@ -49,14 +49,14 @@ struct YabaiWallpaperSignal: Sendable {
 
   static func personal(
     homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
-    macarchyExecutableURL: URL = URL(filePath: "/opt/homebrew/bin/macarchy")
+    macarchyExecutableURL: URL = ExternalTool.macarchy
   ) -> Self {
     Self(
       configurationURL: homeDirectory.appending(path: ".config/yabai/yabairc"),
       macarchyExecutableURL: macarchyExecutableURL,
-      yabaiExecutableURL: URL(filePath: "/opt/homebrew/bin/yabai"),
+      yabaiExecutableURL: ExternalTool.yabai,
       compatibleMacarchyExecutableURLs: [
-        URL(filePath: "/opt/homebrew/bin/macarchy"),
+        ExternalTool.macarchy,
         homeDirectory.appending(path: ".local/bin/macarchy"),
       ]
     )

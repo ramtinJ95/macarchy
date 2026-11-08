@@ -227,8 +227,8 @@ struct SketchyBarCoreRuntimeController: Sendable {
 }
 
 struct SketchyBarCoreRuntimeVerifier: Sendable {
-  static let controlURL = URL(filePath: "/opt/homebrew/bin/sketchybar")
-  static let yabaiURL = URL(filePath: "/opt/homebrew/bin/yabai")
+  static let controlURL = ExternalTool.sketchybar
+  static let yabaiURL = ExternalTool.yabai
 
   let stateRoot: URL
   let processRunner: ProcessRunner

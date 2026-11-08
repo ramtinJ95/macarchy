@@ -3,7 +3,7 @@ import ThemeCore
 
 struct EnvironmentSlackPreset: Sendable {
   static let manualEntryID = "slack_manual_import"
-  static let bundleURL = URL(filePath: "/Applications/Slack.app")
+  static let bundleURL = ExternalTool.slackApplication
 
   let bundleURL: URL
 

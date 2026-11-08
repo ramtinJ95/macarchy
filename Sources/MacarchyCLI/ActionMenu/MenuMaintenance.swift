@@ -50,8 +50,8 @@ struct MenuMaintenance: ParsableCommand {
   static func launch(
     _ action: MaintenanceAction, theme: NormalizedTheme, executableURL: URL,
     profileArguments: [String] = [],
-    kittyApplicationURL: URL = URL(filePath: "/Applications/kitty.app"),
-    yabaiURL: URL = URL(filePath: "/opt/homebrew/bin/yabai"),
+    kittyApplicationURL: URL = ExternalTool.kittyApplication,
+    yabaiURL: URL = ExternalTool.yabai,
     launcherURL: URL = URL(filePath: "/usr/bin/open")
   ) throws -> Process {
     try MenuTerminal.launch(

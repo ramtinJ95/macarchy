@@ -33,7 +33,7 @@ package struct BatAdapter: Sendable {
   /// leaf, relative to the Macarchy state root. Environment apply installs
   /// `~/.config/bat/config` as a link to exactly this path.
   package static let managedConfigurationPath = "environment/current/bat/config"
-  static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/bat")
+  static let liveExecutableURL = ExternalTool.bat
 
   let root: URL
   let configurationDirectoryURL: URL

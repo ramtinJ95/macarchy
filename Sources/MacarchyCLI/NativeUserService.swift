@@ -80,7 +80,7 @@ protocol NativeUserServicePolicy: Sendable {
 
 struct NativeUserService<Policy: NativeUserServicePolicy>: Sendable {
   static var label: String { Policy.label }
-  static var executable: URL { URL(filePath: "/opt/homebrew/bin/\(Policy.name)") }
+  static var executable: URL { ExternalTool.homebrewExecutable(Policy.name) }
   let runner: ProcessRunner
   let process: @Sendable () throws -> UserServiceProcess
 

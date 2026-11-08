@@ -27,7 +27,7 @@ package struct BtopAdapter: Sendable {
   package static let themeName = "macarchy-current"
   package static let themeDirective = "color_theme = \"\(themeName)\""
   package static let themeFileName = "\(themeName).theme"
-  static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/btop")
+  static let liveExecutableURL = ExternalTool.btop
 
   private static let killallURL = URL(filePath: "/usr/bin/killall")
 

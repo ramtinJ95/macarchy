@@ -36,7 +36,7 @@ package struct PiAdapter: Sendable {
   static let rendererVersion = 4
   package static let themeName = "macarchy-current"
   package static let selectionKey = "theme"
-  package static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/pi")
+  package static let liveExecutableURL = ExternalTool.pi
   package static let minimumVersion = "0.84.3"
 
   let root: URL

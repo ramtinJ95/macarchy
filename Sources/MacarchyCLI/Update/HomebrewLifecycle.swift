@@ -29,31 +29,20 @@ struct HomebrewUpdateApproval: Sendable {
 }
 
 struct HomebrewUpdateRunner: Sendable {
-  static let brewURL = URL(filePath: "/opt/homebrew/bin/brew")
+  static let brewURL = ExternalTool.brew
   static let formula = HomebrewTapVersionReader.formula
-  static let mutationEnvironment = [
-    "HOMEBREW_NO_ANALYTICS": "1",
-    "HOMEBREW_NO_AUTOREMOVE": "1",
-    "HOMEBREW_NO_INSTALL_CLEANUP": "1",
-    "HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK": "1",
-  ]
   static let metadataRequest = ProcessRequest(
     executableURL: brewURL,
     arguments: ["update"],
-    environmentOverrides: mutationEnvironment
+    environmentOverrides: HomebrewEnvironment.selfUpdate
   )
   static let upgradeRequest = ProcessRequest(
     executableURL: brewURL,
     arguments: ["upgrade", "--formula", "--no-ask", formula],
-    environmentOverrides: mutationEnvironment.merging(
-      ["HOMEBREW_NO_AUTO_UPDATE": "1"],
-      uniquingKeysWith: { _, override in override }
-    )
+    environmentOverrides: HomebrewEnvironment.selfUpgrade
   )
   static let recoveryCommand =
-    "HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_AUTOREMOVE=1 "
-    + "HOMEBREW_NO_INSTALL_CLEANUP=1 "
-    + "HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 "
+    HomebrewEnvironment.selfReinstallCommandPrefix
     + "brew reinstall --formula --no-ask \(formula)"
 
   let buildInformation: @Sendable () throws -> MacarchyBuildInformation
@@ -320,7 +309,7 @@ struct HomebrewUpdateRunner: Sendable {
         "The installed release failed verification: \(error)" + evidenceError + "\n"
         + "Recovery (reinstall only; no rollback is claimed):\n"
         + "  \(Self.recoveryCommand)\n"
-        + "  /opt/homebrew/bin/macarchy update"
+        + "  \(ExternalTool.macarchy.path) update"
     )
   }
 
@@ -410,10 +399,7 @@ struct HomebrewInstallationVerifier: Sendable {
     executableURL: HomebrewUpdateRunner.brewURL,
     arguments: ["--prefix", HomebrewUpdateRunner.formula],
     timeout: 10,
-    environmentOverrides: [
-      "HOMEBREW_NO_ANALYTICS": "1",
-      "HOMEBREW_NO_AUTO_UPDATE": "1",
-    ]
+    environmentOverrides: HomebrewEnvironment.quiet
   )
 
   let processRunner: ProcessRunner

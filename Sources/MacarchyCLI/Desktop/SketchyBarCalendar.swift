@@ -133,7 +133,7 @@ struct SketchyBarCalendar {
   }
 
   @discardableResult private func bar(_ arguments: [String]) throws -> String {
-    try run("/opt/homebrew/bin/sketchybar", arguments)
+    try run(ExternalTool.sketchybar.path, arguments)
   }
 
   private func run(_ path: String, _ arguments: [String]) throws -> String {

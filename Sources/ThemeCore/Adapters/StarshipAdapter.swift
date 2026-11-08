@@ -42,7 +42,7 @@ package struct StarshipAdapter: Sendable {
   static let outputPath = "generated/starship.toml"
   static let paletteName = "macarchy_current"
   static let rendererVersion = 1
-  static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/starship")
+  static let liveExecutableURL = ExternalTool.starship
 
   let root: URL
   let configurationURL: URL
