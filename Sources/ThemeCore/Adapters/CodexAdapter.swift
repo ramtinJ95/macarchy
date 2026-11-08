@@ -62,7 +62,7 @@ package struct CodexAdapter: Sendable {
   private var themeLink: CanonicalThemeLink {
     CanonicalThemeLink(
       url: configurationDirectoryURL.appending(path: "themes/\(Self.themeName).tmTheme"),
-      destination: root.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
+      destination: StateLayout(root: root).currentThemeArtifact(TextMateThemeArtifact.outputPath)
     )
   }
 

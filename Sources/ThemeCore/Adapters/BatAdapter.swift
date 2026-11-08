@@ -32,7 +32,7 @@ package struct BatAdapter: Sendable {
   /// The only symbolic-link destination accepted for the bat configuration
   /// leaf, relative to the Macarchy state root. Environment apply installs
   /// `~/.config/bat/config` as a link to exactly this path.
-  package static let managedConfigurationPath = "environment/current/bat/config"
+  package static let managedConfigurationPath = StateLayout.environmentCurrentPath("bat/config")
   static let liveExecutableURL = ExternalTool.bat
 
   let root: URL
@@ -49,7 +49,7 @@ package struct BatAdapter: Sendable {
   private var themeLink: CanonicalThemeLink {
     CanonicalThemeLink(
       url: configurationDirectoryURL.appending(path: "themes/\(Self.themeFileName)"),
-      destination: root.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
+      destination: StateLayout(root: root).currentThemeArtifact(TextMateThemeArtifact.outputPath)
     )
   }
 

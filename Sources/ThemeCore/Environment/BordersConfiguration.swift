@@ -7,7 +7,7 @@ package enum BordersConfiguration {
   /// the environment generation intentionally contains no copied palette.
   package static func contents(stateRoot: URL) -> String {
     let themePath = DesktopShellSyntax.literal(
-      stateRoot.appending(path: "current/theme.json").path)
+      StateLayout(root: stateRoot).currentThemeArtifact(ThemeRenderer.themeOutputPath).path)
     return """
       #!/bin/sh
       # Macarchy-owned; generated from the applied focus-ring role.

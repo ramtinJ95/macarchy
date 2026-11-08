@@ -44,7 +44,7 @@ package struct EzaAdapter: Sendable {
   private var themeLink: CanonicalThemeLink {
     CanonicalThemeLink(
       url: configurationDirectoryURL.appending(path: Self.themeFileName),
-      destination: root.appending(path: "current/\(Self.outputPath)")
+      destination: StateLayout(root: root).currentThemeArtifact(Self.outputPath)
     )
   }
 
@@ -232,7 +232,7 @@ package struct EzaAdapter: Sendable {
       containsExactLine(
         EnvironmentConfigurationComposer.nativeZshDefaultsSource(stateRoot: root), in: shell)
     else { return false }
-    let defaults = root.appending(path: "environment/current/zsh/defaults.zsh")
+    let defaults = StateLayout(root: root).environmentArtifact("zsh/defaults.zsh")
     let text = try AdapterConfigurationFile.readUTF8(
       at: defaults.resolvingSymlinksInPath(),
       tooLarge: EzaAdapterError.configurationTooLarge(defaults),

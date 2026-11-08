@@ -81,7 +81,7 @@ package struct YabaiGenerationInspector: Sendable {
   }
 
   package func inspect() -> YabaiGenerationInspection {
-    let providerRoot = stateRoot.appending(path: "desktop/yabai", directoryHint: .isDirectory)
+    let providerRoot = StateLayout(root: stateRoot).yabai
     let generationID: String
     switch DesktopCurrentPointer.read(
       providerRoot: providerRoot, label: "yabai", isGenerationID: Self.isGenerationID)
@@ -193,7 +193,7 @@ package struct YabaiGenerationActivator: Sendable {
       renderedDigest: composition.renderedDigest,
       baselineInputDigest: composition.baselineInputDigest
     )
-    let providerRoot = stateRoot.appending(path: "desktop/yabai", directoryHint: .isDirectory)
+    let providerRoot = StateLayout(root: stateRoot).yabai
     let generations = providerRoot.appending(path: "generations", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: generations, withIntermediateDirectories: true)
     let staging = generations.appending(
@@ -234,7 +234,7 @@ package struct YabaiGenerationActivator: Sendable {
   }
 
   package func select(_ generation: YabaiPreparedGeneration) throws {
-    let providerRoot = stateRoot.appending(path: "desktop/yabai", directoryHint: .isDirectory)
+    let providerRoot = StateLayout(root: stateRoot).yabai
     let temporary = providerRoot.appending(path: ".current-\(UUID().uuidString.lowercased())")
     try FileManager.default.createSymbolicLink(
       atPath: temporary.path,
@@ -248,7 +248,7 @@ package struct YabaiGenerationActivator: Sendable {
   }
 
   package func restoreCurrent(_ generationID: String?) throws {
-    let providerRoot = stateRoot.appending(path: "desktop/yabai", directoryHint: .isDirectory)
+    let providerRoot = StateLayout(root: stateRoot).yabai
     let current = providerRoot.appending(path: "current")
     guard let generationID else {
       if unlink(current.path) != 0, errno != ENOENT {
@@ -289,7 +289,7 @@ package struct YabaiGenerationActivator: Sendable {
 
   private func generationURL(_ generationID: String) -> URL {
     stateRoot.appending(
-      path: "desktop/yabai/generations/\(generationID)",
+      path: "\(StateLayout.yabaiDirectory)/generations/\(generationID)",
       directoryHint: .isDirectory
     )
   }

@@ -41,14 +41,14 @@ package struct TuicrAdapter: Sendable {
   private var themeLink: CanonicalThemeLink {
     CanonicalThemeLink(
       url: configurationDirectoryURL.appending(path: "themes/\(Self.themeName).toml"),
-      destination: root.appending(path: "current/\(Self.outputPath)")
+      destination: StateLayout(root: root).currentThemeArtifact(Self.outputPath)
     )
   }
 
   private var syntaxLink: CanonicalThemeLink {
     CanonicalThemeLink(
       url: configurationDirectoryURL.appending(path: "themes/\(Self.themeName).tmTheme"),
-      destination: root.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
+      destination: StateLayout(root: root).currentThemeArtifact(TextMateThemeArtifact.outputPath)
     )
   }
 

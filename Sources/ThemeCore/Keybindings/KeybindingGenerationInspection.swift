@@ -29,10 +29,7 @@ package struct KeybindingGenerationInspector: Sendable {
   package init() {}
 
   package func inspect(stateRoot: URL) -> KeybindingGenerationInspection {
-    let keybindingsRoot = stateRoot.appending(
-      path: "keybindings",
-      directoryHint: .isDirectory
-    )
+    let keybindingsRoot = StateLayout(root: stateRoot).keybindings
     let current = keybindingsRoot.appending(path: "current")
     let stateDescriptor: Int32
     do {
