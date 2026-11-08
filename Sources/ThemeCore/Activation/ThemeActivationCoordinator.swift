@@ -615,10 +615,7 @@ package struct ThemeActivationCoordinator: Sendable {
     requestedBackgroundID: String?,
     recoverActivePreference: Bool
   ) throws -> PreparedThemeBackground {
-    let configuration = try configurationStore.load()
-    let effectivePackage = try package.addingPersonalBackgrounds(
-      configuration.personalBackgrounds(themeID: package.id)
-    )
+    let effectivePackage = try configurationStore.addingPersonalBackgrounds(to: package)
     var preferences = try backgroundPreferences.load()
     if recoverActivePreference,
       let active = try themeGenerations.activeManifestIfPresent(),

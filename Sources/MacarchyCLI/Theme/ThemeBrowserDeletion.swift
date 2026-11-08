@@ -33,7 +33,7 @@ struct ThemeBrowserDeletionRunner: Sendable {
   let loadContent: @Sendable (ThemeRepository, URL) throws -> ThemeBrowserContent
 
   static let live = ThemeBrowserDeletionRunner(
-    activeThemeID: { try ThemeBrowserCommandLoader.live.loadActiveManifest($0)?.themeID },
+    activeThemeID: { try ThemeGenerationReader(root: $0).activeManifestIfPresent()?.themeID },
     moveToTrash: { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) },
     loadContent: { try ThemeBrowserCommandLoader.live.load(repository: $0, stateRoot: $1) }
   )

@@ -70,10 +70,8 @@ struct ThemeBackgroundCommandRunner: Sendable {
       try await retryingActiveGenerationChanges {
         let active = try currentManifest(stateRoot: stateRoot)
         let package = try repository.package(id: active.themeID)
-        let effectivePackage = try configuredPackage(
-          package,
-          stateRoot: stateRoot
-        )
+        let effectivePackage = try MacarchyConfigurationStore(root: stateRoot)
+          .addingPersonalBackgrounds(to: package)
         guard !effectivePackage.backgrounds.isEmpty else {
           throw BackgroundSelectionError.noBackgrounds(themeID: effectivePackage.id)
         }
@@ -185,9 +183,5 @@ struct ThemeBackgroundCommandRunner: Sendable {
     } catch ReconciliationStatusError.noActiveGeneration {
       throw ThemeBackgroundCommandError.noActiveTheme
     }
-  }
-
-  private func configuredPackage(_ package: ThemePackage, stateRoot: URL) throws -> ThemePackage {
-    try MacarchyConfigurationStore(root: stateRoot).addingPersonalBackgrounds(to: package)
   }
 }
