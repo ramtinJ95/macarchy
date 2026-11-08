@@ -53,13 +53,26 @@ extension HerdrAdapter {
   }
 
   package static func desiredTheme(root: URL) throws -> GeneratedHerdrTheme {
+    let active = try activeGeneratedTheme(root: root)
+    return try decodeGeneratedTheme(active.data, rendererVersion: active.rendererVersion)
+  }
+
+  /// Reads the active generation's Herdr artifact through `current/` together with
+  /// the renderer version its manifest recorded. Manifest errors propagate unchanged;
+  /// `readFailure` maps only the artifact read error.
+  static func activeGeneratedTheme(
+    root: URL,
+    readFailure: (any Error) -> any Error = { $0 }
+  ) throws -> (data: Data, rendererVersion: Int) {
     let manifest = try ThemeGenerationReader(root: root).activeManifest()
     let url = StateLayout(root: root).currentThemeArtifact(outputPath).resolvingSymlinksInPath()
-    let data = try BoundedRegularFile.read(at: url).data
-    return try decodeGeneratedTheme(
-      data,
-      rendererVersion: manifest.rendererVersions[id, default: 0]
-    )
+    let data: Data
+    do {
+      data = try BoundedRegularFile.read(at: url).data
+    } catch {
+      throw readFailure(error)
+    }
+    return (data, manifest.rendererVersions[id, default: 0])
   }
 
   package static func desiredTheme(for package: ThemePackage) throws -> GeneratedHerdrTheme {
