@@ -149,7 +149,6 @@ enum AudioDeviceError: Error, Equatable, CustomStringConvertible {
   case invalidSelection
   case notSettable
   case selectionNotApplied
-  case pickerUpdateFailed
 
   var description: String {
     switch self {
@@ -158,7 +157,6 @@ enum AudioDeviceError: Error, Equatable, CustomStringConvertible {
     case .invalidSelection: "the device changed or disconnected; list the devices again"
     case .notSettable: "the device does not allow this setting to be changed"
     case .selectionNotApplied: "the new default device was accepted but not applied"
-    case .pickerUpdateFailed: "SketchyBar did not update the output picker"
     }
   }
 }

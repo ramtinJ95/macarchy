@@ -135,7 +135,9 @@ struct SketchyBarAudioPicker {
   }
 
   private var bar: SketchyBarControl {
-    SketchyBarControl(processRunner: processRunner) { _, _ in AudioDeviceError.pickerUpdateFailed }
+    SketchyBarControl(processRunner: processRunner) { _, _ in
+      MessageError("SketchyBar did not update the output picker")
+    }
   }
 }
 
