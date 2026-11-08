@@ -354,9 +354,6 @@ public struct ThemeActivator: Sendable {
       )
     }
     try faultInjector(.outputsRendered)
-    for artifact in rendered.artifacts {
-      try requireGeneratedFileSize(artifact)
-    }
 
     let manifest = GenerationManifest(
       generationID: generationID,
@@ -900,14 +897,6 @@ public struct ThemeActivator: Sendable {
           rendererVersions: Self.rendererVersions
         )
       )
-    )
-  }
-
-  private func requireGeneratedFileSize(_ artifact: RenderedArtifact) throws {
-    try requireGeneratedFileSize(
-      artifact.data,
-      path: artifact.path,
-      maximumSize: artifact.maximumSize
     )
   }
 
