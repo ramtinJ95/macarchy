@@ -66,15 +66,9 @@ struct SetupPackageInstallationStore: Sendable {
           "Legacy exact-effect installation attempt at \(url.path). Preserve it and inspect the host before manually moving it aside; it cannot be replayed or adopted."
         )
       }
-      let attempt = try decoder.decode(SetupPackageInstallationAttempt.self, from: data)
-      let encoder = JSONEncoder()
-      encoder.keyEncodingStrategy = .convertToSnakeCase
-      guard
-        try JSONSerialization.jsonObject(with: data) as? NSDictionary
-          == JSONSerialization.jsonObject(with: encoder.encode(attempt)) as? NSDictionary
-      else {
-        throw SetupPackageAdoptionError("Unknown package installation evidence fields.")
-      }
+      let attempt = try decodeCanonicalEvidenceJSON(
+        SetupPackageInstallationAttempt.self, from: data,
+        mismatch: SetupPackageAdoptionError("Unknown package installation evidence fields."))
       try validate(attempt)
       return attempt
     } catch {
