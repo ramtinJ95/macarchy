@@ -11,11 +11,7 @@ func writeBoundedEvidenceJSON<Value: Encodable, WriteError: Error>(
 ) throws {
   let directory = destination.deletingLastPathComponent()
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-  let encoder = JSONEncoder()
-  encoder.dateEncodingStrategy = .iso8601
-  encoder.keyEncodingStrategy = .convertToSnakeCase
-  encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-  let data = try encoder.encode(value)
+  let data = try encodeBoundedEvidenceJSON(value)
   guard data.count <= BoundedRegularFile.maximumSize else {
     throw tooLargeError()
   }
@@ -30,4 +26,13 @@ func writeBoundedEvidenceJSON<Value: Encodable, WriteError: Error>(
   if rename(temporary.path, destination.path) != 0 {
     throw replaceError(errno)
   }
+}
+
+/// The exact bytes `writeBoundedEvidenceJSON` stores; readers use it to check a file is canonical.
+func encodeBoundedEvidenceJSON<Value: Encodable>(_ value: Value) throws -> Data {
+  let encoder = JSONEncoder()
+  encoder.dateEncodingStrategy = .iso8601
+  encoder.keyEncodingStrategy = .convertToSnakeCase
+  encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+  return try encoder.encode(value)
 }
