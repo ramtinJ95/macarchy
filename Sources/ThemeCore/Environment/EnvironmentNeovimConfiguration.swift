@@ -5,11 +5,11 @@ struct EnvironmentNeovimConfiguration {
   // Opaque digests recognize only the approved ADR-0027 personal seam without
   // shipping those legacy bytes as package defaults.
   private static let legacyNeovimThemeArtifactDigests = [
-    "neovim/colors/macarchy-imported.lua":
+    "neovim/\(NeovimAdapter.importedColorschemePath)":
       "sha256:745b13db920f25e2bd60465601db2ee42c859824a5612727ecfbcd783b31b0d3",
-    "neovim/lua/config/macarchy-theme.lua":
+    "neovim/\(NeovimAdapter.watcherPath)":
       "sha256:23935f4b2d4e660d96a6f6b37feba3ba1b85c06fc4bfe3f6f0cbbf9e48bd6d1f",
-    "neovim/lua/plugins/colorscheme.lua":
+    "neovim/\(NeovimAdapter.configurationPath)":
       "sha256:4d9099e154b158a8d06e1970be3b2dffc77dcceb4608e4b7c37049619e0ed443",
   ]
 
@@ -132,8 +132,8 @@ struct EnvironmentNeovimConfiguration {
     stateRoot: URL
   ) throws -> [EnvironmentConfigurationArtifact] {
     let renderedPaths = [
-      "neovim/lua/config/macarchy-theme.lua",
-      "neovim/lua/macarchy/current.lua",
+      "neovim/\(NeovimAdapter.watcherPath)",
+      "neovim/\(NeovimAdapter.themeLinkPath)",
     ]
     let replacement = NeovimAdapter.luaStringLiteral(stateRoot.standardizedFileURL.path)
     var rendered = artifacts

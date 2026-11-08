@@ -192,7 +192,7 @@ struct EnvironmentNeovimConnection {
     guard try JSONDecoder().decode(String.self, from: identity) == source.path,
       Set(newManifest.artifacts.keys.filter { $0.hasPrefix("neovim/") })
         == Set(
-          EnvironmentNeovimMigration.themePaths.map { "neovim/" + $0 } + [
+          NeovimAdapter.managedThemePaths.map { "neovim/" + $0 } + [
             "neovim/native-source.txt"
           ])
     else {

@@ -106,7 +106,7 @@ struct EnvironmentNativeSeedTests {
     #expect(throws: (any Error).self) { try seed.seed(approval: "stale") }
     _ = try seed.seed(approval: preview.approval)
     #expect(throws: (any Error).self) { try seed.seed(approval: preview.approval) }
-    for path in EnvironmentNeovimMigration.themePaths {
+    for path in NeovimAdapter.managedThemePaths {
       #expect(
         try FileManager.default.destinationOfSymbolicLink(
           atPath: destination.appending(path: path).path)
