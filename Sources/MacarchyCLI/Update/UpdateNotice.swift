@@ -12,9 +12,7 @@ struct UpdateNoticeRunner: Sendable {
     isInteractive: {
       isatty(STDIN_FILENO) == 1 && isatty(STDOUT_FILENO) == 1 && isatty(STDERR_FILENO) == 1
     },
-    automaticChecksEnabled: {
-      ProcessInfo.processInfo.environment["MACARCHY_DISABLE_UPDATE_CHECKS"] != "1"
-    },
+    automaticChecksEnabled: { UpdateCheckPolicy.automaticChecksEnabled },
     checkIfDue: { root in
       UpdateChecker(root: root, httpClient: .live, now: Date.init)
         .check(ifStaleOnly: true)

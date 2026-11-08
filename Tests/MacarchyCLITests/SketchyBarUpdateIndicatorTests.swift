@@ -165,7 +165,7 @@ struct SketchyBarUpdateIndicatorTests {
     try UpdateCacheStore(root: root).write(cache)
     let interval =
       failed
-      ? SketchyBarUpdateIndicator.failedRetryInterval : SketchyBarUpdateIndicator.checkInterval
+      ? UpdateCheckPolicy.indicatorFailedRetryInterval : UpdateCheckPolicy.indicatorCheckInterval
     let now = Mutex(cache.lastAttempt.checkedAt.addingTimeInterval(interval - 1))
     let requests = Mutex(0)
     let checker = UpdateChecker(
@@ -176,15 +176,15 @@ struct SketchyBarUpdateIndicatorTests {
       }, now: { now.withLock { $0 } })
     let check = {
       checker.check(
-        ifStaleOnly: true, freshnessInterval: SketchyBarUpdateIndicator.checkInterval,
-        failureRetryInterval: SketchyBarUpdateIndicator.failedRetryInterval)
+        ifStaleOnly: true, freshnessInterval: UpdateCheckPolicy.indicatorCheckInterval,
+        failureRetryInterval: UpdateCheckPolicy.indicatorFailedRetryInterval)
     }
     #expect(!check().refreshed)
     #expect(requests.withLock { $0 } == 0)
     now.withLock { $0 = $0.addingTimeInterval(1) }
     #expect(check().succeeded)
     #expect(requests.withLock { $0 } == 1)
-    now.withLock { $0 = $0.addingTimeInterval(SketchyBarUpdateIndicator.failedRetryInterval) }
+    now.withLock { $0 = $0.addingTimeInterval(UpdateCheckPolicy.indicatorFailedRetryInterval) }
     #expect(!check().refreshed)
     #expect(requests.withLock { $0 } == 1)
   }
