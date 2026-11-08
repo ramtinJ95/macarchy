@@ -156,7 +156,7 @@ struct ThemeInstallCommandRunner: Sendable {
         )
         let transactionError: String?
         do {
-          if activationReport.jsonReport.committed {
+          if activationReport.isCommitted {
             try installation.finish()
           } else {
             try installation.rollback()
@@ -278,11 +278,10 @@ private enum ThemeInstallReport {
           "No persistent Macarchy state written; no consumer processes run."
         ]).joined(separator: "\n")
     case .activation(let conversion, let replaced, let activation, let transactionError):
-      let activationJSON = activation.jsonReport
       let packageState: String
-      if transactionError != nil, !activationJSON.committed {
+      if transactionError != nil, !activation.isCommitted {
         packageState = "Activation failed before commit; package rollback could not be verified for"
-      } else if activationJSON.committed {
+      } else if activation.isCommitted {
         packageState = replaced ? "Replaced imported theme" : "Installed imported theme"
       } else {
         packageState =
@@ -328,7 +327,7 @@ private enum ThemeInstallReport {
     case .activation(let conversion, let replaced, let activation, let transactionError):
       let activationJSON = activation.jsonReport
       let installed =
-        transactionError != nil && !activationJSON.committed ? nil : activationJSON.committed
+        transactionError != nil && !activation.isCommitted ? nil : activation.isCommitted
       return ThemeInstallJSONReport(
         outcome:
           transactionError == nil
@@ -338,7 +337,7 @@ private enum ThemeInstallReport {
         resolvedCommit: conversion.resolvedCommit,
         packageReplaced: replaced,
         installed: installed,
-        committed: activationJSON.committed,
+        committed: activation.isCommitted,
         generationID: activationJSON.generationID,
         conversion: conversion,
         reconciliation: activationJSON.reconciliation,

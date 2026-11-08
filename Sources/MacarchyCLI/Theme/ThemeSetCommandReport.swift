@@ -31,6 +31,16 @@ enum ThemeSetReport {
     }
   }
 
+  /// Whether canonical state changed. A committed activation keeps its package (ADR-0052).
+  var isCommitted: Bool {
+    switch self {
+    case .dryRun, .precommitFailure:
+      false
+    case .committed, .committedActivationError, .committedError:
+      true
+    }
+  }
+
   init(_ outcome: ThemeActivationOutcome, themeID: String, slackTheme: String?) {
     switch outcome {
     case .committed(let result, let requiredFailure):
