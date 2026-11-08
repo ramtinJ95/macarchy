@@ -797,82 +797,13 @@ struct SketchyBarProviderTransaction: Sendable {
 
   static func authenticateRetained(_ ownership: SketchyBarOwnershipRecord) throws {
     guard let retainedOriginalPath = ownership.retainedOriginalPath else { return }
-    let retained = URL(filePath: retainedOriginalPath)
-    let original = ownership.original
-    var metadata = stat()
-    guard
-      lstat(retained.path, &metadata) == 0,
-      try RetainedOriginalIdentity.matches(
-        at: retained, metadata: metadata,
-        volumeUUID: original.volumeUUID, device: original.device),
-      UInt64(metadata.st_ino) == original.inode,
-      Int(metadata.st_mode & 0o777) == original.permissions,
-      metadata.st_nlink == 1
-    else {
-      throw SketchyBarDesktopError.invalidState(
-        "retained SketchyBar original identity has drifted"
-      )
-    }
-    switch original.kind {
-    case .regularFile:
-      guard
-        metadata.st_mode & S_IFMT == S_IFREG,
-        sha256Digest(try BoundedRegularFile.read(at: retained).data) == original.contentDigest
-      else {
-        throw SketchyBarDesktopError.invalidState(
-          "retained sketchybarrc bytes have drifted"
-        )
-      }
-    case .entrySymlink, .directorySymlink:
-      guard
-        metadata.st_mode & S_IFMT == S_IFLNK,
-        SymbolicLink.target(of: retained) == original.linkTarget,
-        let target = original.linkTarget
-      else {
-        throw SketchyBarDesktopError.invalidState(
-          "retained SketchyBar symlink has drifted"
-        )
-      }
-      let publicPath = URL(filePath: original.publicPath)
-      let source = SymbolicLink.resolve(target, at: publicPath)
-      if original.kind == .directorySymlink {
-        let descriptor = try PinnedFilesystem.openDirectory(at: source)
-        defer { Darwin.close(descriptor) }
-        let inventory = try PinnedFilesystem.directoryEntries(
-          descriptor: descriptor,
-          url: source,
-          limit: 1_024
-        )
-        guard !inventory.truncated, inventory.entries == original.inventory else {
-          throw SketchyBarDesktopError.invalidState(
-            "retained SketchyBar directory source inventory drifted"
-          )
-        }
-        let digest = sha256Digest(
-          try PinnedFilesystem.readRegularFile(
-            parentDescriptor: descriptor,
-            name: "sketchybarrc",
-            url: source.appending(path: "sketchybarrc")
-          ).data
-        )
-        guard digest == original.contentDigest else {
-          throw SketchyBarDesktopError.invalidState(
-            "retained SketchyBar directory source bytes drifted"
-          )
-        }
-      } else {
-        let digest = sha256Digest(try BoundedRegularFile.read(at: source).data)
-        guard digest == original.contentDigest else {
-          throw SketchyBarDesktopError.invalidState(
-            "retained sketchybarrc symlink source bytes drifted"
-          )
-        }
-      }
-    case .absent:
-      throw SketchyBarDesktopError.invalidState(
-        "absent SketchyBar state cannot have a retained original"
-      )
-    }
+    try ownership.original.authenticateRetained(
+      at: retainedOriginalPath,
+      provider: "SketchyBar",
+      entryName: "sketchybarrc",
+      sourceRead: .pinned,
+      invalidState: { SketchyBarDesktopError.invalidState($0) }
+    )
   }
 
   private var configurationDirectory: URL {

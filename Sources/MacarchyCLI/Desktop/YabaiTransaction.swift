@@ -487,58 +487,13 @@ struct YabaiProviderTransaction: Sendable {
 
   static func authenticateRetained(_ ownership: YabaiOwnershipRecord) throws {
     guard let retainedPath = ownership.retainedOriginalPath else { return }
-    let retained = URL(filePath: retainedPath)
-    let original = ownership.original
-    var metadata = stat()
-    guard
-      lstat(retained.path, &metadata) == 0,
-      try RetainedOriginalIdentity.matches(
-        at: retained, metadata: metadata,
-        volumeUUID: original.volumeUUID, device: original.device),
-      UInt64(metadata.st_ino) == original.inode,
-      Int(metadata.st_mode & 0o777) == original.permissions,
-      metadata.st_nlink == 1
-    else {
-      throw YabaiDesktopError.invalidState("retained yabai original identity has drifted")
-    }
-    switch original.kind {
-    case .regularFile:
-      guard
-        metadata.st_mode & S_IFMT == S_IFREG,
-        sha256Digest(try BoundedRegularFile.read(at: retained).data) == original.contentDigest
-      else {
-        throw YabaiDesktopError.invalidState("retained yabairc bytes have drifted")
-      }
-    case .entrySymlink, .directorySymlink:
-      guard
-        metadata.st_mode & S_IFMT == S_IFLNK,
-        SymbolicLink.target(of: retained) == original.linkTarget,
-        let target = original.linkTarget
-      else {
-        throw YabaiDesktopError.invalidState("retained yabai symlink has drifted")
-      }
-      let publicPath = URL(filePath: original.publicPath)
-      let source = SymbolicLink.resolve(target, at: publicPath)
-      if original.kind == .directorySymlink {
-        let inventory = try FileManager.default.contentsOfDirectory(atPath: source.path).sorted()
-        guard inventory == original.inventory else {
-          throw YabaiDesktopError.invalidState("retained yabai directory source inventory drifted")
-        }
-        let digest = sha256Digest(
-          try BoundedRegularFile.read(at: source.appending(path: "yabairc")).data
-        )
-        guard digest == original.contentDigest else {
-          throw YabaiDesktopError.invalidState("retained yabai directory source bytes drifted")
-        }
-      } else {
-        let digest = sha256Digest(try BoundedRegularFile.read(at: source).data)
-        guard digest == original.contentDigest else {
-          throw YabaiDesktopError.invalidState("retained yabairc symlink source bytes drifted")
-        }
-      }
-    case .absent:
-      throw YabaiDesktopError.invalidState("absent yabai state cannot have a retained original")
-    }
+    try ownership.original.authenticateRetained(
+      at: retainedPath,
+      provider: "yabai",
+      entryName: "yabairc",
+      sourceRead: .path,
+      invalidState: { YabaiDesktopError.invalidState($0) }
+    )
   }
 
   private func pathExistsNoFollow(_ path: String) -> Bool {
