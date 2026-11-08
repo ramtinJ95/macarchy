@@ -267,9 +267,9 @@ private final class YabaiNativeFixture: Sendable {
       lifecycle: lifecycle, keybindings: nil, prerequisites: .assumed, theme: nil)
   }
   func apply() throws -> (output: String, succeeded: Bool) {
-    try runner.execute(
+    try runner.executeYabaiOnly(
       resourcesRoot: resources, profileURL: profile, profileRequired: true,
-      stateRoot: stateRoot, homeDirectory: home, adopt: nil, json: true, scope: .yabaiOnly)
+      stateRoot: stateRoot, homeDirectory: home, adopt: nil, json: true)
   }
   var lifecycle: YabaiLifecycleController {
     YabaiLifecycleController(
