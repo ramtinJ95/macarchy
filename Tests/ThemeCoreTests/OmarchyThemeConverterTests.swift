@@ -338,9 +338,16 @@ struct OmarchyThemeConverterTests {
     let converter = OmarchyThemeConverter(stager: stager)
     var scopedPackage: URL?
 
-    let evidence = try converter.withConvertedPackage(
+    let evidence = try stager.withStagedCheckout(
       from: "https://github.com/example/omarchy-purple-dream-theme.git"
-    ) { converted in
+    ) { staged in
+      let converted = try converter.convert(
+        staged: staged,
+        to: staged.checkoutURL.deletingLastPathComponent().appending(
+          path: "converted-package",
+          directoryHint: .isDirectory
+        )
+      )
       scopedPackage = converted.package.packageURL
       #expect(FileManager.default.fileExists(atPath: converted.package.packageURL.path))
       return (
