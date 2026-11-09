@@ -38,12 +38,15 @@ package struct GhosttyAdapter: Sendable {
 
   enum Failure: Error, CustomStringConvertible {
     case includeDrift
+    case bridgeDrift
     case outdatedInclude
     case unsafeConfiguration
     case ignoredConfiguration(String)
     case version(String)
     var description: String {
       switch self {
+      case .bridgeDrift:
+        "Ghostty's stable theme file does not match the active generation; reconcile ghostty"
       case .outdatedInclude:
         "The owned Ghostty include is outdated. Tear down or disable the Ghostty preset, then re-enable it to adopt the stable bridge."
       case .includeDrift: "The owned Ghostty config-file line was edited, moved or removed"
@@ -113,7 +116,27 @@ package struct GhosttyAdapter: Sendable {
   func inspection() -> AdapterInspection {
     do {
       let version = try installedVersion()
-      return runtime(version: version).inspection(readyMessage: overrideMessage(version: version))
+      let inspection = runtime(version: version).inspection(
+        readyMessage: overrideMessage(version: version))
+      guard inspection.status == .ready else { return inspection }
+      do {
+        try ActivationLock(root: root).withLock {
+          let desired = try Self.activeConfiguration(root: root)
+          let url = root.appending(path: Self.bridgePath)
+          let current: Data
+          do { current = try PinnedFilesystem.readRegularFile(at: url).data } catch let error
+            as PinnedFilesystemError where error.code == ENOENT
+          {
+            throw Failure.bridgeDrift
+          }
+          guard current == desired else { throw Failure.bridgeDrift }
+        }
+      } catch ReconciliationStatusError.noActiveGeneration {
+        // The owned include can be inspected before first theme activation.
+      }
+      return inspection
+    } catch Failure.bridgeDrift {
+      return AdapterInspection(.ghostty, status: .drifted, message: Failure.bridgeDrift.description)
     } catch {
       return AdapterInspection(
         adapterID: Self.id, requirement: .required, status: .failed,
