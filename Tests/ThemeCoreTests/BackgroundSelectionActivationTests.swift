@@ -9,10 +9,8 @@ extension AdapterContractTests {
   @Test func userScriptsAreNeverCarriedForwardAndReviewIsInert() async throws {
     let root = try temporaryDirectory()
     defer { removeTemporaryRoot(root) }
-    let directory = root.appending(path: "scripts")
-    try FileManager.default.createDirectory(
-      at: directory, withIntermediateDirectories: false,
-      attributes: [.posixPermissions: 0o700])
+    let directory = try makeTrustedScriptDirectory()
+    defer { removeTemporaryRoot(directory) }
     let script = directory.appending(path: "record")
     let recorded = directory.appending(path: "events")
     try "#!/bin/sh\necho $MACARCHY_EVENT >> \"$(dirname \"$0\")/events\"\n"

@@ -60,3 +60,12 @@ package func removeTemporaryRoot(_ root: URL) {
   }
   try? FileManager.default.removeItem(at: root)
 }
+
+/// Script execution rejects writable ancestors, including /private/tmp. Keep only these
+/// regular-file fixtures in a unique directory under the current (guest/CI) user's home.
+package func makeTrustedScriptDirectory() throws -> URL {
+  let root = try makeTemporaryDirectory(
+    named: "macarchy-script-tests", under: FileManager.default.homeDirectoryForCurrentUser)
+  try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+  return root
+}

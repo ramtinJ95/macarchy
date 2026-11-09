@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -12,10 +13,8 @@ struct SetupThemeTeardownTests {
     let manifest = try fixture.activateSetupOwnedTheme()
     defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
     let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
-    let directory = fixture.state.appending(path: "scripts")
-    try FileManager.default.createDirectory(
-      at: directory, withIntermediateDirectories: false,
-      attributes: [.posixPermissions: 0o700])
+    let directory = try makeTrustedScriptDirectory()
+    defer { removeTemporaryRoot(directory) }
     let script = directory.appending(path: "record")
     let recorded = directory.appending(path: "events")
     try

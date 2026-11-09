@@ -4,7 +4,8 @@ import Foundation
 /// Runs the executables a profile declares after each theme change and at teardown. A script
 /// runs without a shell, with a short fixed `PATH`, the active palette in its environment, a time
 /// limit, and its whole process group stopped when it ends. It runs only when it and its
-/// directory, after resolving links, belong to the user and no one else can write to them.
+/// ancestors, after resolving links, are trusted: the file belongs to the user, directories
+/// belong to the user or root, and neither mode bits nor ACLs grant others write access.
 package struct UserScriptRunner: Sendable {
   package enum Event: String, Sendable {
     case apply
@@ -93,17 +94,24 @@ package struct UserScriptRunner: Sendable {
       return .failure(Refusal("it is not executable by its owner"))
     }
 
-    let directory = (resolved as NSString).deletingLastPathComponent
-    var parent = stat()
-    guard lstat(directory, &parent) == 0 else {
-      return .failure(
-        Refusal("its directory cannot be inspected (\(String(cString: strerror(errno))))"))
-    }
-    if let problem = ownershipProblem(parent, what: "its directory \(directory)") {
-      return .failure(Refusal(problem))
-    }
-    if let problem = aclProblem(at: directory, what: "its directory \(directory)") {
-      return .failure(Refusal(problem))
+    var directory = (resolved as NSString).deletingLastPathComponent
+    while true {
+      let what = "its directory \(directory)"
+      var parent = stat()
+      guard lstat(directory, &parent) == 0 else {
+        return .failure(
+          Refusal("\(what) cannot be inspected (\(String(cString: strerror(errno))))"))
+      }
+      guard parent.st_mode & S_IFMT == S_IFDIR else {
+        return .failure(Refusal("\(what) is not a directory"))
+      }
+      if let problem = ownershipProblem(parent, what: what, allowRoot: true)
+        ?? aclProblem(at: directory, what: what)
+      {
+        return .failure(Refusal(problem))
+      }
+      if directory == "/" { break }
+      directory = (directory as NSString).deletingLastPathComponent
     }
     return .success(resolved)
   }
@@ -113,8 +121,9 @@ package struct UserScriptRunner: Sendable {
     init(_ reason: String) { self.reason = reason }
   }
 
-  private func ownershipProblem(_ metadata: stat, what: String) -> String? {
-    if metadata.st_uid != userID {
+  private func ownershipProblem(_ metadata: stat, what: String, allowRoot: Bool = false) -> String?
+  {
+    if metadata.st_uid != userID && !(allowRoot && metadata.st_uid == 0) {
       return "\(what) belongs to another user"
     }
     if metadata.st_mode & (S_IWGRP | S_IWOTH) != 0 {
