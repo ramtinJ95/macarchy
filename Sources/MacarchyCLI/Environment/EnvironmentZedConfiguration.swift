@@ -184,9 +184,7 @@ extension EnvironmentProviderInspector {
       if let bootstrapTheme {
         initial = Data(try ZedAdapter.render(package: bootstrapTheme).utf8)
       } else {
-        initial = try BoundedRegularFile.read(
-          at: StateLayout(root: root).currentThemeArtifact(ZedAdapter.outputPath)
-        ).data
+        initial = try ZedAdapter.activeFamily(root: root)
       }
       proposed = EnvironmentZedFamilyOwnership(
         path: url.path, stateRoot: root.path, initialFamily: initial)

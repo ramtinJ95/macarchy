@@ -85,8 +85,7 @@ package struct ZedAdapter: Sendable {
           }
         return AdapterOutcome(status: status, message: inspection.message)
       }
-      let source = StateLayout(root: root).currentThemeArtifact(Self.outputPath)
-      let data = try BoundedRegularFile.read(at: source).data
+      let data = try Self.activeFamily(root: root)
       let target = configurationDirectory.appending(path: "themes/macarchy.json")
       let parent = try PinnedFilesystem.openDirectory(at: target.deletingLastPathComponent())
       defer { Darwin.close(parent) }
@@ -121,9 +120,30 @@ package struct ZedAdapter: Sendable {
     return false
   }
 
+  /// Older sealed generations have no Zed artifact. Derive it from their validated
+  /// normalized theme without mutating the generation or changing the current pointer.
+  package static func activeFamily(root: URL) throws -> Data {
+    let manifest = try ThemeGenerationReader(root: root).activeManifest()
+    if manifest.artifacts[outputPath] != nil {
+      return try BoundedRegularFile.read(at: manifest.artifactURL(root: root, path: outputPath))
+        .data
+    }
+    let theme = try manifest.normalizedTheme(root: root)
+    return Data(
+      try render(
+        appearance: theme.appearance, semantic: theme.semantic,
+        terminal: theme.terminal
+      ).utf8)
+  }
+
   package static func render(package: ThemePackage) throws -> String {
-    let s = package.semantic
-    let t = package.terminal
+    try render(
+      appearance: package.appearance, semantic: package.semantic, terminal: package.terminal)
+  }
+
+  private static func render(
+    appearance: ThemeAppearance, semantic s: SemanticColors, terminal t: TerminalColors
+  ) throws -> String {
     var style: [String: Any] = [
       "background": s.background.rawValue,
       "editor.background": s.background.rawValue,
@@ -165,7 +185,7 @@ package struct ZedAdapter: Sendable {
     let family: [String: Any] = [
       "$schema": "https://zed.dev/schema/themes/v0.2.0.json",
       "name": "Macarchy", "author": "Macarchy",
-      "themes": [["name": "Macarchy", "appearance": package.appearance.rawValue, "style": style]],
+      "themes": [["name": "Macarchy", "appearance": appearance.rawValue, "style": style]],
     ]
     let data = try JSONSerialization.data(
       withJSONObject: family, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
