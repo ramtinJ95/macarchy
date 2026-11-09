@@ -8,6 +8,7 @@ enum WallpaperAdapterError: Error, CustomStringConvertible, Equatable, Sendable 
   case unreadableOptions(String)
   case unreadableWallpaper(String)
   case unavailableDisplay(UInt32)
+  case unidentifiableDisplay(UInt32)
 
   var description: String {
     switch self {
@@ -23,6 +24,8 @@ enum WallpaperAdapterError: Error, CustomStringConvertible, Equatable, Sendable 
       "Cannot read the current wallpaper for display '\(name)'"
     case .unavailableDisplay(let id):
       "Display \(id) is no longer available"
+    case .unidentifiableDisplay(let id):
+      "Cannot read the persistent identity of display \(id)"
     }
   }
 }
@@ -35,7 +38,31 @@ struct WallpaperDisplay: Equatable, Sendable {
 
 struct WallpaperControl: Sendable {
   let inspect: @Sendable () throws -> [WallpaperDisplay]
+  /// Changes a display's image and keeps its presentation options.
   let set: @Sendable (URL, UInt32) throws -> Void
+  /// A display's persistent UUID, which outlives its display number.
+  let displayUUID: @Sendable (UInt32) throws -> String
+  let presentation: @Sendable (UInt32) throws -> WallpaperPresentation
+  /// Puts back an original image together with its recorded presentation options.
+  let restore: @Sendable (URL, WallpaperPresentation, UInt32) throws -> Void
+
+  /// Test doubles may omit the identity and presentation seams; `restore` then falls back to
+  /// `set`, which keeps the current options.
+  init(
+    inspect: @escaping @Sendable () throws -> [WallpaperDisplay],
+    set: @escaping @Sendable (URL, UInt32) throws -> Void,
+    displayUUID: @escaping @Sendable (UInt32) throws -> String = { "display-\($0)" },
+    presentation: @escaping @Sendable (UInt32) throws -> WallpaperPresentation = { _ in
+      WallpaperPresentation()
+    },
+    restore: (@Sendable (URL, WallpaperPresentation, UInt32) throws -> Void)? = nil
+  ) {
+    self.inspect = inspect
+    self.set = set
+    self.displayUUID = displayUUID
+    self.presentation = presentation
+    self.restore = restore ?? { url, _, displayID in try set(url, displayID) }
+  }
 
   static let live = Self(
     inspect: {
@@ -64,16 +91,7 @@ struct WallpaperControl: Sendable {
     },
     set: { wallpaperURL, displayID in
       try onMainThread {
-        guard
-          let screen = NSScreen.screens.first(where: { screen in
-            let number =
-              screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
-              as? NSNumber
-            return number?.uint32Value == displayID
-          })
-        else {
-          throw WallpaperAdapterError.unavailableDisplay(displayID)
-        }
+        let screen = try screen(displayID)
         guard let options = NSWorkspace.shared.desktopImageOptions(for: screen) else {
           throw WallpaperAdapterError.unreadableOptions(screen.localizedName)
         }
@@ -83,8 +101,48 @@ struct WallpaperControl: Sendable {
           options: options
         )
       }
+    },
+    displayUUID: { displayID in
+      guard let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue(),
+        let string = CFUUIDCreateString(nil, uuid).map({ $0 as String })
+      else {
+        throw WallpaperAdapterError.unidentifiableDisplay(displayID)
+      }
+      return string
+    },
+    presentation: { displayID in
+      try onMainThread {
+        let screen = try screen(displayID)
+        guard let options = NSWorkspace.shared.desktopImageOptions(for: screen) else {
+          throw WallpaperAdapterError.unreadableOptions(screen.localizedName)
+        }
+        return WallpaperPresentation(options)
+      }
+    },
+    restore: { wallpaperURL, presentation, displayID in
+      try onMainThread {
+        try NSWorkspace.shared.setDesktopImageURL(
+          wallpaperURL,
+          for: try screen(displayID),
+          options: presentation.options
+        )
+      }
     }
   )
+
+  private static func screen(_ displayID: UInt32) throws -> NSScreen {
+    guard
+      let screen = NSScreen.screens.first(where: { screen in
+        let number =
+          screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+          as? NSNumber
+        return number?.uint32Value == displayID
+      })
+    else {
+      throw WallpaperAdapterError.unavailableDisplay(displayID)
+    }
+    return screen
+  }
 
   private static func onMainThread<Value: Sendable>(
     _ operation: @escaping @Sendable () throws -> Value
@@ -101,18 +159,25 @@ struct WallpaperAdapter: Sendable {
 
   private let activationLock: ActivationLock
   private let control: WallpaperControl
+  private let originals: WallpaperOriginalStore
+  private let ownership: WallpaperOwnership
   private let waitForSettle: @Sendable () -> Void
+  private let now: @Sendable () -> String
 
   init(
     root: URL,
     control: WallpaperControl,
     waitForSettle: @escaping @Sendable () -> Void = {
       Thread.sleep(forTimeInterval: 0.25)
-    }
+    },
+    now: @escaping @Sendable () -> String = { ISO8601DateFormatter().string(from: Date()) }
   ) {
     activationLock = ActivationLock(root: root)
     self.control = control
+    originals = WallpaperOriginalStore(root: root)
+    ownership = WallpaperOwnership(root: root)
     self.waitForSettle = waitForSettle
+    self.now = now
   }
 
   func preflight() throws -> [WallpaperDisplay] {
@@ -168,8 +233,20 @@ struct WallpaperAdapter: Sendable {
           )
         }
         let before = try preflight()
-        for display in before
-        where !Self.sameFile(display.wallpaperURL, desiredWallpaperURL) {
+        let changing = before.filter { !Self.sameFile($0.wallpaperURL, desiredWallpaperURL) }
+        let notice: String?
+        do {
+          notice = try recordOriginals(of: changing)
+        } catch {
+          return .finished(
+            AdapterOutcome(
+              status: .failed,
+              message:
+                "Cannot record the original wallpaper, so it was left unchanged: \(error)"
+            )
+          )
+        }
+        for display in changing {
           do {
             try control.set(desiredWallpaperURL, display.id)
           } catch {
@@ -181,46 +258,84 @@ struct WallpaperAdapter: Sendable {
             )
           }
         }
-        return .applied(desiredWallpaperURL, before)
+        return .applied(desiredWallpaperURL, before, notice)
       }
       let desiredWallpaperURL: URL
       let before: [WallpaperDisplay]
+      let notice: String?
       switch preparation {
       case .finished(let outcome):
         return outcome
-      case .applied(let url, let displays):
+      case .applied(let url, let displays, let originalsNotice):
         desiredWallpaperURL = url
         before = displays
+        notice = originalsNotice
       }
 
       // Settling only observes state; release the lock so it cannot delay other live adapters.
-      var drifted = [WallpaperDisplay]()
-      for attempt in 0..<9 {
-        let after = try preflight()
-        guard Set(after.map(\.id)) == Set(before.map(\.id)) else {
-          return AdapterOutcome(
-            status: .drifted,
-            message: "The current display inventory changed while wallpaper was applied"
-          )
-        }
-        drifted = after.filter { !Self.sameFile($0.wallpaperURL, desiredWallpaperURL) }
-        if drifted.isEmpty {
-          return AdapterOutcome(status: .applied)
-        }
-        if attempt < 8 { waitForSettle() }
-      }
+      let outcome = try settle(on: desiredWallpaperURL, displays: before)
+      guard let notice else { return outcome }
       return AdapterOutcome(
-        status: .drifted,
-        message:
-          "NSWorkspace did not settle on the requested wallpaper for: "
-          + drifted.map(\.name).joined(separator: ", ")
+        status: outcome.status,
+        message: [outcome.message, notice].compactMap { $0 }.joined(separator: "; ")
       )
     }
   }
 
+  private func settle(on desiredWallpaperURL: URL, displays before: [WallpaperDisplay]) throws
+    -> AdapterOutcome
+  {
+    var drifted = [WallpaperDisplay]()
+    for attempt in 0..<9 {
+      let after = try preflight()
+      guard Set(after.map(\.id)) == Set(before.map(\.id)) else {
+        return AdapterOutcome(
+          status: .drifted,
+          message: "The current display inventory changed while wallpaper was applied"
+        )
+      }
+      drifted = after.filter { !Self.sameFile($0.wallpaperURL, desiredWallpaperURL) }
+      if drifted.isEmpty {
+        return AdapterOutcome(status: .applied)
+      }
+      if attempt < 8 { waitForSettle() }
+    }
+    return AdapterOutcome(
+      status: .drifted,
+      message:
+        "NSWorkspace did not settle on the requested wallpaper for: "
+        + drifted.map(\.name).joined(separator: ", ")
+    )
+  }
+
+  /// Records the wallpaper of each display Macarchy is about to change for the first time, so
+  /// setup teardown can put it back. An unreadable record is kept as it is and only noticed: it
+  /// may still hold originals, and replacing it would lose them. A record that cannot be written
+  /// throws, so the wallpaper is not changed without one.
+  private func recordOriginals(of displays: [WallpaperDisplay]) throws -> String? {
+    guard !displays.isEmpty else { return nil }
+    let existing: [WallpaperOriginal]
+    do {
+      existing = try originals.load()
+    } catch {
+      return "original wallpapers could not be read, so teardown cannot restore them: \(error)"
+    }
+    let updated = try WallpaperOriginals.capturing(
+      existing,
+      displays: displays,
+      isMacarchyWallpaper: ownership.isMacarchyWallpaper,
+      describe: { display in
+        (try control.displayUUID(display.id), try control.presentation(display.id))
+      },
+      now: now()
+    )
+    if updated != existing { try originals.persist(updated) }
+    return nil
+  }
+
   private enum Preparation {
     case finished(AdapterOutcome)
-    case applied(URL, [WallpaperDisplay])
+    case applied(URL, [WallpaperDisplay], String?)
   }
 
   private static func sameFile(_ first: URL, _ second: URL) -> Bool {
