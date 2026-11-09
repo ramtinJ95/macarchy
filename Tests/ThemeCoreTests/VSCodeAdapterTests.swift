@@ -6,6 +6,56 @@ import Testing
 @testable import ThemeCore
 
 struct VSCodeAdapterTests {
+  @Test(arguments: ["--list-extensions", "--install-extension", "--uninstall-extension"])
+  func everyCLIInvocationStripsInheritedRedirection(flag: String) throws {
+    let inherited = [
+      "VSCODE_EXTENSIONS": "/foreign/extensions", "VSCODE_APPDATA": "/foreign/profile",
+      "VSCODE_PORTABLE": "/foreign/portable", "VSCODE_CLI_REMOTE_ENV": "foreign",
+      "VSCODE_IPC_HOOK_CLI": "/foreign/socket", "ELECTRON_RUN_AS_NODE": "1",
+      "VSCODE_DEV": "1", "NODE_OPTIONS": "--require=/foreign/code.js", "HOME": "/foreign",
+      "PATH": "/usr/bin:/bin",
+    ]
+    _ = try VSCodeAdapter.command(
+      VSCodeEditor.vscode.installations[0].cli, [flag],
+      runner: ProcessRunner { request in
+        #expect(request.isolatedProcessGroup)
+        #expect(request.timeout == 120)
+        #expect(request.environmentRemovals.isSuperset(of: inherited.keys.filter { $0 != "PATH" }))
+        #expect(!request.environmentRemovals.contains("PATH"))
+        #expect(request.environmentOverrides.isEmpty)
+        return .init(terminationStatus: 0, output: "")
+      }, environment: inherited)
+  }
+
+  @Test(arguments: VSCodeEditor.allCases)
+  func portableInstallationsAreRefusedIncludingForkOverrides(editor: VSCodeEditor) throws {
+    for installation in editor.installations {
+      for override in [false, true] {
+        let name = override ? "custom-portable" : "editor-portable-data"
+        let product = try JSONSerialization.data(
+          withJSONObject:
+            override
+            ? ["applicationName": "editor", "portable": name] : ["applicationName": "editor"])
+        #expect(throws: VSCodeAdapter.Failure.self) {
+          try VSCodeEditor.refusePortableCLI(
+            installation.cli,
+            exists: { $0 == installation.applicationURL || $0.lastPathComponent == name },
+            product: { _ in product })
+        }
+        try VSCodeEditor.refusePortableCLI(
+          installation.cli, exists: { $0 == installation.applicationURL }, product: { _ in product }
+        )
+      }
+    }
+  }
+
+  @Test func unreadablePortableMetadataBlocksRatherThanGuessing() {
+    #expect(throws: (any Error).self) {
+      try VSCodeEditor.refusePortableCLI(
+        VSCodeEditor.vscode.installations[0].cli, exists: { _ in true }, product: { _ in Data() })
+    }
+  }
+
   @Test(arguments: ["catppuccin-mocha", "tokyo-night", "kanagawa-wave"])
   func renderMapsSemanticTerminalAndTokens(name: String) throws {
     let package = try ThemePackageLoader().load(
@@ -247,6 +297,11 @@ struct VSCodeAdapterTests {
         if request.executableURL.path == "/usr/bin/ditto" {
           return try ProcessRunner.live.run(request)
         }
+        #expect(request.isolatedProcessGroup)
+        #expect(
+          request.environmentRemovals.isSuperset(of: [
+            "VSCODE_EXTENSIONS", "VSCODE_APPDATA", "VSCODE_PORTABLE",
+          ]))
         return state.withLock { value in
           let flag = request.arguments[0]
           if value.fail == flag { return .init(terminationStatus: 1, output: "injected failure") }
