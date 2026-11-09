@@ -584,7 +584,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
     let alacritty = Result { try profile.environment.presets.alacritty ? alacrittyVersion() : [] }
     let version = Result { try profile.environment.presets.ghostty ? ghosttyVersion() : [] }
     let providerInspector = EnvironmentProviderInspector(
-      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() }, zedVersion: zedVersion)
+      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() },
+      zedVersion: zedVersion)
     let coordinator = EnvironmentTransactionCoordinator(
       homeDirectory: homeDirectory,
       stateRoot: stateRoot,
@@ -985,7 +986,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
         prerequisites: prerequisites,
         theme: theme,
         verifier: verifier,
-        bordersRuntime: runtimes.borders, alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() },
+        bordersRuntime: runtimes.borders, alacrittyVersion: { try alacritty.get() },
+        ghosttyVersion: { try version.get() },
         zedVersion: zedVersion
       ).reportAfterApply(
         EnvironmentApplyObservation(
@@ -1022,7 +1024,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
       try commit && profile?.environment.presets.ghostty == true ? ghosttyVersion() : []
     }
     let inspector = EnvironmentProviderInspector(
-      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() }, zedVersion: zedVersion)
+      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() },
+      zedVersion: zedVersion)
     return try EnvironmentLifecycleLock(stateRoot: stateRoot).withLock {
       let store = EnvironmentStateStore(stateRoot: stateRoot)
       guard let transaction = try store.readTransaction() else { return false }

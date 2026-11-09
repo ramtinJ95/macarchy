@@ -127,7 +127,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
     let provider = homeDirectory.map {
       EnvironmentProviderInspector(
         bootstrapTheme: bootstrapTheme,
-        proposedNativeSources: Set(starterPlans.map(\.destination)), alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion,
+        proposedNativeSources: Set(starterPlans.map(\.destination)),
+        alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion,
         zedVersion: zedVersion
       ).inspectIncludingBordersRuntime(
         composition: composition,

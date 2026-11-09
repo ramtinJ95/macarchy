@@ -96,7 +96,8 @@ struct EnvironmentRuntimeSelectionTests {
         homeDirectory: fixture.home
       )
         == Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          ZedAdapter.id, AlacrittyAdapter.id, GhosttyAdapter.id, BordersAdapter.id, BordersAdapter.leanID,
+          ZedAdapter.id, AlacrittyAdapter.id, GhosttyAdapter.id, BordersAdapter.id,
+          BordersAdapter.leanID,
           UserScriptsAdapter.id,
           SpicetifyAdapter.id,
         ])
