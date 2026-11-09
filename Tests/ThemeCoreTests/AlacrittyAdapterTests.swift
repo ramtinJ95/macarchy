@@ -200,7 +200,7 @@ struct AlacrittyAdapterTests {
     try await withTemporaryRoot(named: "alacritty-missing-connection") { home in
       let adapter = try fixture(home: home, runningProcessStarts: { [50] })
       try AlacrittyAdapter.restoreBridge(
-        at: home.appending(path: AlacrittyAdapter.bridgePath), data: Data("old bridge".utf8),
+        at: home.appending(path: AlacrittyAdapter.bridgePath), data: Data("# old bridge\n".utf8),
         mode: 0o644)
       #expect(adapter.repaintBoundary() == .nextLaunch)
       #expect(try await adapter.reconciliation().run().status == .restartRequired)
