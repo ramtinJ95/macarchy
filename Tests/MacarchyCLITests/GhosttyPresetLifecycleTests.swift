@@ -192,20 +192,73 @@ struct GhosttyPresetLifecycleTests {
     #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
   }
 
-  @Test func failureAfterAuthorityPublicationRollsBackTheOwnedLine() async throws {
-    let fixture = try Fixture(original: "font-size = 13")
-    defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let digest =
-      try jsonObject(fixture.harness.plan().output)["adoption_evidence_digest"] as? String
-    let result = try await fixture.apply(
-      adopt: digest,
-      faultInjector: { checkpoint in
-        if checkpoint == .authorityPublished { throw Injected.failure }
+  @Test(arguments: [false, true], [false, true])
+  func failureAfterBridgePublicationRollsBackAndRecovers(
+    previouslyOwned: Bool, interruptRollback: Bool
+  ) async throws {
+    let f = try Fixture(original: "font-size = 13")
+    let bridge = f.state.appending(path: GhosttyAdapter.bridgePath)
+    let directory = bridge.deletingLastPathComponent()
+    defer {
+      try? FileManager.default.setAttributes(
+        [.posixPermissions: 0o700], ofItemAtPath: directory.path)
+      try? FileManager.default.removeItem(at: f.root)
+    }
+    let store = EnvironmentStateStore(stateRoot: f.state)
+    let digest = try jsonObject(f.harness.plan().output)["adoption_evidence_digest"] as? String
+    if previouslyOwned {
+      #expect(try await f.apply(adopt: digest, realReconciliation: true).succeeded)
+      try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: bridge.path)
+      _ = try ThemeActivator(root: f.state, faultInjector: { _ in }).activate(
+        package: ThemePackageLoader().load(
+          packageURL: repositoryRoot.appending(path: "Themes/tokyo-night")))
+    }
+    let beforeBridge = previouslyOwned ? try Data(contentsOf: bridge) : nil
+    let beforeConfiguration = try Data(contentsOf: f.configuration)
+    let beforeOwnership = try store.readOwnership()
+    let desired = try GhosttyAdapter.activeConfiguration(root: f.state)
+    let published = Mutex(false)
+    let result = try await f.apply(
+      adopt: previouslyOwned ? nil : digest, realReconciliation: true,
+      afterReconciliation: {
+        #expect(try Data(contentsOf: bridge) == desired)
+        #expect(try Data(contentsOf: bridge) != beforeBridge)
+        #expect(try store.readTransaction() != nil)
+        published.withLock { $0 = true }
+        if interruptRollback {
+          // Force the real bridge restore/remove to fail, retaining its rollback journal.
+          try FileManager.default.setAttributes(
+            [.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        }
+        throw Injected.failure
       })
+    #expect(published.withLock { $0 })
     #expect(!result.succeeded)
-    #expect(try String(contentsOf: fixture.configuration, encoding: .utf8) == "font-size = 13")
-    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
-    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readTransaction() == nil)
+    if interruptRollback {
+      #expect(result.output.contains("recovery_required"), "\(result.output)")
+      let journal = try #require(try store.readTransaction())
+      #expect(journal.direction == .rollback)
+      #expect(journal.rollbackThemeBridges.first { $0.path == bridge.path }?.data == beforeBridge)
+      #expect(try Data(contentsOf: bridge) == desired)
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o700], ofItemAtPath: directory.path)
+      // A fresh runner resumes the persisted rollback; no in-memory transaction is reused.
+      #expect(
+        try EnvironmentApplyCommandRunner(prerequisites: .assumed, theme: nil, verifier: .assumed)
+          .finishDeferredApply(
+            stateRoot: f.state, homeDirectory: f.home, commit: false))
+    }
+    if let beforeBridge {
+      #expect(try Data(contentsOf: bridge) == beforeBridge)
+      #expect(
+        try FileManager.default.attributesOfItem(atPath: bridge.path)[.posixPermissions] as? Int
+          == 0o600)
+    } else {
+      #expect(!FileManager.default.fileExists(atPath: bridge.path))
+    }
+    #expect(try Data(contentsOf: f.configuration) == beforeConfiguration)
+    #expect(try store.readOwnership() == beforeOwnership)
+    #expect(try store.readTransaction() == nil)
   }
 
   @Test func deferredCommitAndFinalStatusReuseTheInjectedVersion() async throws {
@@ -410,6 +463,7 @@ struct GhosttyPresetLifecycleTests {
     func apply(
       adopt: String? = nil, prerequisites: EnvironmentPrerequisiteInspector = .assumed,
       realReconciliation: Bool = false,
+      afterReconciliation: @escaping @Sendable () throws -> Void = {},
       faultInjector: @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void = { _ in
       }
     )
@@ -435,6 +489,7 @@ struct GhosttyPresetLifecycleTests {
               },
               processes: GhosttyProcesses(list: { [] }, observe: { _ in nil }, signal: { _ in }))
             let result = try await adapter.reconciliation().run()
+            try afterReconciliation()
             return DesktopThemeReconciliation(
               generationID: try ThemeGenerationReader(root: state).activeManifest().generationID,
               results: [
