@@ -2,6 +2,12 @@ import Foundation
 
 /// Every path is stored standardized, whether set by the initializer or assigned later.
 package struct ThemeConsumerPaths: Sendable {
+  package var zedValidateOwnership: @Sendable (URL) throws -> Void = { _ in
+    throw ZedAdapter.Failure.drift
+  }
+  package static func zedConfigurationDirectory(home: URL) -> URL {
+    home.appending(path: ".config/zed").standardizedFileURL
+  }
   package var ghosttyOwnedConfigurationURL: URL?
   package var ghosttyOwnedLineIndex: Int?
   package var ghosttyConfigurationFiles: [URL] {

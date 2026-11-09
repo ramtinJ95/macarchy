@@ -199,6 +199,7 @@ struct ThemeCoreSliceTests {
         == [
           "generated/atuin.toml", "generated/bat.tmTheme", "generated/btop.theme",
           "generated/capabilities.json", "generated/eza.yml", "generated/ghostty.conf",
+          "generated/zed.json",
           "generated/herdr.txt",
           "generated/kitty.conf", "generated/neovim.lua", "generated/pi.json",
           "generated/sketchybar.lua", "generated/sketchybar.sh", "generated/slack.txt",
@@ -213,7 +214,8 @@ struct ThemeCoreSliceTests {
     // Text outputs survive a UTF-8 round trip unchanged.
     let textOutputs = [
       AtuinAdapter.outputPath, TextMateThemeArtifact.outputPath, BtopAdapter.outputPath,
-      EzaAdapter.outputPath, GhosttyAdapter.outputPath, HerdrAdapter.outputPath,
+      EzaAdapter.outputPath, GhosttyAdapter.outputPath, ZedAdapter.outputPath,
+      HerdrAdapter.outputPath,
       KittyAdapter.outputPath,
       NeovimAdapter.outputPath, PiAdapter.outputPath, SketchyBarAdapter.outputPath,
       SlackAdapter.outputPath, SpicetifyAdapter.outputPath, StarshipAdapter.outputPath,
@@ -344,6 +346,7 @@ struct ThemeCoreSliceTests {
         (ThemeRenderer.themeOutputPath, "theme.json"),
         (KittyAdapter.outputPath, "kitty.conf"),
         (GhosttyAdapter.outputPath, "ghostty.conf"),
+        (ZedAdapter.outputPath, "zed.json"),
         (NeovimAdapter.outputPath, "neovim.lua"),
         (PiAdapter.outputPath, "pi.json"),
         (SketchyBarAdapter.outputPath, "sketchybar.lua"),

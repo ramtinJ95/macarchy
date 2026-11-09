@@ -17,6 +17,7 @@ package struct ConsumerID: Hashable, RawRepresentable, Sendable {
   package static let codex = ConsumerID(rawValue: CodexAdapter.id)
   package static let eza = ConsumerID(rawValue: EzaAdapter.id)
   package static let ghostty = ConsumerID(rawValue: GhosttyAdapter.id)
+  package static let zed = ConsumerID(rawValue: ZedAdapter.id)
   package static let herdr = ConsumerID(rawValue: HerdrAdapter.id)
   package static let kitty = ConsumerID(rawValue: KittyAdapter.id)
   package static let neovim = ConsumerID(rawValue: NeovimAdapter.id)
@@ -41,6 +42,7 @@ package enum RuntimeAdapterKind: CaseIterable, Hashable, Sendable {
   case codex
   case eza
   case ghostty
+  case zed
   case herdr
   case kitty
   case neovim
@@ -606,6 +608,16 @@ package struct ConsumerCatalog: Sendable {
       },
       dependencies: [.init(id: StarshipAdapter.id, role: .requiredAdapter)],
       setupManaged: true
+    ),
+    ConsumerCatalogEntry(
+      id: .zed,
+      mode: .runtime(.zed, requirement: .required, enabledByDefault: false),
+      renderer: .text(
+        id: ZedAdapter.id, version: ZedAdapter.rendererVersion, path: ZedAdapter.outputPath,
+        requirement: .requiredWhenRendererVersion(
+          renderer: .init(id: ZedAdapter.id), minimumVersion: 1)
+      ) { package, _ in try ZedAdapter.render(package: package) },
+      dependencies: [.init(id: ZedAdapter.id, role: .requiredAdapter)]
     ),
     ConsumerCatalogEntry(
       id: .ghostty,

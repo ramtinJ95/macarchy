@@ -169,10 +169,11 @@
         "requirement" : "required"
       }
     ],
-    "digest" : "sha256:73bd7c50e0e8d9060467aa6ba10939eafe78b6c4f3c700f4bd034adf7ef8b543",
+    "digest" : "sha256:429e51874553a38931d1b7b11126eef8b9963566af70e76522e0cfc6d8b4ab8c",
     "disabled_consumers" : [
       "borders",
       "lean-focus-ring",
+      "zed",
       "ghostty",
       "user-scripts"
     ],
