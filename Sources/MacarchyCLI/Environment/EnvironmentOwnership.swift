@@ -286,6 +286,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
   let slackEnabled: Bool
   let spicetifyEnabled: Bool
   let tuicrEnabled: Bool
+  let userScripts: [String]?
   let enabledThemeAdapterIDs: [String]?
   /// Theme authority only: these standard configuration entries remain user-owned.
   let standardNativeEntries: [EnvironmentEntryID]?
@@ -308,6 +309,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     slackEnabled: Bool = false,
     spicetifyEnabled: Bool = false,
     tuicrEnabled: Bool = false,
+    userScripts: [String]? = nil,
     enabledThemeAdapterIDs: [String]? = nil,
     standardNativeEntries: [EnvironmentEntryID] = []
   ) {
@@ -332,6 +334,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     self.slackEnabled = slackEnabled
     self.spicetifyEnabled = spicetifyEnabled
     self.tuicrEnabled = tuicrEnabled
+    self.userScripts = userScripts?.isEmpty == false ? userScripts : nil
     self.enabledThemeAdapterIDs = enabledThemeAdapterIDs?.sorted()
     self.standardNativeEntries =
       standardNativeEntries.isEmpty
@@ -358,6 +361,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       piEnabled: base?.piEnabled ?? false, slackEnabled: base?.slackEnabled ?? false,
       spicetifyEnabled: base?.spicetifyEnabled ?? false,
       tuicrEnabled: base?.tuicrEnabled ?? false,
+      userScripts: base?.userScripts,
       enabledThemeAdapterIDs: enabledThemeAdapterIDs,
       standardNativeEntries: standardNativeEntries)
   }
@@ -381,6 +385,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     case slackEnabled = "slack_enabled"
     case spicetifyEnabled = "spicetify_enabled"
     case tuicrEnabled = "tuicr_enabled"
+    case userScripts = "user_scripts"
     case enabledThemeAdapterIDs = "enabled_theme_adapter_ids"
     case standardNativeEntries = "standard_native_entries"
   }
@@ -409,6 +414,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     slackEnabled = try container.decodeIfPresent(Bool.self, forKey: .slackEnabled) ?? false
     spicetifyEnabled = try container.decodeIfPresent(Bool.self, forKey: .spicetifyEnabled) ?? false
     tuicrEnabled = try container.decodeIfPresent(Bool.self, forKey: .tuicrEnabled) ?? false
+    userScripts = try container.decodeIfPresent([String].self, forKey: .userScripts)
     enabledThemeAdapterIDs = try container.decodeIfPresent(
       [String].self,
       forKey: .enabledThemeAdapterIDs
@@ -425,12 +431,16 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
           && Set(adapterIDs).count == adapterIDs.count
           && Set(adapterIDs).isSubset(of: knownThemeAdapterIDs)
           && presetAdaptersMatch(adapterIDs)
+          && adapterIDs.contains(UserScriptsAdapter.id) == !(userScripts ?? []).isEmpty
           && adapterIDs.contains(BordersAdapter.id)
             == (borders != nil && borders?.leanService == nil)
           && adapterIDs.contains(BordersAdapter.leanID) == (borders?.leanService != nil)
       } ?? true
     let standard = standardNativeEntries ?? []
-    guard [1, 2, Self.currentSchemaVersion].contains(schemaVersion),
+    guard (userScripts ?? []).count <= 8,
+      Set(userScripts ?? []).count == (userScripts ?? []).count,
+      (userScripts ?? []).allSatisfy({ NSString(string: $0).isAbsolutePath && !$0.contains("\0") }),
+      [1, 2, Self.currentSchemaVersion].contains(schemaVersion),
       schemaVersion != 1 || standard.isEmpty,
       borders?.leanService == nil || schemaVersion == Self.currentSchemaVersion,
       Set(standard).isSubset(of: [.atuinConfiguration, .starship, .zsh, .kitty, .neovim]),

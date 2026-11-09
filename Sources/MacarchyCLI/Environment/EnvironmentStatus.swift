@@ -224,7 +224,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
 extension EnvironmentProfile {
   var isEntirelyDisabled: Bool {
     terminal == .disabled && shell == .disabled && prompt == .disabled && history == .disabled
-      && focusRing == .disabled
+      && focusRing == .disabled && scripts.run.isEmpty
       && editor == .disabled
       && !EnvironmentDailyTool.allCases.contains { $0.isEnabled(in: tools) }
       && !EnvironmentPreset.allCases.contains { $0.isEnabled(in: presets) }
@@ -235,6 +235,7 @@ extension EnvironmentProfile {
     if terminal == .kitty { ids.append("kitty") }
     if focusRing == .borders { ids.append(BordersAdapter.id) }
     if focusRing == .lean { ids.append(BordersAdapter.leanID) }
+    if !scripts.run.isEmpty { ids.append(UserScriptsAdapter.id) }
     if prompt == .starship { ids.append("starship") }
     if history == .atuin { ids.append("atuin") }
     if editor == .neovim { ids.append("neovim") }

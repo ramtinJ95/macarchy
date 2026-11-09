@@ -42,6 +42,7 @@ enum ThemeRuntimeSelection {
       return Set(explicit)
     }
     var enabled = ConsumerCatalog.shared.defaultEnabledAdapterIDs
+    if !(ownership.userScripts ?? []).isEmpty { enabled.insert(UserScriptsAdapter.id) }
     if let borders = ownership.borders { enabled.insert(borders.adapterID) }
     enabled.remove(SpicetifyAdapter.id)
     enabled.remove(TuicrAdapter.id)
@@ -90,6 +91,9 @@ enum ThemeRuntimeSelection {
         stateRoot: stateRoot, homeDirectory: homeDirectory, runtime: bordersRuntime),
       leanFocusManagedMode: managedLeanMode(
         stateRoot: stateRoot, homeDirectory: homeDirectory, runtime: bordersRuntime.lean),
+      userScriptsMode: ownership?.userScripts.map {
+        UserScriptsMode(scripts: $0.map { URL(filePath: $0) })
+      },
       piSelectionIsApplied: {
         try piIsEnabled(stateRoot: stateRoot, consumerPaths: consumerPaths)
       },

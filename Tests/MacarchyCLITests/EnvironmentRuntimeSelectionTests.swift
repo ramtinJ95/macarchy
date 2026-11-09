@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -6,6 +7,41 @@ import Testing
 
 /// The applied adapter inventory that selects which theme adapters run.
 struct EnvironmentRuntimeSelectionTests {
+  @Test func themeSetDryRunAndRuntimeUseOnlyTheAppliedScripts() async throws {
+    let fixture = try RuntimeSelectionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let directory = fixture.root.appending(path: "scripts")
+    try FileManager.default.createDirectory(
+      at: directory, withIntermediateDirectories: false,
+      attributes: [.posixPermissions: 0o700])
+    let script = directory.appending(path: "record")
+    let recorded = directory.appending(path: "events")
+    try "#!/bin/sh\necho $MACARCHY_EVENT >> \"$(dirname \"$0\")/events\"\n"
+      .write(to: script, atomically: false, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+    try EnvironmentStateStore(stateRoot: fixture.state).writeOwnership(
+      EnvironmentOwnership(
+        generationID: "e-00000000-0000-0000-0000-000000000000", records: [],
+        createdDirectories: [], originalThemeBridges: [], userScripts: [script.path],
+        enabledThemeAdapterIDs: [UserScriptsAdapter.id]))
+    let repository = ThemeRepository(builtInRoot: repositoryRoot.appending(path: "Themes"))
+    let paths = testConsumerPaths(homeDirectory: fixture.home)
+    let preview = try await ThemeActivationService.live.execute(
+      repository: repository,
+      themeID: "catppuccin-mocha", stateRoot: fixture.state, consumerPaths: paths,
+      dryRun: true, json: false)
+    #expect(preview.succeeded, "\(preview.output)")
+    #expect(preview.output.contains("user-scripts"))
+    #expect(!FileManager.default.fileExists(atPath: recorded.path))
+    let applied = try await ThemeActivationService.live.execute(
+      repository: repository,
+      themeID: "catppuccin-mocha", stateRoot: fixture.state, consumerPaths: paths,
+      dryRun: false, json: false)
+    #expect(applied.succeeded, "\(applied.output)")
+    #expect(applied.output.contains("record succeeded"))
+    #expect(try String(contentsOf: recorded, encoding: .utf8) == "apply\n")
+  }
+
   @Test
   func malformedAndUnknownAppliedAdapterInventoriesBlockRuntimeSelection() throws {
     let fixture = try RuntimeSelectionFixture()
@@ -62,7 +98,7 @@ struct EnvironmentRuntimeSelectionTests {
         homeDirectory: fixture.home
       )
         == Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          BordersAdapter.id, BordersAdapter.leanID, SpicetifyAdapter.id,
+          BordersAdapter.id, BordersAdapter.leanID, UserScriptsAdapter.id, SpicetifyAdapter.id,
         ])
     )
   }

@@ -8,6 +8,38 @@ import Testing
 @testable import ThemeCore
 
 struct EnvironmentLifecycleTests {
+  @Test func applyingScriptsRecordsReplacesAndRemovesTheirRuntimeAuthority() async throws {
+    let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let original = try String(contentsOf: fixture.profile, encoding: .utf8)
+    let store = EnvironmentStateStore(stateRoot: fixture.state)
+    for name in ["one", "two"] {
+      try (original + "\n[scripts]\nrun = [\"\(name)\"]\n")
+        .write(to: fixture.profile, atomically: false, encoding: .utf8)
+      #expect(try fixture.plan().output.contains(name))
+      let result = try await fixture.apply(adopt: nil)
+      #expect(result.succeeded, "\(result.output)")
+      let ownership = try #require(try store.readOwnership())
+      #expect(ownership.userScripts == [fixture.root.appending(path: name).path])
+      #expect(
+        ThemeRuntimeSelection.appliedAdapterIDs(for: ownership).contains(UserScriptsAdapter.id))
+    }
+    try original.write(to: fixture.profile, atomically: false, encoding: .utf8)
+    #expect(
+      try ThemeRuntimeSelection.enabledAdapterIDs(
+        stateRoot: fixture.state, homeDirectory: fixture.home
+      )
+      .contains(UserScriptsAdapter.id))
+    let removed = try await fixture.apply(adopt: nil)
+    #expect(removed.succeeded, "\(removed.output)")
+    #expect(try store.readOwnership()?.userScripts == nil)
+    #expect(
+      try !ThemeRuntimeSelection.enabledAdapterIDs(
+        stateRoot: fixture.state, homeDirectory: fixture.home
+      )
+      .contains(UserScriptsAdapter.id))
+  }
+
   @Test(arguments: [false, true])
   func liveKittySourceSurvivesApplyEditsRepeatAndTeardown(symlinked: Bool) async throws {
     let fixture = try EnvironmentLifecycleFixture()

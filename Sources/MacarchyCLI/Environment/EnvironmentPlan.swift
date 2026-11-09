@@ -257,6 +257,14 @@ struct EnvironmentPlanCommandRunner: Sendable {
     restorationRequired: Bool
   ) -> [PlanAction] {
     var actions: [PlanAction] = []
+    if !profile.scripts.run.isEmpty {
+      actions.append(
+        PlanAction(
+          id: "run_user_scripts",
+          message:
+            "Run after theme activation and at teardown: "
+            + profile.scripts.run.map(\.path).joined(separator: ", ")))
+    }
     if profile.focusRing == .lean {
       actions.append(
         PlanAction(

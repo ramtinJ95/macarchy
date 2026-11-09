@@ -438,6 +438,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       slackEnabled: composition.profile.presets.slack,
       spicetifyEnabled: composition.profile.presets.spicetify,
       tuicrEnabled: composition.profile.presets.tuicr,
+      userScripts: composition.profile.scripts.run.map(\.path),
       enabledThemeAdapterIDs: enabledThemeAdapterIDs
         ?? composition.profile.selectedThemeAdapterIDs,
       standardNativeEntries: inspection.standardNativeEntries
@@ -445,6 +446,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let generationChanged = previous?.generationID != proposed.generationID
     let ownershipChanged =
       previous?.records != proposed.records || previous?.btop != proposed.btop
+      || previous?.userScripts != proposed.userScripts
       || previous?.borders != proposed.borders
       || previous?.codex != proposed.codex
       || previous?.herdr != proposed.herdr
