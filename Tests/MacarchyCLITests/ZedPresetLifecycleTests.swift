@@ -110,6 +110,55 @@ struct ZedPresetLifecycleTests {
     #expect(try await f.harness.teardown(consumerPaths: f.paths).succeeded)
   }
 
+  @Test func preZedGenerationSupportsAdoptionAndReconciliationWithoutMutation() async throws {
+    let f = try Fixture(original: nil)
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    let current = try ThemeGenerationReader(root: f.state).activeManifest()
+    let generation = f.state.appending(path: "generations/\(current.generationID)")
+    let manifestURL = generation.appending(path: "manifest.json")
+    let artifact = generation.appending(path: ZedAdapter.outputPath)
+    var object = try #require(
+      try JSONSerialization.jsonObject(
+        with: Data(contentsOf: manifestURL)) as? [String: Any])
+    var versions = try #require(object["renderer_versions"] as? [String: Int])
+    var artifacts = try #require(object["artifacts"] as? [String: String])
+    versions.removeValue(forKey: ZedAdapter.id)
+    artifacts.removeValue(forKey: ZedAdapter.outputPath)
+    object["renderer_versions"] = versions
+    object["artifacts"] = artifacts
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o755],
+      ofItemAtPath: artifact.deletingLastPathComponent().path)
+    try FileManager.default.removeItem(at: artifact)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o555],
+      ofItemAtPath: artifact.deletingLastPathComponent().path)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o644], ofItemAtPath: manifestURL.path)
+    let legacyData = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    try legacyData.write(to: manifestURL)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o444], ofItemAtPath: manifestURL.path)
+    #expect(
+      try ThemeGenerationReader(root: f.state).activeManifest().rendererVersions["zed"] == nil)
+    #expect(try f.harness.plan().succeeded)
+    #expect(try await f.apply().succeeded)
+    let paths = try ThemeRuntimeSelection.consumerPaths(stateRoot: f.state, consumerPaths: f.paths)
+    let adapter = ZedAdapter(
+      root: f.state, configurationDirectory: f.settings.deletingLastPathComponent(),
+      version: { [1, 27, 0] }, validateOwnership: paths.zedValidateOwnership)
+    #expect(try await adapter.reconciliation().run().status == .applied)
+    let package = try ThemePackageLoader().load(
+      packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha"))
+    #expect(try Data(contentsOf: f.family) == Data(ZedAdapter.render(package: package).utf8))
+    #expect(try Data(contentsOf: manifestURL) == legacyData)
+    #expect(!FileManager.default.fileExists(atPath: artifact.path))
+    #expect(
+      try ThemeGenerationReader(root: f.state).activeManifest().generationID == current.generationID
+    )
+    #expect(try await f.harness.teardown(consumerPaths: f.paths).succeeded)
+  }
+
   @Test func rollbackRestoresBothFilesAfterAuthorityPublicationFailure() async throws {
     let original =
       "// keep\n{\"theme\": {\"mode\": \"system\", \"light\": \"A\", \"dark\": \"B\"}}\n"
