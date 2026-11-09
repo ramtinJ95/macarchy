@@ -117,6 +117,22 @@ struct UserScriptRunnerTests {
     }
   }
 
+  @Test func cancellationStopsAndReapsTheRunningScriptGroup() throws {
+    try withScriptDirectory { directory in
+      let child = directory.appending(path: "child")
+      let script = try makeScript(
+        "#!/bin/sh\n/bin/sleep 30 &\necho $! > \"$(dirname \"$0\")/child\"\nwait\n",
+        in: directory)
+      let started = ContinuousClock.now
+      let outcome = UserScriptRunner().run(
+        script, environment: [:],
+        isCancelled: { FileManager.default.fileExists(atPath: child.path) })
+      #expect(outcome == .failed("cancelled and was stopped"))
+      #expect(ContinuousClock.now - started < .seconds(5))
+      try expectStopped(childRecordedIn: directory)
+    }
+  }
+
   @Test func aBackgroundChildIsStoppedWhenTheScriptExits() throws {
     try withScriptDirectory { directory in
       let script = try makeScript(
@@ -208,6 +224,50 @@ struct UserScriptRunnerTests {
 }
 
 extension AdapterContractTests {
+  @Test(arguments: [false, true])
+  func cancelledUserScriptsNeverStartTheNextScript(initiallyCancelled: Bool) async throws {
+    let root = try temporaryDirectory()
+    defer { removeTemporaryRoot(root) }
+    _ = try testActivator(root: root).activate(package: catppuccinPackage())
+    let scripts = try makeTrustedScriptDirectory()
+    defer { removeTemporaryRoot(scripts) }
+    let child = scripts.appending(path: "child")
+    let next = scripts.appending(path: "next")
+    let first = try makeScript(
+      "#!/bin/sh\n/bin/sleep 30 &\necho $! > \"$(dirname \"$0\")/child\"\nwait\n",
+      named: "first", in: scripts)
+    let second = try makeScript(
+      "#!/bin/sh\ntouch \"$(dirname \"$0\")/next\"\n", named: "second", in: scripts)
+    let adapter = UserScriptsAdapter(root: root, mode: UserScriptsMode(scripts: [first, second]))
+    let task = Task.detached {
+      if initiallyCancelled { withUnsafeCurrentTask { $0?.cancel() } }
+      return try adapter.run(event: .apply)
+    }
+    defer { task.cancel() }
+    if !initiallyCancelled {
+      let deadline = ContinuousClock.now + .seconds(5)
+      while !FileManager.default.fileExists(atPath: child.path), ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      try #require(FileManager.default.fileExists(atPath: child.path))
+      task.cancel()
+    }
+    let cancelled = ContinuousClock.now
+    do {
+      _ = try await task.value
+      Issue.record("The adapter must propagate cancellation")
+    } catch is CancellationError {
+      // Cancellation is not an optional consumer failure or a successful report.
+    }
+    #expect(ContinuousClock.now - cancelled < .seconds(5))
+    #expect(!FileManager.default.fileExists(atPath: next.path))
+    if initiallyCancelled {
+      #expect(!FileManager.default.fileExists(atPath: child.path))
+    } else {
+      try expectStopped(childRecordedIn: scripts)
+    }
+  }
+
   @Test
   func userScriptsRunAfterEveryOtherAdapterWithTheActiveTheme() async throws {
     let root = try temporaryDirectory()

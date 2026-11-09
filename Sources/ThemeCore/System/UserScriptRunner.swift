@@ -181,15 +181,21 @@ package struct UserScriptRunner: Sendable {
   }
 
   /// Runs `script` with `environment` after checking it may run.
-  package func run(_ script: URL, environment: [String: String]) -> Outcome {
+  package func run(
+    _ script: URL, environment: [String: String], isCancelled: () -> Bool = { false }
+  ) -> Outcome {
     withChildProcessStopSignals(reraise: true) { received in
-      run(script, environment: environment, interrupted: { received() != nil })
+      run(
+        script, environment: environment, interrupted: { received() != nil },
+        isCancelled: isCancelled)
     }
   }
 
   private func run(
-    _ script: URL, environment: [String: String], interrupted: () -> Bool
+    _ script: URL, environment: [String: String], interrupted: () -> Bool,
+    isCancelled: () -> Bool
   ) -> Outcome {
+    if isCancelled() { return .failed("cancelled before it started") }
     let path: String
     switch trustedPath(of: script) {
     case .success(let resolved): path = resolved
@@ -231,6 +237,10 @@ package struct UserScriptRunner: Sendable {
     let deadline = clock.now.advanced(by: .seconds(executionLimit))
     var status: Int32 = 0
     while clock.now < deadline {
+      if isCancelled() {
+        ChildProcess.killAndReap(processID, target: -processID)
+        return .failed("cancelled and was stopped")
+      }
       if interrupted() {
         ChildProcess.killAndReap(processID, target: -processID)
         return .failed("interrupted and was stopped")
