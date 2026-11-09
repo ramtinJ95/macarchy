@@ -280,6 +280,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
   let pi: EnvironmentPiOwnership?
   let spicetify: EnvironmentSpicetifyOwnership?
   let ghostty: EnvironmentGhosttyOwnership?
+  let zed: EnvironmentZedOwnership?
+  let zedFamily: EnvironmentZedFamilyOwnership?
   let tuicr: EnvironmentTuicrOwnership?
   let codexEnabled: Bool
   let herdrEnabled: Bool
@@ -304,6 +306,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     pi: EnvironmentPiOwnership? = nil,
     spicetify: EnvironmentSpicetifyOwnership? = nil,
     ghostty: EnvironmentGhosttyOwnership? = nil,
+    zed: EnvironmentZedOwnership? = nil,
+    zedFamily: EnvironmentZedFamilyOwnership? = nil,
     tuicr: EnvironmentTuicrOwnership? = nil,
     codexEnabled: Bool = false,
     herdrEnabled: Bool = false,
@@ -330,6 +334,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     self.pi = pi
     self.spicetify = spicetify
     self.ghostty = ghostty
+    self.zed = zed
+    self.zedFamily = zedFamily
     self.tuicr = tuicr
     self.codexEnabled = codexEnabled
     self.herdrEnabled = herdrEnabled
@@ -359,7 +365,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       createdDirectories: base?.createdDirectories ?? [],
       originalThemeBridges: base?.originalThemeBridges ?? [],
       btop: base?.btop, borders: base?.borders, codex: base?.codex, herdr: herdr, pi: base?.pi,
-      spicetify: base?.spicetify, ghostty: base?.ghostty, tuicr: base?.tuicr,
+      spicetify: base?.spicetify, ghostty: base?.ghostty, zed: base?.zed,
+      zedFamily: base?.zedFamily, tuicr: base?.tuicr,
       codexEnabled: base?.codexEnabled ?? false, herdrEnabled: base?.herdrEnabled ?? false,
       piEnabled: base?.piEnabled ?? false, slackEnabled: base?.slackEnabled ?? false,
       spicetifyEnabled: base?.spicetifyEnabled ?? false,
@@ -382,6 +389,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     case pi
     case spicetify
     case ghostty
+    case zed
+    case zedFamily = "zed_family"
     case tuicr
     case codexEnabled = "codex_enabled"
     case herdrEnabled = "herdr_enabled"
@@ -412,6 +421,9 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     spicetify = try container.decodeIfPresent(
       EnvironmentSpicetifyOwnership.self, forKey: .spicetify)
     ghostty = try container.decodeIfPresent(EnvironmentGhosttyOwnership.self, forKey: .ghostty)
+    zed = try container.decodeIfPresent(EnvironmentZedOwnership.self, forKey: .zed)
+    zedFamily = try container.decodeIfPresent(
+      EnvironmentZedFamilyOwnership.self, forKey: .zedFamily)
     tuicr = try container.decodeIfPresent(EnvironmentTuicrOwnership.self, forKey: .tuicr)
     codexEnabled = try container.decodeIfPresent(Bool.self, forKey: .codexEnabled) ?? false
     herdrEnabled = try container.decodeIfPresent(Bool.self, forKey: .herdrEnabled) ?? false
@@ -465,6 +477,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       pi?.hasValidShape ?? true,
       spicetify?.hasValidShape ?? true,
       ghostty?.hasValidShape ?? true,
+      zed?.hasValidShape ?? true, zedFamily?.hasValidShape ?? true,
+      (zed == nil) == (zedFamily == nil),
       tuicr?.hasValidShape ?? true,
       hasValidThemeAdapterInventory
     else { return false }

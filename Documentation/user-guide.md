@@ -1349,6 +1349,41 @@ A file created by Macarchy is deleted only while it contains nothing else.
 Unrelated later user edits survive; an edited, moved or removed owned line is
 reported as drift and blocks teardown rather than overwriting the file.
 
+### Zed theme consumer
+
+Install `/Applications/Zed.app` (0.122.2 or newer), then opt in and review setup:
+
+```toml
+[presets]
+zed = true
+```
+
+Run `macarchy setup plan`, then `macarchy setup apply`, approving adoption when
+requested. Macarchy owns only the top-level `theme` member in
+`~/.config/zed/settings.json` and the regular file `~/.config/zed/themes/macarchy.json`.
+Both paths must be ordinary, not symlinked. A pre-existing unowned `macarchy.json`
+blocks setup; move it aside yourself first. Macarchy does not install Zed or change
+its keybindings, editor role, extensions, or other settings.
+
+The selector becomes `"theme": "Macarchy"`, whether its original value was a string
+or a `{mode, light, dark}` object. One Macarchy theme has one appearance, so a string
+selects the same look as assigning both sides of that object. Comments outside
+the owned member, trailing commas and unrelated settings survive. The generated family supplies editor/UI,
+syntax and terminal ANSI colors. Zed watches both files and reloads live; Macarchy
+atomically replaces the theme file on each reconcile and never restarts Zed.
+
+On macOS, Zed uses `~/.config/zed`, not `XDG_CONFIG_HOME`. A Zed instance launched
+with a custom data directory is outside this default-path integration. Project
+`.zed/settings.json` overrides are not scanned or changed. After external edits,
+run `macarchy reconcile zed` for fresh drift reporting; status retains the previous
+reconciliation result.
+
+Set `zed = false` and apply, or tear down, to restore the original theme member
+byte-for-byte, remove an inserted member, or delete settings created by Macarchy
+if no unrelated members were added. Teardown removes the owned theme family and
+only directories Macarchy created that remain empty. A changed owned member or
+family is drift and blocks replacement/removal rather than overwriting your work.
+
 ### Writable Atuin configuration
 
 To preserve the active Atuin settings as a writable native file:

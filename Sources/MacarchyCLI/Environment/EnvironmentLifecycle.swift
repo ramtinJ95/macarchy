@@ -425,6 +425,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
             inspection.desiredEntries.contains {
               $0.url.path.hasPrefix(directory + "/")
             } || inspection.proposedGhosttyOwnership?.path.hasPrefix(directory + "/") == true
+              || inspection.proposedZedOwnership?.path.hasPrefix(directory + "/") == true
+              || inspection.proposedZedFamilyOwnership?.path.hasPrefix(directory + "/") == true
           }
         ).union(inspection.createdDirectories)
       ),
@@ -436,6 +438,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
       pi: inspection.proposedPiOwnership,
       spicetify: inspection.proposedSpicetifyOwnership,
       ghostty: inspection.proposedGhosttyOwnership,
+      zed: inspection.proposedZedOwnership,
+      zedFamily: inspection.proposedZedFamilyOwnership,
       tuicr: inspection.proposedTuicrOwnership,
       codexEnabled: composition.profile.presets.codex,
       herdrEnabled: composition.profile.presets.herdr,
@@ -458,6 +462,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       || previous?.pi != proposed.pi
       || previous?.spicetify != proposed.spicetify
       || previous?.ghostty != proposed.ghostty
+      || previous?.zed != proposed.zed || previous?.zedFamily != proposed.zedFamily
       || previous?.tuicr != proposed.tuicr
       || previous?.codexEnabled != proposed.codexEnabled
       || previous?.herdrEnabled != proposed.herdrEnabled
@@ -847,6 +852,14 @@ struct EnvironmentTransactionCoordinator: Sendable {
     case .spicetify:
       try EnvironmentSpicetifyFileTransaction(homeDirectory: homeDirectory)
         .transition(from: old, to: new, replacementName: replacementName)
+    case .zed:
+      try EnvironmentPresetFileTransaction<EnvironmentZedOwnership>(homeDirectory: homeDirectory)
+        .transition(from: old, to: new, replacementName: replacementName)
+    case .zedFamily:
+      try EnvironmentPresetFileTransaction<EnvironmentZedFamilyOwnership>(
+        homeDirectory: homeDirectory
+      )
+      .transition(from: old, to: new, replacementName: replacementName)
     case .ghostty:
       try EnvironmentGhosttyFileTransaction(homeDirectory: homeDirectory)
         .transition(from: old, to: new, replacementName: replacementName)
@@ -888,6 +901,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
   private func validate(_ ownership: EnvironmentOwnership?) throws {
     guard let ownership else { return }
     guard ownership.hasValidShape,
+      ownership.zedFamily == nil || ownership.zedFamily?.stateRoot == stateRoot.path,
       ownership.ghostty == nil
         || ownership.ghostty?.directive == GhosttyConfiguration.includeDirective(root: stateRoot)
     else {
@@ -950,6 +964,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
         }
         + [
           homeDirectory.appending(path: ".config").path,
+          homeDirectory.appending(path: ".config/zed").path,
+          homeDirectory.appending(path: ".config/zed/themes").path,
           homeDirectory.appending(path: ConsumerHomePath.herdrDirectory).path,
         ] + ghosttyParentDirectories()
     )
@@ -1051,6 +1067,15 @@ struct EnvironmentTransactionCoordinator: Sendable {
       try EnvironmentSpicetifyFileTransaction(homeDirectory: homeDirectory).preflight(spicetify)
     } else {
       try preflightExternalTuple(.spicetify, in: ownership)
+    }
+    if let zed = ownership.zed {
+      try EnvironmentPresetFileTransaction<EnvironmentZedOwnership>(homeDirectory: homeDirectory)
+        .preflight(zed)
+    }
+    if let family = ownership.zedFamily {
+      try EnvironmentPresetFileTransaction<EnvironmentZedFamilyOwnership>(
+        homeDirectory: homeDirectory
+      ).preflight(family)
     }
     if let ghostty = ownership.ghostty {
       try EnvironmentGhosttyFileTransaction(homeDirectory: homeDirectory).preflight(ghostty)

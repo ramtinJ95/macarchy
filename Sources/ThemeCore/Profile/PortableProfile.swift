@@ -307,6 +307,7 @@ package struct PresetsProfile: Equatable, Sendable {
   package var spicetify: Bool
   package var tuicr: Bool
   package var ghostty: Bool = false
+  package var zed: Bool = false
 }
 
 extension PresetsProfile: PortableProfileSection {
@@ -322,6 +323,7 @@ extension PresetsProfile: PortableProfileSection {
       .init("spicetify", \.spicetify),
       .init("tuicr", \.tuicr),
       .init("ghostty", \.ghostty),
+      .init("zed", \.zed),
     ]
   }
 }
@@ -768,7 +770,8 @@ package struct PortableProfileLoader: Sendable {
         slack: document.presets?.slack ?? PresetsProfile.defaults.slack,
         spicetify: document.presets?.spicetify ?? PresetsProfile.defaults.spicetify,
         tuicr: document.presets?.tuicr ?? PresetsProfile.defaults.tuicr,
-        ghostty: document.presets?.ghostty ?? PresetsProfile.defaults.ghostty
+        ghostty: document.presets?.ghostty ?? PresetsProfile.defaults.ghostty,
+        zed: document.presets?.zed ?? PresetsProfile.defaults.zed
       ),
       btop: BtopProfileOptions(vimKeys: document.btop?.vimKeys),
       yazi: YaziProfileOptions(showHidden: document.yazi?.showHidden)
@@ -1346,6 +1349,7 @@ private struct PresetsDocument: Decodable {
   let spicetify: Bool?
   let tuicr: Bool?
   let ghostty: Bool?
+  let zed: Bool?
 }
 
 private struct BtopDocument: Decodable {

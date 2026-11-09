@@ -11,17 +11,20 @@ struct PresetLifecycleTestHarness {
   let state: URL
   let home: URL
   var ghosttyVersion: @Sendable () throws -> [Int] = { [1, 4, 0] }
+  var zedVersion: @Sendable () throws -> [Int] = { [1, 27, 0] }
 
   func plan() throws -> (output: String, succeeded: Bool) {
-    try EnvironmentPlanCommandRunner(prerequisites: .assumed, ghosttyVersion: ghosttyVersion)
-      .execute(
-        resourcesRoot: repositoryRoot.appending(path: "Environment"),
-        profileURL: profile,
-        profileRequired: true,
-        stateRoot: state,
-        homeDirectory: home,
-        json: true
-      )
+    try EnvironmentPlanCommandRunner(
+      prerequisites: .assumed, ghosttyVersion: ghosttyVersion, zedVersion: zedVersion
+    )
+    .execute(
+      resourcesRoot: repositoryRoot.appending(path: "Environment"),
+      profileURL: profile,
+      profileRequired: true,
+      stateRoot: state,
+      homeDirectory: home,
+      json: true
+    )
   }
 
   func apply(
