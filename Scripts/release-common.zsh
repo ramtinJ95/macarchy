@@ -12,7 +12,7 @@ release_executables=(bin/macarchy bin/macarchy-menu bin/macarchy-focus-ring libe
 # Repository directories shipped as share/macarchy/<lowercased name>.
 release_resources=(Themes Keybindings Desktop Environment)
 # Repository files shipped as share/doc/macarchy/<file name>.
-release_documents=(Documentation/theme-json.md CHANGELOG.md LICENSE)
+release_documents=(Documentation/theme-json.md CHANGELOG.md LICENSE THIRD_PARTY_NOTICES.md)
 
 # Sets $package_name, $archive_name and $checksum_name for <version>. release.py's
 # archive_name and Scripts/vm/verify_packaged_lean.py spell the same pattern.

@@ -529,6 +529,7 @@ struct HomebrewLifecycleTests {
       "share/doc/macarchy/CHANGELOG.md",
       "share/doc/macarchy/LICENSE",
       "share/doc/macarchy/theme-json.md",
+      "share/doc/macarchy/THIRD_PARTY_NOTICES.md",
     ] {
       try Data("{}\n".utf8).write(to: prefix.appending(path: file))
     }

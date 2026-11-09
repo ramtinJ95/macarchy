@@ -513,6 +513,7 @@ struct HomebrewInstallationVerifier: Sendable {
       "share/doc/macarchy/CHANGELOG.md",
       "share/doc/macarchy/LICENSE",
       "share/doc/macarchy/theme-json.md",
+      "share/doc/macarchy/THIRD_PARTY_NOTICES.md",
     ] {
       do {
         _ = try BoundedRegularFile.read(at: prefix.appending(path: relativePath))
