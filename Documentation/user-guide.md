@@ -756,10 +756,13 @@ A hardware-matched accent is left unchanged because it cannot be restored
 once changed.
 
 The first write records the original preset. Later theme changes never replace
-that original. On `setup teardown`, or a later setup apply with `accent = false`,
-Macarchy restores it only if the current accent still equals its last applied
+that original. A pending target is recorded before each native write, so a helper
+crash, timeout or failed confirmation cannot lose restoration ownership.
+On `setup teardown`, or a later setup apply with `accent = false`, Macarchy
+restores the original if the current accent equals its last confirmed or pending
 preset. An already-original value stays; a different, user-chosen value stays
-and is reported as kept. Failed restoration retains the record for a retry,
+and is reported as kept in setup's text and JSON output, including deferred
+commit recovery. Failed restoration retains the record for a retry,
 including when a macOS upgrade leaves the helper unsupported. This record is
 not a second theme authority: the active theme still determines the desired color.
 
