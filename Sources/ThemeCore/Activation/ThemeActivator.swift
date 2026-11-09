@@ -153,9 +153,12 @@ public struct ThemeActivator: Sendable {
     )
   }
 
+  /// Retires the setup-owned generation. `beforeRetiringLocked` runs under the activation lock
+  /// once the generation is confirmed, just before it is retired, and never for a dry run.
   package func deactivate(
     expectedGenerationID: String,
-    dryRun: Bool
+    dryRun: Bool,
+    beforeRetiringLocked: () -> Void = {}
   ) throws -> String? {
     let cleanupError: String? = try activationLock.withLock {
       let manifest = try ThemeGenerationReader(root: root).activeManifest()
@@ -182,6 +185,7 @@ public struct ThemeActivator: Sendable {
         throw ThemeDeactivationError.invalidReconciliation(String(describing: error))
       }
       if dryRun { return nil }
+      beforeRetiringLocked()
 
       let currentURL = StateLayout(root: root).currentTheme
       let generationURL = root.appending(
