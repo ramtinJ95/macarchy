@@ -88,6 +88,7 @@ extension AdapterContractTests {
       wallpaperControl: trackedWallpaperControl(state: wallpaperState),
       enabledAdapterIDs: Set(ThemeActivationCoordinator.adapterRequirements.keys)
         .subtracting([
+          "vscode", "cursor", "vscodium", "windsurf",
           ZedAdapter.id, AlacrittyAdapter.id, GhosttyAdapter.id, BordersAdapter.id,
           BordersAdapter.leanID,
           UserScriptsAdapter.id, MacOSAccentAdapter.id,
@@ -394,6 +395,7 @@ extension AdapterContractTests {
       currentAppearance: { .dark },
       enabledAdapterIDs: enabledAdapterIDs
         ?? Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
+          "vscode", "cursor", "vscodium", "windsurf",
           ZedAdapter.id, AlacrittyAdapter.id, GhosttyAdapter.id, BordersAdapter.id,
           BordersAdapter.leanID,
           UserScriptsAdapter.id, MacOSAccentAdapter.id,

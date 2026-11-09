@@ -96,6 +96,7 @@ struct EnvironmentRuntimeSelectionTests {
         homeDirectory: fixture.home
       )
         == Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
+          "vscode", "cursor", "vscodium", "windsurf",
           ZedAdapter.id, AlacrittyAdapter.id, GhosttyAdapter.id, BordersAdapter.id,
           BordersAdapter.leanID,
           UserScriptsAdapter.id, MacOSAccentAdapter.id,
