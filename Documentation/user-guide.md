@@ -103,6 +103,9 @@ macarchy setup doctor
 `macarchy theme undo` steps back through the last 50 theme and background changes;
 there is no redo.
 
+In the theme browser, Add Favorite or Command-D stars the selected theme. The action
+menu lists starred themes under Appearance and finds any installed theme as you
+type; choosing one applies it.
 `macarchy theme favorite add|remove|list` keeps your favorite themes at the top of
 `macarchy theme list`. A search matches a theme when every word you type starts a
 word of its name, identifier or appearance, ignoring case and accents, so

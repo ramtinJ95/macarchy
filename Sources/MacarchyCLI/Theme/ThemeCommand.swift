@@ -133,6 +133,10 @@ extension Theme {
     @Flag(help: "Emit machine-readable output.")
     var json = false
 
+    @Flag(help: .hidden)
+    var alertOnError = false
+
+    @MainActor
     mutating func run() async throws {
       let execution = try await ThemeActivationService.live.execute(
         repository: options.repository,
@@ -142,6 +146,9 @@ extension Theme {
         dryRun: options.dryRun,
         json: json
       )
+      if alertOnError && !execution.succeeded {
+        showNativeAlert(title: "Theme not applied", message: execution.output)
+      }
       try emitExecution(execution)
     }
   }

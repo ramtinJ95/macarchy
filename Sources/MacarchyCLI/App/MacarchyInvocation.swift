@@ -9,6 +9,7 @@ enum MacarchyInvocation {
 
   static let themeBrowse = ["theme", "browse"]
   static let themeUndo = ["theme", "undo"]
+  static func themeSet(_ themeID: String) -> [String] { ["theme", "set", themeID] }
   static let keybindingsShowEffective = ["keybindings", "show", "--effective"]
   static let captureScreenshot = ["capture", "screenshot"]
   static let captureAnnotate = ["capture", "annotate"]
