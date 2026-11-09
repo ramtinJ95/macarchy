@@ -1384,6 +1384,71 @@ if no unrelated members were added. Teardown removes the owned theme family and
 only directories Macarchy created that remain empty. A changed owned member or
 family is drift and blocks replacement/removal rather than overwriting your work.
 
+### Alacritty theme consumer
+
+Install `/Applications/Alacritty.app` (0.14.0 or newer).
+
+The Homebrew Alacritty cask is disabled for failing macOS Gatekeeper checks
+(since 2026-09-01). Official downloads are available from
+[Alacritty's GitHub releases](https://github.com/alacritty/alacritty/releases).
+Macarchy does not install or approve the app. Discovery and the version check
+use `/Applications/Alacritty.app/Contents/MacOS/alacritty`, regardless of how the
+app was installed; other app locations are not currently supported.
+
+Then opt in:
+
+```toml
+[presets]
+alacritty = true
+```
+
+Run `macarchy setup plan`, review the adoption evidence, then `macarchy setup apply`
+with the requested approval. Macarchy only themes Alacritty: it does not install it,
+select it as your terminal, or manage fonts, keybindings, or other behavior.
+
+Macarchy appends one absolute string **last** in `[general] import`. The imported
+file is `<Macarchy root>/state/adapters/alacritty.toml`, an ordinary, atomically
+replaced file outside the generation's `current` symlink. It supplies the terminal
+background, foreground, cursor, selection, and 16 ANSI colors.
+
+Configuration discovery follows Alacritty's default search: the XDG config home
+and XDG config directories for `alacritty/alacritty.toml`, then those directories
+for `alacritty.toml`, followed by `~/.config/alacritty/alacritty.toml`,
+`~/.alacritty.toml`, and `/etc/alacritty/alacritty.toml`. XDG defaults are
+`~/.config` and `/etc/xdg`. If nothing exists, Macarchy creates
+`$XDG_CONFIG_HOME/alacritty/alacritty.toml` (or its `~/.config` default).
+The winning file must be an ordinary, nonsymlinked file within your selected home;
+Macarchy never edits system configuration. GUI launchd and shell XDG environments
+can differ. Command-line configuration overrides are outside this inspection.
+
+Existing comments and other settings are preserved. Dotted `general.import`,
+inline `general = {...}`, non-string import arrays, and deprecated top-level
+`import` require manual conversion to a `[general]` table first. If only a legacy
+YAML file exists, run `alacritty migrate` before adoption; Macarchy will not create
+a TOML file that silently shadows it.
+
+First connection reports a next-launch boundary; reopen Alacritty to establish
+its theme-file watcher. Later switches use Alacritty's automatic config reload,
+without signals or forced restarts. When the effective `live_config_reload` is
+false (including legacy or imported settings), reconciliation reports
+`restart_required` with a `next_invocation` explanation instead of claiming repaint.
+On Alacritty 0.17.0 in a macOS 26 guest, adoption repainted once but a subsequent
+switch did not reload until the app was reopened. After that one-time reopen,
+two theme switches repainted the same process and matched runtime color readback.
+
+The main file's color settings override every import. A user import appended
+after Macarchy can also override it. Inspection and reconciliation name those
+files and color keys without changing them; after external edits, run
+`macarchy reconcile` to refresh the receipt shown by `theme status`.
+
+Disable the preset and apply, or tear down, to remove the owned element and the
+generated bridge. Otherwise-unchanged configuration is restored byte-for-byte;
+unrelated later content remains. An edited, moved, duplicated or missing owned
+element/separator is drift and blocks restoration rather than overwriting it.
+If Macarchy introduced the `[general]` table and you later add settings beneath
+it, theme updates still work, but teardown requires separating those settings
+first: removing the owned table header would otherwise change their meaning.
+
 ### Writable Atuin configuration
 
 To preserve the active Atuin settings as a writable native file:
