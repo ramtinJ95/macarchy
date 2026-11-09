@@ -143,7 +143,21 @@ extension EnvironmentProviderInspector {
     }
     if let ownership {
       let exact = try current.map { try ownership.matchesManaged($0, at: url) } ?? false
-      guard ownership.directive == GhosttyConfiguration.includeDirective(root: root) else {
+      let legacy =
+        "config-file = ?\"\(StateLayout(root: root).currentThemeArtifact(GhosttyAdapter.outputPath).path)\""
+      if enabled, ownership.directive == legacy {
+        return (
+          entry(
+            .drifted, "macarchy",
+            "The owned Ghostty include is outdated. Tear down or disable the Ghostty preset, then re-enable it to adopt the stable bridge."
+          ),
+          nil, nil
+        )
+      }
+      guard
+        ownership.directive == GhosttyConfiguration.includeDirective(root: root)
+          || (!enabled && ownership.directive == legacy)
+      else {
         throw EnvironmentLifecycleError.blocked(
           "Ghostty ownership contains an unexpected theme include")
       }
@@ -155,6 +169,11 @@ extension EnvironmentProviderInspector {
             : "The owned Ghostty include was edited, moved or removed."),
         enabled ? ownership : nil, nil
       )
+    }
+    let bridge = root.appending(path: GhosttyAdapter.bridgePath)
+    if PinnedFilesystem.entryExists(at: bridge) != false {
+      throw EnvironmentLifecycleError.blocked(
+        "Unowned Ghostty adapter state exists: \(bridge.path)")
     }
     let proposed = try EnvironmentGhosttyOwnership.adopting(current, at: url, root: root)
     return (

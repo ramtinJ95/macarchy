@@ -26,13 +26,19 @@ struct EnvironmentThemeBridgeState: Sendable {
     var ids = Set<EnvironmentEntryID>()
     if profile.terminal == .kitty { ids.insert(.kitty) }
     if profile.prompt == .starship { ids.insert(.starship) }
-    return try capture(ids: ids, stateRoot: stateRoot, alacritty: profile.presets.alacritty)
+    return try capture(
+      ids: ids, stateRoot: stateRoot, alacritty: profile.presets.alacritty,
+      ghostty: profile.presets.ghostty)
   }
 
-  static func capture(ids: Set<EnvironmentEntryID>, stateRoot: URL, alacritty: Bool = false) throws
+  static func capture(
+    ids: Set<EnvironmentEntryID>, stateRoot: URL, alacritty: Bool = false, ghostty: Bool = false
+  ) throws
     -> Self
   {
-    let urls = paths(ids: ids, stateRoot: stateRoot, alacritty: alacritty).map { URL(filePath: $0) }
+    let urls = paths(ids: ids, stateRoot: stateRoot, alacritty: alacritty, ghostty: ghostty).map {
+      URL(filePath: $0)
+    }
     return try Self(
       entries: urls.map { url in
         var metadata = stat()
@@ -56,10 +62,13 @@ struct EnvironmentThemeBridgeState: Sendable {
     )
   }
 
-  static func paths(ids: Set<EnvironmentEntryID>, stateRoot: URL, alacritty: Bool = false)
+  static func paths(
+    ids: Set<EnvironmentEntryID>, stateRoot: URL, alacritty: Bool = false, ghostty: Bool = false
+  )
     -> [String]
   {
-    (alacritty ? StableAdapterBridge.statePaths.map { stateRoot.appending(path: $0).path } : [])
+    (alacritty ? AlacrittyAdapter.statePaths.map { stateRoot.appending(path: $0).path } : [])
+      + (ghostty ? [stateRoot.appending(path: GhosttyAdapter.bridgePath).path] : [])
       + (ids.contains(.kitty)
         ? [stateRoot.appending(path: KittyAdapter.bridgePath).path] : [])
       + (ids.contains(.starship)
@@ -71,7 +80,9 @@ struct EnvironmentThemeBridgeState: Sendable {
     return entries.allSatisfy(\.hasValidShape)
       && Set(paths).count == paths.count
       && Set(paths).isSubset(
-        of: Set(Self.paths(ids: [.kitty, .starship], stateRoot: stateRoot, alacritty: true)))
+        of: Set(
+          Self.paths(
+            ids: [.kitty, .starship], stateRoot: stateRoot, alacritty: true, ghostty: true)))
   }
 
   func restore() throws {

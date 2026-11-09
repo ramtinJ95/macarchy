@@ -271,6 +271,52 @@ struct GhosttyAdapterTests {
     }
   }
 
+  @Test(arguments: ["leaf", "ancestor", "hardlink"])
+  func bridgePublicationRejectsRedirectedOrSharedFiles(kind: String) async throws {
+    try await withTemporaryRoot(named: "ghostty-bridge-safety") { home in
+      let adapter = try fixture(
+        home: home,
+        runner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "Ghostty 1.4.0") },
+        processes: fakeProcesses(signal: { _ in Issue.record("Unsafe bridge must not reload") }))
+      let bridge = home.appending(path: GhosttyAdapter.bridgePath)
+      try write("before", to: bridge)
+      let original = kind == "ancestor" ? bridge.deletingLastPathComponent() : bridge
+      let target = home.appending(path: "redirected")
+      try FileManager.default.moveItem(at: original, to: target)
+      if kind == "hardlink" {
+        try FileManager.default.linkItem(at: target, to: original)
+      } else {
+        try FileManager.default.createSymbolicLink(at: original, withDestinationURL: target)
+      }
+      await #expect(throws: (any Error).self) { try await adapter.reconciliation().run() }
+      #expect(try Data(contentsOf: bridge) == Data("before".utf8))
+    }
+  }
+
+  @Test func outdatedIncludeReportsRestorationInstructionsWithoutPublishingOrReloading()
+    async throws
+  {
+    try await withTemporaryRoot(named: "ghostty-outdated") { home in
+      let adapter = try fixture(
+        home: home,
+        runner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "Ghostty 1.4.0") },
+        processes: fakeProcesses(signal: { _ in Issue.record("Outdated include must not reload") }))
+      let legacy =
+        "config-file = ?\"\(StateLayout(root: home).currentThemeArtifact(GhosttyAdapter.outputPath).path)\"\n"
+      let file = try #require(adapter.ownedConfigurationURL)
+      try write(legacy, to: file)
+      #expect(adapter.inspection().status == .drifted)
+      #expect(adapter.inspection().message?.contains("re-enable") == true)
+      let result = try await adapter.reconciliation().run()
+      #expect(result.status == .drifted)
+      #expect(result.message?.contains("outdated") == true)
+      #expect(try Data(contentsOf: file) == Data(legacy.utf8))
+      #expect(
+        !FileManager.default.fileExists(
+          atPath: home.appending(path: GhosttyAdapter.bridgePath).path))
+    }
+  }
+
   private func instance(_ pid: Int32, path: String, gui: Bool = true) -> GhosttyProcesses.Instance {
     .init(identity: ProcessIdentity(pid: pid, started: 123, executablePath: path), isGUI: gui)
   }
@@ -297,9 +343,10 @@ struct GhosttyAdapterTests {
   {
     let files = ThemeConsumerPaths.ghosttyConfigurationFiles(home: home, environment: [:])
     try write("\(GhosttyConfiguration.includeDirective(root: home))\n", to: files[0])
-    try write(
-      "background = #000000\n",
-      to: StateLayout(root: home).currentThemeArtifact(GhosttyAdapter.outputPath))
+    if !FileManager.default.fileExists(atPath: home.appending(path: "current").path) {
+      _ = try ThemeActivator(root: home, faultInjector: { _ in }).activate(
+        package: BuiltInThemePackages.catppuccinMocha.get())
+    }
     return GhosttyAdapter(
       root: home, home: home, configurationFiles: files,
       ownedConfigurationURL: files[0], ownedLineIndex: 0,

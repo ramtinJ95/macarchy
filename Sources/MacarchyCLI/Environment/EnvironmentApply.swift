@@ -851,7 +851,9 @@ struct EnvironmentApplyCommandRunner: Sendable {
             ),
             stateRoot: stateRoot,
             alacritty: lockedInspection.proposedAlacrittyOwnership != nil
-              || lockedInspection.ownership?.alacritty != nil
+              || lockedInspection.ownership?.alacritty != nil,
+            ghostty: lockedInspection.proposedGhosttyOwnership != nil
+              || lockedInspection.ownership?.ghostty != nil
           )
           return try coordinator.applyLocked(
             composition: composition,
