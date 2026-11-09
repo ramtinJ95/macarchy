@@ -6,6 +6,47 @@ import Testing
 @testable import ThemeCore
 
 extension AdapterContractTests {
+  @Test func userScriptsAreNeverCarriedForwardAndReviewIsInert() async throws {
+    let root = try temporaryDirectory()
+    defer { removeTemporaryRoot(root) }
+    let directory = root.appending(path: "scripts")
+    try FileManager.default.createDirectory(
+      at: directory, withIntermediateDirectories: false,
+      attributes: [.posixPermissions: 0o700])
+    let script = directory.appending(path: "record")
+    let recorded = directory.appending(path: "events")
+    try "#!/bin/sh\necho $MACARCHY_EVENT >> \"$(dirname \"$0\")/events\"\n"
+      .write(to: script, atomically: false, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+    let package = try packageWithSecondBackground(root: root)
+    let coordinator = try backgroundCoordinator(
+      root: root, consumerPaths: backgroundConsumerPaths(root: root),
+      requests: BackgroundRequestLog(),
+      wallpaperControl: trackedWallpaperControl(
+        state: BackgroundWallpaperState(
+          (url: URL(filePath: "/tmp/original.png"), setCount: 0))),
+      enabledAdapterIDs: [UserScriptsAdapter.id],
+      userScriptsMode: UserScriptsMode(scripts: [script]))
+    let review = try coordinator.review(package: package)
+    #expect(review.consumers.map(\.id) == [UserScriptsAdapter.id])
+    #expect(!FileManager.default.fileExists(atPath: recorded.path))
+    let first = try await coordinator.activate(package: package)
+    let second = try await coordinator.activate(
+      package: package,
+      expectedActiveGenerationID: first.manifest.generationID, requestedBackgroundID: "second")
+    let third = try await coordinator.activate(
+      package: package,
+      expectedActiveGenerationID: second.manifest.generationID, requestedBackgroundID: "second")
+    #expect(second.manifest.generationID != first.manifest.generationID)
+    #expect(third.manifest.generationID == second.manifest.generationID)
+    for report in [first, second, third] {
+      let result = try #require(report.reconciliation.results.first)
+      #expect(result.status == .applied)
+      #expect(result.carriedForwardFromGenerationID == nil)
+    }
+    #expect(try String(contentsOf: recorded, encoding: .utf8) == "apply\napply\napply\n")
+  }
+
   @Test
   func backgroundOnlyActivationCarriesEvidenceAndRestoresRememberedSelection() async throws {
     let root = try temporaryDirectory()
@@ -49,7 +90,8 @@ extension AdapterContractTests {
       wallpaperControl: trackedWallpaperControl(state: wallpaperState),
       enabledAdapterIDs: Set(ThemeActivationCoordinator.adapterRequirements.keys)
         .subtracting([
-          BordersAdapter.id, BordersAdapter.leanID, CodexAdapter.id, HerdrAdapter.id, PiAdapter.id,
+          BordersAdapter.id, BordersAdapter.leanID, UserScriptsAdapter.id, CodexAdapter.id,
+          HerdrAdapter.id, PiAdapter.id,
           TuicrAdapter.id,
         ])
     )
@@ -289,7 +331,8 @@ extension AdapterContractTests {
     consumerPaths: ThemeConsumerPaths,
     requests: BackgroundRequestLog,
     wallpaperControl: WallpaperControl,
-    enabledAdapterIDs: Set<String>? = nil
+    enabledAdapterIDs: Set<String>? = nil,
+    userScriptsMode: UserScriptsMode? = nil
   ) throws -> ThemeActivationCoordinator {
     let runner = ProcessRunner { request in
       requests.values.withLock { $0.append(request) }
@@ -350,8 +393,10 @@ extension AdapterContractTests {
       currentAppearance: { .dark },
       enabledAdapterIDs: enabledAdapterIDs
         ?? Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          BordersAdapter.id, BordersAdapter.leanID, CodexAdapter.id, HerdrAdapter.id, PiAdapter.id,
-        ])
+          BordersAdapter.id, BordersAdapter.leanID, UserScriptsAdapter.id, CodexAdapter.id,
+          HerdrAdapter.id, PiAdapter.id,
+        ]),
+      userScriptsMode: userScriptsMode
     )
   }
 

@@ -606,7 +606,9 @@ extension AdapterContractTests {
         wallpaperControl: Self.wallpaperControl(),
         wallpaperSignal: try Self.wallpaperSignal(root: root),
         enabledAdapterIDs: Set(ThemeActivationCoordinator.adapterRequirements.keys)
-          .subtracting([BordersAdapter.id, BordersAdapter.leanID, TuicrAdapter.id])
+          .subtracting([
+            BordersAdapter.id, BordersAdapter.leanID, UserScriptsAdapter.id, TuicrAdapter.id,
+          ])
       )
 
       await #expect(throws: AdapterSelectionError.unknown("tmux")) {

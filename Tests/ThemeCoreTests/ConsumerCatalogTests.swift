@@ -29,6 +29,7 @@ struct ConsumerCatalogTests {
           "spicetify:required",
           "starship:required",
           "tuicr:required",
+          "user-scripts:optional",
           "wallpaper:required",
           "yazi:required",
         ]
