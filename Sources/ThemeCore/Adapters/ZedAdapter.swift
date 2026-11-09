@@ -15,12 +15,14 @@ package struct ZedAdapter: Sendable {
   package enum Failure: Error, CustomStringConvertible {
     case unsupported(String)
     case drift
+    case invalidPublicationReceipt
 
     package var description: String {
       switch self {
       case .unsupported(let version):
         "Zed requires version 0.122.2 or newer for watched user themes; found \(version)."
       case .drift: "The owned Zed theme member or theme family drifted."
+      case .invalidPublicationReceipt: "The Zed family publication receipt is invalid."
       }
     }
   }
@@ -97,27 +99,58 @@ package struct ZedAdapter: Sendable {
       guard try PinnedFilesystem.readRegularFile(at: target).data == data else {
         throw Failure.drift
       }
+      try Self.recordPublication(data, at: target, root: root)
       return AdapterOutcome(
         status: .applied, message: "Zed watches its settings and theme family; live reload.")
     }
   }
 
-  /// Only exact, validated generation artifacts count as Macarchy-rendered families. Merely
-  /// retaining our name/author after editing a color does not authorize replacement or deletion.
-  package static func isRenderedFamily(_ data: Data, root: URL) throws -> Bool {
-    let directory = root.appending(path: "generations")
-    guard FileManager.default.fileExists(atPath: directory.path) else { return false }
-    for generation in try FileManager.default.contentsOfDirectory(
-      at: directory, includingPropertiesForKeys: nil
-    ).sorted(by: { $0.path < $1.path })
-    where generation.lastPathComponent.hasPrefix("g-") {
-      guard (try? BoundedRegularFile.read(at: generation.appending(path: outputPath)).data) == data,
-        let manifest = try? ThemeGenerationReader.manifest(in: generation, policy: .published),
-        manifest.rendererVersions[Self.id] != nil
-      else { continue }
-      return true
+  private struct PublicationReceipt: Codable {
+    let path: String
+    let digest: String
+  }
+
+  static func publicationReceiptURL(root: URL) -> URL {
+    root.appending(path: "state/zed-family.json")
+  }
+
+  /// Persist only after the family rename/readback, and before reporting success. Unlike
+  /// generation artifacts, this evidence survives collection after interrupted activation.
+  private static func recordPublication(_ data: Data, at target: URL, root: URL) throws {
+    let parent = try PinnedFilesystem.openDirectory(at: root)
+    defer { Darwin.close(parent) }
+    let url = publicationReceiptURL(root: root)
+    let state = try PinnedFilesystem.openOrCreateChildDirectory(
+      parentDescriptor: parent, name: "state", url: url.deletingLastPathComponent(), mode: 0o700)
+    defer { Darwin.close(state) }
+    try StateFile.write(
+      PublicationReceipt(path: target.standardizedFileURL.path, digest: sha256Digest(data)),
+      parentDescriptor: state, name: url.lastPathComponent, url: url)
+  }
+
+  /// A last-published digest is authority for exactly that owned destination. The active
+  /// render also permits retry if publication succeeded but receipt persistence failed.
+  package static func matchesPublishedFamily(_ data: Data, at target: URL, root: URL) throws -> Bool
+  {
+    let receiptData: Data?
+    do {
+      receiptData = try PinnedFilesystem.readRegularFile(at: publicationReceiptURL(root: root)).data
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      receiptData = nil
     }
-    return false
+    if let receiptData {
+      guard let receipt = try? JSONDecoder().decode(PublicationReceipt.self, from: receiptData),
+        receipt.path.hasPrefix("/"), isSHA256Digest(receipt.digest)
+      else { throw Failure.invalidPublicationReceipt }
+      if receipt.path == target.standardizedFileURL.path, receipt.digest == sha256Digest(data) {
+        return true
+      }
+    }
+    do {
+      return try data == activeFamily(root: root)
+    } catch ReconciliationStatusError.noActiveGeneration {
+      return false
+    }
   }
 
   /// Older sealed generations have no Zed artifact. Derive it from their validated

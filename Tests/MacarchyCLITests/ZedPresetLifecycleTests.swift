@@ -110,6 +110,69 @@ struct ZedPresetLifecycleTests {
     #expect(try await f.harness.teardown(consumerPaths: f.paths).succeeded)
   }
 
+  @Test func publishedFamilySurvivesInterruptedActivationAndGenerationCollection() async throws {
+    let f = try Fixture(original: nil)
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    #expect(try await f.apply().succeeded)  // Adopt A.
+    let paths = try ThemeRuntimeSelection.consumerPaths(stateRoot: f.state, consumerPaths: f.paths)
+    let adapter = ZedAdapter(
+      root: f.state, configurationDirectory: f.settings.deletingLastPathComponent(),
+      version: { [1, 27, 0] }, validateOwnership: paths.zedValidateOwnership)
+    let b = try ThemePackageLoader().load(
+      packageURL: repositoryRoot.appending(path: "Themes/tokyo-night"))
+    let bManifest = try ThemeActivator(root: f.state).activate(package: b)
+    #expect(try await adapter.reconciliation().run().status == .applied)
+    let bData = try Data(contentsOf: f.family)
+    let receipt = try #require(
+      try JSONSerialization.jsonObject(
+        with: Data(contentsOf: ZedAdapter.publicationReceiptURL(root: f.state)))
+        as? [String: String])
+    #expect(receipt["path"] == f.family.path)
+    #expect(receipt["digest"] == sha256Digest(bData))
+    let c = try ThemePackageLoader().load(
+      packageURL: repositoryRoot.appending(path: "Themes/kanagawa-wave"))
+    let interrupted = ThemeActivator(
+      root: f.state,
+      faultInjector: {
+        if case .currentReplaced = $0 { throw Injected.failure }
+      })
+    #expect(throws: ThemeCommittedActivationError.self) { try interrupted.activate(package: c) }
+    #expect(try ThemeGenerationReader(root: f.state).activeManifest().themeID == c.id)
+    #expect(try Data(contentsOf: f.family) == bData)  // C never reached Zed.
+    try activateCatppuccinMocha(stateRoot: f.state)  // A active; GC collects B.
+    #expect(
+      !FileManager.default.fileExists(
+        atPath:
+          f.state.appending(path: "generations/\(bManifest.generationID)").path))
+    #expect(try Data(contentsOf: f.family) == bData)
+    #expect(try f.harness.plan().succeeded)
+    try paths.zedValidateOwnership(f.family)
+    #expect(try await adapter.reconciliation().run().status == .applied)
+    #expect(try await f.harness.teardown(consumerPaths: f.paths).succeeded)
+    #expect(!FileManager.default.fileExists(atPath: f.family.path))
+  }
+
+  @Test func failedReceiptPublicationDoesNotReportSuccessAndCanRetry() async throws {
+    let f = try Fixture(original: nil)
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    #expect(try await f.apply().succeeded)
+    let paths = try ThemeRuntimeSelection.consumerPaths(stateRoot: f.state, consumerPaths: f.paths)
+    let adapter = ZedAdapter(
+      root: f.state, configurationDirectory: f.settings.deletingLastPathComponent(),
+      version: { [1, 27, 0] }, validateOwnership: paths.zedValidateOwnership)
+    let package = try ThemePackageLoader().load(
+      packageURL: repositoryRoot.appending(path: "Themes/tokyo-night"))
+    _ = try ThemeActivator(root: f.state).activate(package: package)
+    let receipt = ZedAdapter.publicationReceiptURL(root: f.state)
+    try FileManager.default.createDirectory(at: receipt, withIntermediateDirectories: true)
+    await #expect(throws: (any Error).self) { try await adapter.reconciliation().run() }
+    #expect(try Data(contentsOf: f.family) == Data(ZedAdapter.render(package: package).utf8))
+    try FileManager.default.removeItem(at: receipt)
+    // No receipt was persisted. The validated active render authenticates retry.
+    #expect(try await adapter.reconciliation().run().status == .applied)
+    #expect(try await f.harness.teardown(consumerPaths: f.paths).succeeded)
+  }
+
   @Test func preZedGenerationSupportsAdoptionAndReconciliationWithoutMutation() async throws {
     let f = try Fixture(original: nil)
     defer { try? FileManager.default.removeItem(at: f.root) }

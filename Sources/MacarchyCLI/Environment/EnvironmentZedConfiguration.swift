@@ -86,7 +86,7 @@ extension EnvironmentZedOwnership: EnvironmentStaticPresetFileOwnership {
 }
 
 /// The initial rendered family also makes rollback independent of later generation collection.
-/// Runtime refreshes are accepted only when byte-identical to a validated Macarchy generation.
+/// Later refreshes use durable last-published evidence, independent of generation retention.
 struct EnvironmentZedFamilyOwnership: Codable, Equatable, Sendable {
   let path: String
   let stateRoot: String
@@ -117,7 +117,8 @@ extension EnvironmentZedFamilyOwnership: EnvironmentPresetFileOwnership {
   static func owned(by ownership: EnvironmentOwnership?) -> Self? { ownership?.zedFamily }
   func managed(from current: Data?, at url: URL) throws -> Data { initialFamily }
   func matchesManaged(_ data: Data, at url: URL) throws -> Bool {
-    try data == initialFamily || ZedAdapter.isRenderedFamily(data, root: URL(filePath: stateRoot))
+    try data == initialFamily
+      || ZedAdapter.matchesPublishedFamily(data, at: url, root: URL(filePath: stateRoot))
   }
   func restored(in current: Data, at url: URL) throws -> Data? {
     guard try matchesManaged(current, at: url) else { throw EnvironmentLifecycleError.drift(path) }
