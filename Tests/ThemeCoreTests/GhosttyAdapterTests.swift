@@ -167,6 +167,25 @@ struct GhosttyAdapterTests {
     }
   }
 
+  @Test(arguments: ["leaf", "ancestor"])
+  func redirectedOwnedConfigurationIsRejected(kind: String) async throws {
+    try await withTemporaryRoot(named: "ghostty-symlink") { home in
+      let adapter = try fixture(
+        home: home,
+        runner: ProcessRunner { _ in
+          Issue.record("Unsafe configuration must not reload Ghostty")
+          return ProcessResult(terminationStatus: 0, output: "")
+        })
+      let file = try #require(adapter.ownedConfigurationURL)
+      let original = kind == "leaf" ? file : file.deletingLastPathComponent()
+      let target = home.appending(path: "redirected")
+      try FileManager.default.moveItem(at: original, to: target)
+      try FileManager.default.createSymbolicLink(at: original, withDestinationURL: target)
+      #expect(adapter.inspection().status == .failed)
+      #expect(try await adapter.reconciliation().run().status == .failed)
+    }
+  }
+
   @Test func onlyExactBundleGUIProcessesAreSignalled() async throws {
     try await withTemporaryRoot(named: "ghostty-signal-targets") { home in
       let path = GhosttyAdapter.liveExecutableURL.resolvingSymlinksInPath().path

@@ -37,10 +37,13 @@ package struct GhosttyAdapter: Sendable {
 
   enum Failure: Error, CustomStringConvertible {
     case includeDrift
+    case unsafeConfiguration
     case version(String)
     var description: String {
       switch self {
       case .includeDrift: "The owned Ghostty config-file line was edited, moved or removed"
+      case .unsafeConfiguration:
+        "The owned Ghostty configuration is not an ordinary home-contained file"
       case .version(let output):
         "Cannot determine Ghostty's reload capability from --version: \(output)"
       }
@@ -54,7 +57,15 @@ package struct GhosttyAdapter: Sendable {
     let url = try ownedConfigurationURL ?? GhosttyConfiguration.selectedFile(in: configurationFiles)
     var metadata = stat()
     if lstat(url.path, &metadata) != 0, errno == ENOENT { throw Failure.includeDrift }
-    let data = Data(try GhosttyConfiguration.read(url).utf8)
+    guard url.path.hasPrefix(home.path + "/"),
+      metadata.st_mode & S_IFMT == S_IFREG, metadata.st_nlink == 1
+    else { throw Failure.unsafeConfiguration }
+    // Unlike user includes, the owned file may not redirect through a leaf or ancestor link.
+    // Open each parent without following symlinks, then read through that pinned descriptor.
+    let data = try PinnedFilesystem.readRegularFile(at: url).data
+    guard String(data: data, encoding: .utf8) != nil else {
+      throw BoundedRegularFileError.invalidUTF8
+    }
     let lines = data.split(separator: 10, omittingEmptySubsequences: false)
     let directive = GhosttyConfiguration.includeDirective(root: root)
     let matching = lines.indices.filter { lines[$0] == Data(directive.utf8) }

@@ -59,6 +59,24 @@ struct GhosttyPresetLifecycleTests {
     #expect(try !fixture.harness.plan().succeeded)
   }
 
+  @Test(arguments: ["leaf", "ancestor"])
+  func symlinkReplacementBlocksPlanAndTeardown(kind: String) async throws {
+    let fixture = try Fixture(original: "font-size = 13\n")
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let digest =
+      try jsonObject(fixture.harness.plan().output)["adoption_evidence_digest"] as? String
+    #expect(try await fixture.apply(adopt: digest).succeeded)
+    let original =
+      kind == "leaf" ? fixture.configuration : fixture.configuration.deletingLastPathComponent()
+    let target = fixture.home.appending(path: "redirected")
+    try FileManager.default.moveItem(at: original, to: target)
+    try FileManager.default.createSymbolicLink(at: original, withDestinationURL: target)
+    let before = try Data(contentsOf: fixture.configuration)
+    #expect(try !fixture.harness.plan().succeeded)
+    #expect(try await !fixture.harness.teardown(consumerPaths: fixture.paths).succeeded)
+    #expect(try Data(contentsOf: fixture.configuration) == before)
+  }
+
   @Test func lastExistingFileIsAdoptedAndLaterUserIncludesArePreserved() async throws {
     let fixture = try Fixture(original: "font-size = 13\n")
     defer { try? FileManager.default.removeItem(at: fixture.root) }
