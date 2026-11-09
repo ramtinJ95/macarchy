@@ -71,17 +71,30 @@ package struct KittyAdapter: Sendable {
   }
 
   func preflight() throws {
-    let resolvedConfigurationURL = configurationURL.resolvingSymlinksInPath()
-    let configuration = try AdapterConfigurationFile.readUTF8(
-      at: resolvedConfigurationURL,
+    guard containsExactLine(includeDirective, in: try configuration()) else {
+      throw KittyAdapterError.missingInclude(includeDirective)
+    }
+  }
+
+  private func configuration() throws -> String {
+    try AdapterConfigurationFile.readUTF8(
+      at: configurationURL.resolvingSymlinksInPath(),
       tooLarge: AdapterConfigurationError.configurationTooLarge(
         "Kitty configuration", configurationURL),
       unreadable: AdapterConfigurationError.cannotReadConfiguration(
         "Kitty configuration", configurationURL)
     )
-    guard containsExactLine(includeDirective, in: configuration) else {
-      throw KittyAdapterError.missingInclude(includeDirective)
-    }
+  }
+
+  /// What overrides the theme's colors, reported with an applied or ready result. Nil when
+  /// nothing does or the configuration cannot be read, which preflight reports instead.
+  func overrideMessage() -> String? {
+    guard let configuration = try? configuration() else { return nil }
+    return KittyColorOverrides.inspect(
+      configuration: configuration,
+      directory: configurationURL.deletingLastPathComponent(),
+      includeDirective: includeDirective
+    ).message
   }
 
   /// Inspection only: reconciliation reports every preflight failure as drift.
@@ -94,7 +107,7 @@ package struct KittyAdapter: Sendable {
   }
 
   func inspection() -> AdapterInspection {
-    runtime.inspection(readyMessage: nil) {
+    runtime.inspection(readyMessage: overrideMessage()) {
       do {
         try ActivationLock(root: root).withLock {
           try Self.validatePreparedBridge(root: root)
@@ -131,7 +144,7 @@ package struct KittyAdapter: Sendable {
         )
       )
       guard reload.terminationStatus != 0 else {
-        return AdapterOutcome(status: .applied)
+        return AdapterOutcome(status: .applied, message: overrideMessage())
       }
 
       let stillRunning = try processRunner.run(
@@ -141,7 +154,7 @@ package struct KittyAdapter: Sendable {
         )
       )
       guard stillRunning.terminationStatus == 0 else {
-        return AdapterOutcome(status: .applied)
+        return AdapterOutcome(status: .applied, message: overrideMessage())
       }
       return AdapterOutcome(
         status: .failed,
