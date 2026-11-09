@@ -95,6 +95,7 @@ struct ThemeInstallCommandRunner: Sendable {
         to: preparedRoot.appending(path: "package", directoryHint: .isDirectory)
       )
       try activation.review(converted.package, nil, stateRoot, consumerPaths).requireApplicable()
+      let legibility = PaletteLegibility(package: converted.package)
 
       if dryRun {
         let replacing = try installer.wouldReplace(
@@ -104,6 +105,7 @@ struct ThemeInstallCommandRunner: Sendable {
         try FileManager.default.removeItem(at: preparedRoot)
         let report = ThemeInstallReport.dryRun(
           conversion: converted.report,
+          legibility: legibility,
           replacing: replacing,
           reconciliation: Self.dryRunReconciliation()
         )
@@ -133,6 +135,7 @@ struct ThemeInstallCommandRunner: Sendable {
             )
             let report = ThemeInstallReport.activation(
               conversion: converted.report,
+              legibility: legibility,
               replaced: installation.replacedExistingPackage,
               activation: activationReport,
               transactionError: String(describing: rollbackError)
@@ -164,6 +167,7 @@ struct ThemeInstallCommandRunner: Sendable {
         }
         let report = ThemeInstallReport.activation(
           conversion: converted.report,
+          legibility: legibility,
           replaced: installation.replacedExistingPackage,
           activation: activationReport,
           transactionError: transactionError
@@ -232,11 +236,13 @@ private enum ThemeInstallReport {
   case preparationFailure(themeID: String?, sourceURL: String, error: String)
   case dryRun(
     conversion: OmarchyThemeConversionReport,
+    legibility: PaletteLegibility,
     replacing: Bool,
     reconciliation: [AdapterResult]
   )
   case activation(
     conversion: OmarchyThemeConversionReport,
+    legibility: PaletteLegibility,
     replaced: Bool,
     activation: ThemeSetReport,
     transactionError: String?
@@ -248,7 +254,7 @@ private enum ThemeInstallReport {
       true
     case .preparationFailure:
       false
-    case .activation(_, _, let activation, let transactionError):
+    case .activation(_, _, _, let activation, let transactionError):
       activation.succeeded && transactionError == nil
     }
   }
@@ -263,8 +269,8 @@ private enum ThemeInstallReport {
         "Canonical state: unchanged.",
         "Error: \(error)",
       ].joined(separator: "\n")
-    case .dryRun(let conversion, let replacing, let reconciliation):
-      return conversionSummary(conversion) + "\n"
+    case .dryRun(let conversion, let legibility, let replacing, let reconciliation):
+      return conversionSummary(conversion, legibility: legibility) + "\n"
         + ([
           "Omarchy theme '\(conversion.themeID)' at commit '\(conversion.resolvedCommit)' is valid.",
           "Required supported-adapter preflight passed.",
@@ -274,7 +280,8 @@ private enum ThemeInstallReport {
         ] + reconciliation.map(renderAdapterResult) + [
           "No persistent Macarchy state written; no consumer processes run."
         ]).joined(separator: "\n")
-    case .activation(let conversion, let replaced, let activation, let transactionError):
+    case .activation(
+      let conversion, let legibility, let replaced, let activation, let transactionError):
       let packageState: String
       if transactionError != nil, !activation.isCommitted {
         packageState = "Activation failed before commit; package rollback could not be verified for"
@@ -287,7 +294,7 @@ private enum ThemeInstallReport {
           : "Activation failed before commit; removed the uncommitted installed package"
       }
       var lines = [
-        conversionSummary(conversion),
+        conversionSummary(conversion, legibility: legibility),
         "\(packageState) '\(conversion.themeID)' from commit '\(conversion.resolvedCommit)'.",
         try activation.render(json: false),
       ]
@@ -309,7 +316,7 @@ private enum ThemeInstallReport {
         committed: false,
         error: error
       )
-    case .dryRun(let conversion, let replacing, let reconciliation):
+    case .dryRun(let conversion, let legibility, let replacing, let reconciliation):
       return ThemeInstallJSONReport(
         outcome: "dry_run",
         themeID: conversion.themeID,
@@ -319,9 +326,11 @@ private enum ThemeInstallReport {
         installed: false,
         committed: false,
         conversion: conversion,
+        legibility: legibility,
         reconciliation: reconciliation
       )
-    case .activation(let conversion, let replaced, let activation, let transactionError):
+    case .activation(
+      let conversion, let legibility, let replaced, let activation, let transactionError):
       let activationJSON = activation.jsonReport
       let installed =
         transactionError != nil && !activation.isCommitted ? nil : activation.isCommitted
@@ -337,6 +346,7 @@ private enum ThemeInstallReport {
         committed: activation.isCommitted,
         generationID: activationJSON.generationID,
         conversion: conversion,
+        legibility: legibility,
         reconciliation: activationJSON.reconciliation,
         slackTheme: activationJSON.slackTheme,
         notice: activationJSON.notice,
@@ -346,7 +356,9 @@ private enum ThemeInstallReport {
   }
 }
 
-private func conversionSummary(_ conversion: OmarchyThemeConversionReport) -> String {
+private func conversionSummary(
+  _ conversion: OmarchyThemeConversionReport, legibility: PaletteLegibility
+) -> String {
   var lines = [
     "Source: \(conversion.sourceURL) at \(conversion.resolvedCommit)",
     "Imported palette: \(conversion.paletteFile)",
@@ -387,6 +399,7 @@ private func conversionSummary(_ conversion: OmarchyThemeConversionReport) -> St
       + (conversion.warnings.isEmpty
         ? "none" : conversion.warnings.map(\.rawValue).joined(separator: ", "))
   )
+  lines += legibility.lines
   return lines.joined(separator: "\n")
 }
 
@@ -402,6 +415,8 @@ private struct ThemeInstallJSONReport: Encodable {
   let committed: Bool
   var generationID: String? = nil
   var conversion: OmarchyThemeConversionReport? = nil
+  /// How well the imported palette reads; reported only, never blocking.
+  var legibility: PaletteLegibility? = nil
   var reconciliation: [AdapterResult]? = nil
   var slackTheme: String? = nil
   var notice: String? = nil
@@ -416,7 +431,7 @@ private struct ThemeInstallJSONReport: Encodable {
     case packageReplaced = "package_replaced"
     case installed, committed
     case generationID = "generation_id"
-    case conversion, reconciliation
+    case conversion, legibility, reconciliation
     case slackTheme = "slack_theme"
     case notice
     case error

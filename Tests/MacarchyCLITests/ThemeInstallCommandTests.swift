@@ -104,6 +104,10 @@ struct ThemeInstallCommandTests {
     #expect(execution.output.contains("would install"))
     #expect(execution.output.contains("Imported backgrounds:\n- backgrounds/purple.png"))
     #expect(execution.output.contains("Warnings: missing_asset_provenance"))
+    #expect(execution.output.contains("Legibility (reported only; nothing was blocked):\n"))
+    #expect(
+      execution.output.contains("- Unreadable: Text #d4a5ff on Selection: 1.00, needs 3.5"))
+    #expect(execution.output.contains("- Weak: Green and Cyan look alike (0.000)"))
     #expect(execution.output.contains("- herdr [required]: pending"))
     #expect(execution.output.contains("- neovim [required]: pending"))
     #expect(!FileManager.default.fileExists(atPath: fixture.stateRoot.path))
@@ -122,6 +126,10 @@ struct ThemeInstallCommandTests {
     let reconciliation = try #require(report["reconciliation"] as? [[String: Any]])
     #expect(conversion["resolved_commit"] as? String == ThemeInstallFixture.newCommit)
     #expect((conversion["warnings"] as? [String]) == ["missing_asset_provenance"])
+    let legibility = try #require(report["legibility"] as? [String: [String]])
+    #expect(
+      legibility["unreadable"]?.contains("Text #d4a5ff on Selection: 1.00, needs 3.5") == true)
+    #expect(legibility["weak"]?.contains("Green and Cyan look alike (0.000)") == true)
     #expect(reconciliation.count == ThemeActivationCoordinator.adapterRequirements.count)
     #expect(
       reconciliation.first { $0["adapter_id"] as? String == "herdr" }?["status"] as? String
