@@ -1,9 +1,11 @@
 import Foundation
 
-/// Original and last successfully applied preset. Written before the first native mutation.
+/// Original, last confirmed preset and write-ahead intent. Both applied and pending are owned
+/// values: the helper can mutate the system before its reply or the confirmation write fails.
 package struct MacOSAccentRecord: Codable, Equatable, Sendable {
   package let original: MacOSAccent
   package var applied: MacOSAccent
+  package var pending: MacOSAccent? = nil
 }
 
 package struct MacOSAccentStore: Sendable {
@@ -14,7 +16,9 @@ package struct MacOSAccentStore: Sendable {
   package func load() throws -> MacOSAccentRecord? {
     guard let file = try BoundedRegularFile.readIfPresent(at: url) else { return nil }
     let record = try JSONDecoder().decode(MacOSAccentRecord.self, from: file.data)
-    guard record.original.isSettable, record.applied.isSettable else {
+    guard record.original.isSettable, record.applied.isSettable,
+      record.pending?.isSettable != false
+    else {
       throw MacOSLookError.unavailable(
         "Invalid accent restoration record: hardware-matched accents cannot be restored")
     }
@@ -99,7 +103,14 @@ package struct MacOSAccentAdapter: Sendable {
     }
     do {
       let current = try helper.accent()
+      let store = MacOSAccentStore(root: root)
+      let previous = try store.load()
       guard current != desired else {
+        if var record = previous, record.pending == desired {
+          record.applied = desired
+          record.pending = nil
+          try store.persist(record)
+        }
         return AdapterOutcome(
           status: .applied, message: "Current and desired accent: \(desired.name).")
       }
@@ -107,9 +118,10 @@ package struct MacOSAccentAdapter: Sendable {
         throw MacOSLookError.unavailable(
           "the hardware-matched accent cannot be restored once changed, so it is left unchanged")
       }
-      let store = MacOSAccentStore(root: root)
-      var record = try store.load() ?? MacOSAccentRecord(original: current, applied: current)
-      // Even a failed helper call must leave durable evidence of the original.
+      var record = previous ?? MacOSAccentRecord(original: current, applied: current)
+      // Resolve an earlier interrupted set even if the desired theme has since changed.
+      if record.pending == current { record.applied = current }
+      record.pending = desired
       try store.persist(record)
       let applied = try helper.setAccent(desired)
       guard applied == desired else {
@@ -117,6 +129,7 @@ package struct MacOSAccentAdapter: Sendable {
           "accent read back \(applied.name), expected \(desired.name)")
       }
       record.applied = applied
+      record.pending = nil
       try store.persist(record)
       return AdapterOutcome(
         status: .applied, message: "Current and desired accent: \(desired.name).")
@@ -142,7 +155,7 @@ package struct MacOSAccentAdapter: Sendable {
         message: "The \(current.name) accent is already the original.", mutated: false,
         consumesRecord: true)
     }
-    guard current == record.applied else {
+    guard current == record.applied || current == record.pending else {
       return MacOSAccentRestore(
         message: "Kept the \(current.name) accent, which was changed after setup.", mutated: false,
         consumesRecord: true)
