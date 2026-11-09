@@ -182,22 +182,8 @@ func renderReview(_ review: ThemeActivationReview, setReproduces: Bool = true) -
     "Plan for theme '\(review.themeID)'"
       + (review.backgroundID.map { " with background '\($0)'" } ?? "") + ":"
   ]
-  for consumer in review.consumers {
-    let preflight: String
-    switch consumer.preflight {
-    case .ready: preflight = "ready"
-    case .notSetUp: preflight = "not set up; reported as drifted"
-    case .failed(let message): preflight = "FAILED: \(message)"
-    }
-    let artifacts =
-      consumer.artifacts.isEmpty ? "" : " (\(consumer.artifacts.joined(separator: ", ")))"
-    lines.append(
-      "  \(consumer.id): \(consumer.change)\(artifacts); \(consumer.repaint.description); "
-        + preflight)
-  }
-  if !review.disabledConsumerIDs.isEmpty {
-    lines.append("Disabled in the profile: \(review.disabledConsumerIDs.joined(separator: ", "))")
-  }
+  lines += reviewConsumerLines(review).map { "  " + $0 }
+  if let disabled = reviewDisabledLine(review) { lines.append(disabled) }
   lines.append("Canonical state: unchanged (dry run). No files written.")
   if !review.canApply {
     lines.append(ThemeActivationReviewError.blocked(review.failedConsumerIDs).description + ".")
@@ -206,6 +192,28 @@ func renderReview(_ review: ThemeActivationReview, setReproduces: Bool = true) -
       "Apply exactly this plan: macarchy theme set \(review.themeID) --reviewed \(review.digest)")
   }
   return lines
+}
+
+/// One line per enabled consumer: what changes, the generated files it reads, when the change
+/// shows and its preflight. The CLI dry run and the theme browser's Review both show these.
+func reviewConsumerLines(_ review: ThemeActivationReview) -> [String] {
+  review.consumers.map { consumer in
+    let preflight: String
+    switch consumer.preflight {
+    case .ready: preflight = "ready"
+    case .notSetUp: preflight = "not set up; reported as drifted"
+    case .failed(let message): preflight = "FAILED: \(message)"
+    }
+    let artifacts =
+      consumer.artifacts.isEmpty ? "" : " (\(consumer.artifacts.joined(separator: ", ")))"
+    return "\(consumer.id): \(consumer.change)\(artifacts); \(consumer.repaint.description); "
+      + preflight
+  }
+}
+
+func reviewDisabledLine(_ review: ThemeActivationReview) -> String? {
+  review.disabledConsumerIDs.isEmpty
+    ? nil : "Disabled in the profile: \(review.disabledConsumerIDs.joined(separator: ", "))"
 }
 
 /// The text lines of a committed activation under its command's headline.
