@@ -96,10 +96,7 @@ extension Theme {
           search: ThemeSearch(search ?? ""),
           stateRoot: root
         ))
-      UpdateNoticeRunner.live.run(
-        stateRoot: StateLayout.defaultRoot(
-          in: FileManager.default.homeDirectoryForCurrentUser, directoryHint: .isDirectory)
-      )
+      UpdateNoticeRunner.live.run(stateRoot: root)
     }
   }
 
