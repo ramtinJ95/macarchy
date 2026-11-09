@@ -1313,7 +1313,7 @@ ghostty = true
 ```
 
 Review and approve adoption when setup requests it. Macarchy appends one line,
-`config-file = ?"<absolute Macarchy root>/current/generated/ghostty.conf"`, to the
+`config-file = ?"<absolute Macarchy root>/state/adapters/ghostty.conf"`, to the
 last existing file in Ghostty's load order: `$XDG_CONFIG_HOME/ghostty/config`,
 `config.ghostty` beside it, then `~/Library/Application Support/com.mitchellh.ghostty/config`
 and `config.ghostty` beside that. Ghostty versions before 1.3.0 read only the
@@ -1322,6 +1322,12 @@ extensionless `config` files; Macarchy selects from those and reports existing
 Macarchy creates the XDG `ghostty/config`. Adoption requires an ordinary file
 within your home, not a dotfile symlink. GUI-launched Ghostty uses launchd's
 environment, which can differ from a shell-only `XDG_CONFIG_HOME`.
+
+The stable bridge is an ordinary Macarchy-owned state file, atomically refreshed
+on reconciliation. Themes activated before Ghostty support are rendered from their
+validated active palette; no theme re-selection is needed. Unreleased development
+installs with the old `current/generated` include must disable or tear down Ghostty,
+then re-enable it; Macarchy reports that owned line as outdated rather than rewriting it.
 
 The generated theme supplies the 16 ANSI colors, background, foreground, cursor,
 selection and split divider. Ghostty 1.2.0 and newer reload through SIGUSR2,
@@ -1343,7 +1349,7 @@ Inspection is bounded to 128 includes and 4 MiB; missing optional includes are
 skipped, while unreadable sources, queue resets and inspection limits are visible.
 Command-line configuration overrides are outside this default-file inspection.
 
-Setting `ghostty = false` and applying, or tearing down, removes only the owned
+Setting `ghostty = false` and applying, or tearing down, removes the bridge and owned
 line and restores the original file byte-for-byte if it is otherwise unchanged.
 A file created by Macarchy is deleted only while it contains nothing else.
 Unrelated later user edits survive; an edited, moved or removed owned line is
