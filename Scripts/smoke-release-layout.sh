@@ -52,6 +52,7 @@ done
 [[ -f "$layout/share/doc/macarchy/CHANGELOG.md" ]]
 [[ -f "$layout/share/doc/macarchy/theme-json.md" ]]
 [[ -f "$layout/share/doc/macarchy/LICENSE" ]]
+[[ -f "$layout/share/doc/macarchy/THIRD_PARTY_NOTICES.md" ]]
 [[ -f "$snapshot_source" ]]
 [[ -z "$(find -P "$layout" ! -type f ! -type d -print)" ]]
 for executable in $release_executables; do

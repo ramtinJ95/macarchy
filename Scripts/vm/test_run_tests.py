@@ -21,6 +21,7 @@ class TestRunner(unittest.TestCase):
             root = Path(temporary).resolve()
             subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
             resources = {
+                "THIRD_PARTY_NOTICES.md": b"third-party notices",
                 "Desktop/yabai/defaults.toml": b"yabai defaults",
                 "Desktop/sketchybar/defaults.toml": b"bar defaults",
                 "Keybindings/defaults.toml": b"keybinding defaults",
