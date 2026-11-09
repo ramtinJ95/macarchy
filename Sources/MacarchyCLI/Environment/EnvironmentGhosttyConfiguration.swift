@@ -143,8 +143,7 @@ extension EnvironmentProviderInspector {
     }
     if let ownership {
       let exact = try current.map { try ownership.matchesManaged($0, at: url) } ?? false
-      let legacy =
-        "config-file = ?\"\(StateLayout(root: root).currentThemeArtifact(GhosttyAdapter.outputPath).path)\""
+      let legacy = GhosttyConfiguration.legacyIncludeDirective(root: root)
       if enabled, ownership.directive == legacy {
         return (
           entry(

@@ -916,6 +916,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
           == stateRoot.appending(path: AlacrittyAdapter.bridgePath).path,
       ownership.ghostty == nil
         || ownership.ghostty?.directive == GhosttyConfiguration.includeDirective(root: stateRoot)
+        || ownership.ghostty?.directive
+          == GhosttyConfiguration.legacyIncludeDirective(root: stateRoot)
     else {
       throw EnvironmentLifecycleError.blocked("environment ownership has an invalid structure")
     }
