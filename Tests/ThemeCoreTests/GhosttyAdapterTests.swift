@@ -114,17 +114,18 @@ struct GhosttyAdapterTests {
   {
     try await withTemporaryRoot(named: "ghostty-runtime") { home in
       let requests = Mutex<[ProcessRequest]>([])
+      let signalled = Mutex<[Int32]>([])
       let adapter = try fixture(
         home: home,
         runner: ProcessRunner { request in
           requests.withLock { $0.append(request) }
           return ProcessResult(
             terminationStatus: 0, output: request.arguments == ["--version"] ? version : "")
-        })
+        }, processes: fakeProcesses(signal: { pid in signalled.withLock { $0.append(pid) } }))
       let result = try await adapter.reconciliation().run()
       #expect(result.status == status)
-      #expect(
-        requests.withLock { $0.contains { $0.arguments == ["-USR2", "ghostty"] } } == signals)
+      #expect(signalled.withLock { $0 } == (signals ? [42] : []))
+      #expect(requests.withLock { $0.allSatisfy { $0.arguments == ["--version"] } })
       if !signals { #expect(result.message?.contains("press ⌘⇧,") == true) }
     }
   }
@@ -141,9 +142,9 @@ struct GhosttyAdapterTests {
       let stopped = try fixture(
         home: home,
         runner: ProcessRunner { request in
-          #expect(request.arguments == ["-x", "ghostty"])
-          return ProcessResult(terminationStatus: 1, output: "")
-        })
+          Issue.record("Stopped Ghostty must not run a signal command")
+          return ProcessResult(terminationStatus: 0, output: "Ghostty 1.4.0")
+        }, processes: fakeProcesses(instances: []))
       let result = try await stopped.reconciliation().run()
       #expect(result.status == .applied)
       #expect(result.message?.contains("next launch") == true)
@@ -166,7 +167,71 @@ struct GhosttyAdapterTests {
     }
   }
 
-  private func fixture(home: URL, available: Bool = true, runner: ProcessRunner) throws
+  @Test func onlyExactBundleGUIProcessesAreSignalled() async throws {
+    try await withTemporaryRoot(named: "ghostty-signal-targets") { home in
+      let path = GhosttyAdapter.liveExecutableURL.resolvingSymlinksInPath().path
+      let instances = [
+        instance(42, path: path),
+        instance(43, path: path),
+        instance(44, path: "/tmp/other/ghostty"),
+        instance(45, path: path, gui: false),
+        instance(46, path: "/opt/homebrew/bin/ghostty", gui: false),
+      ]
+      let signalled = Mutex<[Int32]>([])
+      let adapter = try fixture(
+        home: home,
+        runner: ProcessRunner { request in
+          #expect(request.executableURL.path == path)
+          #expect(request.arguments == ["--version"])
+          return ProcessResult(terminationStatus: 0, output: "Ghostty 1.4.0")
+        },
+        processes: fakeProcesses(
+          instances: instances, signal: { pid in signalled.withLock { $0.append(pid) } }))
+      #expect(try await adapter.reconciliation().run().status == .applied)
+      #expect(signalled.withLock { $0 } == [42, 43])
+    }
+  }
+
+  @Test func reusedPIDIsNotSignalled() async throws {
+    try await withTemporaryRoot(named: "ghostty-reused-pid") { home in
+      let original = instance(42, path: GhosttyAdapter.liveExecutableURL.path)
+      let adapter = try fixture(
+        home: home,
+        runner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "Ghostty 1.4.0") },
+        processes: GhosttyProcesses(
+          list: { [original] },
+          observe: {
+            ProcessIdentity(pid: $0, started: 999, executablePath: original.identity.executablePath)
+          },
+          signal: { _ in Issue.record("Reused PID must not be signalled") }))
+      await #expect(throws: GhosttyProcesses.Failure.self) {
+        try await adapter.reconciliation().run()
+      }
+    }
+  }
+
+  private func instance(_ pid: Int32, path: String, gui: Bool = true) -> GhosttyProcesses.Instance {
+    .init(identity: ProcessIdentity(pid: pid, started: 123, executablePath: path), isGUI: gui)
+  }
+
+  private func fakeProcesses(
+    instances supplied: [GhosttyProcesses.Instance]? = nil,
+    signal: @escaping @Sendable (Int32) throws -> Void = { _ in }
+  ) -> GhosttyProcesses {
+    let instances =
+      supplied ?? [
+        instance(42, path: GhosttyAdapter.liveExecutableURL.resolvingSymlinksInPath().path)
+      ]
+    return GhosttyProcesses(
+      list: { instances },
+      observe: { pid in instances.first { $0.identity.pid == pid }?.identity },
+      signal: signal)
+  }
+
+  private func fixture(
+    home: URL, available: Bool = true, runner: ProcessRunner,
+    processes: GhosttyProcesses? = nil
+  ) throws
     -> GhosttyAdapter
   {
     let files = ThemeConsumerPaths.ghosttyConfigurationFiles(home: home, environment: [:])
@@ -178,7 +243,7 @@ struct GhosttyAdapterTests {
       root: home, home: home, configurationFiles: files,
       ownedConfigurationURL: files[0], ownedLineIndex: 0,
       executableURL: GhosttyAdapter.liveExecutableURL, controlIsAvailable: { available },
-      processRunner: runner)
+      processRunner: runner, processes: processes ?? fakeProcesses())
   }
 
   private func write(_ text: String, to url: URL) throws {
