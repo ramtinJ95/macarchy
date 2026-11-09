@@ -66,14 +66,15 @@ struct SetupThemeTeardownTests {
         == manifest.generationID)
   }
 
-  @Test(arguments: [MacOSAccent.blue, .graphite, .green])
+  @Test(arguments: [MacOSAccent.blue, .graphite, .green, .red])
   func accentRestoresBeforeRetirementAndOnlyThenRemovesEvidence(current: MacOSAccent) async throws {
     let fixture = try ApplyFixture()
     let manifest = try fixture.activateSetupOwnedTheme()
     defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
     let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
     let store = MacOSAccentStore(root: fixture.state)
-    try store.persist(.init(original: .graphite, applied: .blue))
+    try store.persist(
+      .init(original: .graphite, applied: .blue, pending: current == .red ? .red : nil))
     let appearance = FakeAppearance(.light)
     let wallpaper = FakeWallpaper(showing: URL(filePath: "/user/chosen.png"))
     let fake = ProcessRunnerFake(replies: [
@@ -102,7 +103,8 @@ struct SetupThemeTeardownTests {
     #expect(result.succeeded, "\(result.message)")
     #expect(try store.load() == nil)
     #expect(
-      fake.requests.filter { $0.arguments.first == "set" }.count == (current == .blue ? 1 : 0))
+      fake.requests.filter { $0.arguments.first == "set" }.count
+        == (current == .blue || current == .red ? 1 : 0))
     if current == .green {
       #expect(result.message.contains("Kept the green accent, which was changed after setup."))
     }
