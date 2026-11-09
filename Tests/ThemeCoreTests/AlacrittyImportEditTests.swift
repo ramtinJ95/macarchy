@@ -86,6 +86,22 @@ struct AlacrittyImportEditTests {
         == "[general]\nimport = ['first', 'later']\n")
   }
 
+  @Test(arguments: [false, true])
+  func laterUserImportSurvivesOriginallyEmptyArray(multiline: Bool) throws {
+    let original = multiline ? "[general]\nimport = [\n]\n" : "[general]\nimport = []\n"
+    let edit = try AlacrittyImportEdit.adopting(Data(original.utf8), themePath: "/theme")
+    let managed = String(decoding: try edit.apply(to: Data(original.utf8)), as: UTF8.self)
+      .replacingOccurrences(
+        of: "\"/theme\"", with: multiline ? "\"/theme\",\n  'later'" : "\"/theme\", 'later'")
+    try edit.validateManaged(Data(managed.utf8))
+    let restored = try edit.restore(Data(managed.utf8))
+    #expect(try AlacrittyImportEdit.imports(String(decoding: restored, as: UTF8.self)) == ["later"])
+    #expect(
+      String(decoding: restored, as: UTF8.self)
+        == (multiline
+          ? "[general]\nimport = [\n  'later'\n]\n" : "[general]\nimport = [ 'later']\n"))
+  }
+
   @Test(arguments: ["# keep", "# keep\n", "[general]"])
   func appendedUserTablesSurviveRemovalOfAnIntroducedTable(original: String) throws {
     let source = Data(original.utf8)
