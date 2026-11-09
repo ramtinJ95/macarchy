@@ -5,6 +5,13 @@ import ThemeCore
 @testable import MacarchyCLI
 
 struct EnvironmentDependencySelectionTests {
+  @Test func alacrittyIsAnExternalRequiredPrerequisiteOnlyWhenSelected() throws {
+    let (catalog, profile) = try selection(core: false, presets: ["alacritty"])
+    #expect(
+      catalog.selectedForEnvironment(profile).map(\.id) == ["macos-26", "arm64", "alacritty"])
+    let (_, disabled) = try selection(core: false)
+    #expect(!catalog.selectedForEnvironment(disabled).contains { $0.id == "alacritty" })
+  }
   @Test(arguments: [false, true])
   func disabledAndShellOnlyKeepDistinctPlatformRequirements(shellEnabled: Bool) throws {
     let (catalog, profile) = try selection(

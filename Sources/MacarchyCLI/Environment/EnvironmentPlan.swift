@@ -26,6 +26,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
   let prerequisites: EnvironmentPrerequisiteInspector
   let requiresActiveTheme: Bool
   let bordersRuntime: EnvironmentBordersRuntime
+  let alacrittyVersion: @Sendable () throws -> [Int]
   let ghosttyVersion: @Sendable () throws -> [Int]
   let zedVersion: @Sendable () throws -> [Int]
 
@@ -33,12 +34,14 @@ struct EnvironmentPlanCommandRunner: Sendable {
     prerequisites: EnvironmentPrerequisiteInspector = .live,
     requiresActiveTheme: Bool = false,
     bordersRuntime: EnvironmentBordersRuntime = .live,
+    alacrittyVersion: @escaping @Sendable () throws -> [Int] = AlacrittyAdapter.installedVersion,
     ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion,
     zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion
   ) {
     self.prerequisites = prerequisites
     self.requiresActiveTheme = requiresActiveTheme
     self.bordersRuntime = bordersRuntime
+    self.alacrittyVersion = alacrittyVersion
     self.ghosttyVersion = ghosttyVersion
     self.zedVersion = zedVersion
   }
@@ -124,7 +127,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     let provider = homeDirectory.map {
       EnvironmentProviderInspector(
         bootstrapTheme: bootstrapTheme,
-        proposedNativeSources: Set(starterPlans.map(\.destination)), ghosttyVersion: ghosttyVersion,
+        proposedNativeSources: Set(starterPlans.map(\.destination)), alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion,
         zedVersion: zedVersion
       ).inspectIncludingBordersRuntime(
         composition: composition,
@@ -351,7 +354,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
     // Plan JSON lists preset actions in this order.
     for preset in [
-      EnvironmentPreset.zed, .ghostty, .tuicr, .codex, .herdr, .pi, .spicetify, .slack,
+      EnvironmentPreset.zed, .alacritty, .ghostty, .tuicr, .codex, .herdr, .pi, .spicetify, .slack,
     ]
     where preset.isEnabled(in: profile.presets) {
       actions.append(preset.planAction)

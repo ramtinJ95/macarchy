@@ -76,6 +76,7 @@ enum EnvironmentDailyTool: String, CaseIterable, Sendable {
 enum EnvironmentPreset: String, CaseIterable, Sendable {
   case zed
   case ghostty
+  case alacritty
   case codex
   case herdr
   case pi
@@ -92,6 +93,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .spicetify: presets.spicetify
     case .ghostty: presets.ghostty
     case .zed: presets.zed
+    case .alacritty: presets.alacritty
     case .tuicr: presets.tuicr
     }
   }
@@ -105,6 +107,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .spicetify: ownership.spicetifyEnabled
     case .ghostty: ownership.ghostty != nil
     case .zed: ownership.zed != nil
+    case .alacritty: ownership.alacritty != nil
     case .tuicr: ownership.tuicrEnabled
     }
   }
@@ -119,6 +122,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .spicetify: SpicetifyAdapter.id
     case .ghostty: GhosttyAdapter.id
     case .zed: ZedAdapter.id
+    case .alacritty: AlacrittyAdapter.id
     case .tuicr: TuicrAdapter.id
     }
   }
@@ -155,6 +159,11 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .zed:
       PlanAction(
         id: "configure_zed", message: "Own Zed’s theme member and watched regular theme family.")
+    case .alacritty:
+      PlanAction(
+        id: "configure_alacritty",
+        message:
+          "Append one owned Alacritty general.import element last; preserve all user settings.")
     case .ghostty:
       PlanAction(
         id: "configure_ghostty",
@@ -172,7 +181,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     switch self {
     case .herdr:
       UnifiedSetupService(id: "herdr", ownership: "external", lifecycle: "reload_if_running")
-    case .zed, .ghostty, .codex, .pi, .slack, .spicetify, .tuicr: nil
+    case .zed, .alacritty, .ghostty, .codex, .pi, .slack, .spicetify, .tuicr: nil
     }
   }
 
@@ -185,7 +194,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
         kind: "application_ui",
         instruction: "Import the generated four-color theme in each Slack workspace."
       )
-    case .zed, .ghostty, .codex, .herdr, .pi, .spicetify, .tuicr: nil
+    case .zed, .alacritty, .ghostty, .codex, .herdr, .pi, .spicetify, .tuicr: nil
     }
   }
 }
@@ -298,6 +307,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
   case zedFamily = "zed_family"
   case zed
   case ghostty
+  case alacritty
   case btop
   case codex
   case herdr
@@ -308,7 +318,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
   /// The linked preset whose enablement and external tuple also govern the file.
   var linkedPreset: EnvironmentLinkedPreset? {
     switch self {
-    case .zed, .zedFamily, .ghostty, .btop, .herdr: nil
+    case .zed, .alacritty, .zedFamily, .ghostty, .btop, .herdr: nil
     case .codex: .codex
     case .pi: .pi
     case .spicetify: .spicetify
@@ -327,6 +337,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .ghostty: "Ghostty"
     case .zed: "Zed"
     case .zedFamily: "Zed theme family"
+    case .alacritty: "Alacritty"
     case .tuicr: "tuicr"
     }
   }
@@ -342,6 +353,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .ghostty: preconditionFailure("Ghostty configuration paths require the selected home")
     case .zed: ".config/zed/settings.json"
     case .zedFamily: ".config/zed/themes/macarchy.json"
+    case .alacritty: preconditionFailure("Alacritty configuration paths require the selected home")
     case .tuicr: ConsumerHomePath.tuicrConfiguration
     }
   }
@@ -357,6 +369,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .ghostty: "ghostty_configuration"
     case .zed: "zed_configuration"
     case .zedFamily: "zed_family"
+    case .alacritty: "alacritty_configuration"
     case .tuicr: EnvironmentEntryID.tuicrConfiguration.rawValue
     }
   }
@@ -375,6 +388,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .ghostty: "Ghostty configuration"
     case .zed: "Zed settings"
     case .zedFamily: "Zed theme family"
+    case .alacritty: "Alacritty configuration"
     case .tuicr: "tuicr configuration"
     }
   }
@@ -396,6 +410,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .ghostty: ownership?.ghostty?.path
     case .zed: ownership?.zed?.path
     case .zedFamily: ownership?.zedFamily?.path
+    case .alacritty: ownership?.alacritty?.path
     case .tuicr: ownership?.tuicr?.path
     }
   }
@@ -404,8 +419,15 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
 
   func configurationURL(
     home: URL, ownership: EnvironmentOwnership? = nil,
+    proposedAlacritty: EnvironmentAlacrittyOwnership? = nil,
     proposedGhostty: EnvironmentGhosttyOwnership? = nil
   ) throws -> URL {
+    if self == .alacritty {
+      guard let path = proposedAlacritty?.path ?? ownership?.alacritty?.path else {
+        throw EnvironmentLifecycleError.blocked("Missing planned Alacritty configuration path")
+      }
+      return URL(filePath: path)
+    }
     if self == .ghostty {
       guard let path = proposedGhostty?.path ?? ownership?.ghostty?.path else {
         throw EnvironmentLifecycleError.blocked("Missing planned Ghostty configuration path")

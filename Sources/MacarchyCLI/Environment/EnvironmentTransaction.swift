@@ -312,6 +312,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     try decodeName(.ghostty)
     try decodeName(.zed)
     try decodeName(.zedFamily)
+    try decodeName(.alacritty)
     try decodeName(.tuicr)
     replacementNames = EnvironmentReplacementNames(names)
     bordersPreviousRuntime = try container.decodeIfPresent(
@@ -352,6 +353,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     try encodeName(.ghostty)
     try encodeName(.zed)
     try encodeName(.zedFamily)
+    try encodeName(.alacritty)
     try encodeName(.tuicr)
     try container.encodeIfPresent(bordersPreviousRuntime, forKey: .bordersPreviousRuntime)
     try container.encodeIfPresent(bordersRuntimeTarget, forKey: .bordersRuntimeTarget)

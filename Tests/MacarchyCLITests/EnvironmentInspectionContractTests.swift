@@ -66,6 +66,7 @@ struct EnvironmentInspectionContractTests {
     eza = \(!selected)
     yazi = \(selected)
     [presets]
+    alacritty = \(selected)
     codex = \(selected)
     ghostty = \(selected)
     zed = \(selected)
@@ -79,7 +80,7 @@ struct EnvironmentInspectionContractTests {
     let off = selected ? "disabled" : "enabled"
     let tools = ["bat": on, "btop": off, "eza": off, "yazi": on]
     let presets = [
-      "codex": on, "ghostty": on, "zed": on, "herdr": off, "pi": on, "slack": off, "spicetify": on,
+      "alacritty": on, "codex": on, "ghostty": on, "zed": on, "herdr": off, "pi": on, "slack": off, "spicetify": on,
       "tuicr": off,
     ]
     let plan = try EnvironmentPlanCommandRunner().execute(
@@ -99,7 +100,7 @@ struct EnvironmentInspectionContractTests {
         "focus_ring": "borders",
         "terminal": "kitty", "shell": "zsh", "prompt": "starship", "history": "atuin",
         "editor": "neovim", "bat": on, "btop": off, "eza": off, "yazi": on,
-        "codex": on, "ghostty": on, "zed": on, "herdr": off, "pi": on, "slack": off,
+        "alacritty": on, "codex": on, "ghostty": on, "zed": on, "herdr": off, "pi": on, "slack": off,
         "spicetify": on,
         "tuicr": off,
       ])

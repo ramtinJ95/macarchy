@@ -414,6 +414,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
   let verifier: EnvironmentSessionVerifier
   let neovim: EnvironmentNeovimPreparer
   let runtimes: EnvironmentProviderRuntimes
+  let alacrittyVersion: @Sendable () throws -> [Int]
   let ghosttyVersion: @Sendable () throws -> [Int]
   let zedVersion: @Sendable () throws -> [Int]
   let transactionFaultInjector: @Sendable (EnvironmentTransactionCheckpoint) throws -> Void
@@ -435,6 +436,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     herdrRuntime: EnvironmentHerdrRuntimeReloader = .assumed,
     spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher = .assumed,
     bordersRuntime: EnvironmentBordersRuntime = .live,
+    alacrittyVersion: @escaping @Sendable () throws -> [Int] = AlacrittyAdapter.installedVersion,
     ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion,
     zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion,
     transactionFaultInjector:
@@ -448,6 +450,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     self.neovim = neovim
     self.runtimes = EnvironmentProviderRuntimes(
       herdr: herdrRuntime, spicetify: spicetifyRuntime, borders: bordersRuntime)
+    self.alacrittyVersion = alacrittyVersion
     self.ghosttyVersion = ghosttyVersion
     self.zedVersion = zedVersion
     self.transactionFaultInjector = transactionFaultInjector
@@ -578,9 +581,10 @@ struct EnvironmentApplyCommandRunner: Sendable {
 
     // Probe once before lifecycle/activation locks, then use that observation for both
     // initial inspection and locked evidence revalidation. Disabled restoration needs no app.
+    let alacritty = Result { try profile.environment.presets.alacritty ? alacrittyVersion() : [] }
     let version = Result { try profile.environment.presets.ghostty ? ghosttyVersion() : [] }
     let providerInspector = EnvironmentProviderInspector(
-      ghosttyVersion: { try version.get() }, zedVersion: zedVersion)
+      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() }, zedVersion: zedVersion)
     let coordinator = EnvironmentTransactionCoordinator(
       homeDirectory: homeDirectory,
       stateRoot: stateRoot,
@@ -820,7 +824,9 @@ struct EnvironmentApplyCommandRunner: Sendable {
               lockedInspection.desiredEntries.map(\.id)
                 + (lockedInspection.ownership?.records.map(\.id) ?? [])
             ),
-            stateRoot: stateRoot
+            stateRoot: stateRoot,
+            alacritty: lockedInspection.proposedAlacrittyOwnership != nil
+              || lockedInspection.ownership?.alacritty != nil
           )
           return try coordinator.applyLocked(
             composition: composition,
@@ -979,7 +985,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
         prerequisites: prerequisites,
         theme: theme,
         verifier: verifier,
-        bordersRuntime: runtimes.borders, ghosttyVersion: { try version.get() },
+        bordersRuntime: runtimes.borders, alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() },
         zedVersion: zedVersion
       ).reportAfterApply(
         EnvironmentApplyObservation(
@@ -1009,11 +1015,14 @@ struct EnvironmentApplyCommandRunner: Sendable {
     homeDirectory: URL,
     commit: Bool
   ) throws -> Bool {
+    let alacritty = Result {
+      try commit && profile?.environment.presets.alacritty == true ? alacrittyVersion() : []
+    }
     let version = Result {
       try commit && profile?.environment.presets.ghostty == true ? ghosttyVersion() : []
     }
     let inspector = EnvironmentProviderInspector(
-      ghosttyVersion: { try version.get() }, zedVersion: zedVersion)
+      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() }, zedVersion: zedVersion)
     return try EnvironmentLifecycleLock(stateRoot: stateRoot).withLock {
       let store = EnvironmentStateStore(stateRoot: stateRoot)
       guard let transaction = try store.readTransaction() else { return false }

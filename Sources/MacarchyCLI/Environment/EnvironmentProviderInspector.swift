@@ -28,6 +28,7 @@ struct EnvironmentProviderInspection: Sendable {
   var proposedGhosttyOwnership: EnvironmentGhosttyOwnership? = nil
   var proposedZedOwnership: EnvironmentZedOwnership? = nil
   var proposedZedFamilyOwnership: EnvironmentZedFamilyOwnership? = nil
+  var proposedAlacrittyOwnership: EnvironmentAlacrittyOwnership? = nil
   var proposedTuicrOwnership: EnvironmentTuicrOwnership? = nil
   /// Planned evidence of each key-owned file apply must find unchanged.
   var keyOwnedExternalEvidence: [EnvironmentKeyOwnedFile: EnvironmentEntryEvidence] = [:]
@@ -54,6 +55,7 @@ struct EnvironmentProviderInspection: Sendable {
     case .ghostty: proposedGhosttyOwnership != nil
     case .zed: proposedZedOwnership != nil
     case .zedFamily: proposedZedFamilyOwnership != nil
+    case .alacritty: proposedAlacrittyOwnership != nil
     case .tuicr: proposedTuicrOwnership != nil
     }
   }
@@ -66,6 +68,7 @@ struct EnvironmentProviderInspection: Sendable {
 
 struct EnvironmentProviderInspector: Sendable {
   private static let maximumExternalFileSize = 4 * 1_048_576
+  let alacrittyVersion: @Sendable () throws -> [Int]
   let ghosttyVersion: @Sendable () throws -> [Int]
   let zedVersion: @Sendable () throws -> [Int]
   let slackPreset: EnvironmentSlackPreset
@@ -78,9 +81,11 @@ struct EnvironmentProviderInspector: Sendable {
     slackPreset: EnvironmentSlackPreset = EnvironmentSlackPreset(),
     bootstrapTheme: ThemePackage? = nil,
     proposedNativeSources: Set<String> = [],
+    alacrittyVersion: @escaping @Sendable () throws -> [Int] = AlacrittyAdapter.installedVersion,
     ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion,
     zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion
   ) {
+    self.alacrittyVersion = alacrittyVersion
     self.ghosttyVersion = ghosttyVersion
     self.zedVersion = zedVersion
     self.slackPreset = slackPreset
@@ -542,6 +547,13 @@ struct EnvironmentProviderInspector: Sendable {
       for entry in [zed.entry, zedFamily.entry].compactMap({ $0 }) { inspections.append(entry) }
       for path in [zed.proposedOwnership?.path, zedFamily.proposedOwnership?.path].compactMap({ $0 }
       ) { try recordMissingParents(of: URL(filePath: path)) }
+      let alacritty = try inspectAlacritty(
+        enabled: composition.profile.presets.alacritty, ownership: ownership?.alacritty,
+        home: homeDirectory, root: stateRoot)
+      if let entry = alacritty.entry { inspections.append(entry) }
+      if let proposed = alacritty.proposedOwnership {
+        try recordMissingParents(of: URL(filePath: proposed.path))
+      }
 
       let ghostty = try inspectGhostty(
         enabled: composition.profile.presets.ghostty, ownership: ownership?.ghostty,
@@ -620,6 +632,7 @@ struct EnvironmentProviderInspector: Sendable {
               .spicetify: spicetify.proposedOwnership?.path,
               .ghostty: ghostty.proposedOwnership?.path,
               .zed: zed.proposedOwnership?.path, .zedFamily: zedFamily.proposedOwnership?.path,
+              .alacritty: alacritty.proposedOwnership?.path,
               .tuicr: tuicr.proposedOwnership?.path,
             ].compactMapValues { $0 },
             borders: borders.ownership,
@@ -637,6 +650,7 @@ struct EnvironmentProviderInspector: Sendable {
         proposedGhosttyOwnership: ghostty.proposedOwnership,
         proposedZedOwnership: zed.proposedOwnership,
         proposedZedFamilyOwnership: zedFamily.proposedOwnership,
+        proposedAlacrittyOwnership: alacritty.proposedOwnership,
         proposedTuicrOwnership: tuicr.proposedOwnership,
         keyOwnedExternalEvidence: [
           EnvironmentKeyOwnedFile.btop: btop.externalEvidence,
@@ -646,6 +660,7 @@ struct EnvironmentProviderInspector: Sendable {
           .spicetify: spicetify.externalEvidence,
           .ghostty: ghostty.externalEvidence,
           .zed: zed.externalEvidence, .zedFamily: zedFamily.externalEvidence,
+          .alacritty: alacritty.externalEvidence,
           .tuicr: tuicr.externalEvidence,
         ].compactMapValues { $0 },
         proposedBordersOwnership: borders.ownership,

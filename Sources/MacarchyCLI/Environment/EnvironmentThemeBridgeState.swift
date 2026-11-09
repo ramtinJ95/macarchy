@@ -26,11 +26,13 @@ struct EnvironmentThemeBridgeState: Sendable {
     var ids = Set<EnvironmentEntryID>()
     if profile.terminal == .kitty { ids.insert(.kitty) }
     if profile.prompt == .starship { ids.insert(.starship) }
-    return try capture(ids: ids, stateRoot: stateRoot)
+    return try capture(ids: ids, stateRoot: stateRoot, alacritty: profile.presets.alacritty)
   }
 
-  static func capture(ids: Set<EnvironmentEntryID>, stateRoot: URL) throws -> Self {
-    let urls = paths(ids: ids, stateRoot: stateRoot).map { URL(filePath: $0) }
+  static func capture(ids: Set<EnvironmentEntryID>, stateRoot: URL, alacritty: Bool = false) throws
+    -> Self
+  {
+    let urls = paths(ids: ids, stateRoot: stateRoot, alacritty: alacritty).map { URL(filePath: $0) }
     return try Self(
       entries: urls.map { url in
         var metadata = stat()
@@ -43,16 +45,21 @@ struct EnvironmentThemeBridgeState: Sendable {
         }
         return Entry(
           path: url.path,
-          data: try BoundedRegularFile.read(at: url).data,
+          data: try url == stateRoot.appending(path: AlacrittyAdapter.bridgePath)
+            ? PinnedFilesystem.readRegularFile(at: url).data
+            : BoundedRegularFile.read(at: url).data,
           mode: UInt16(metadata.st_mode & 0o7777)
         )
       }
     )
   }
 
-  static func paths(ids: Set<EnvironmentEntryID>, stateRoot: URL) -> [String] {
-    (ids.contains(.kitty)
-      ? [stateRoot.appending(path: KittyAdapter.bridgePath).path] : [])
+  static func paths(ids: Set<EnvironmentEntryID>, stateRoot: URL, alacritty: Bool = false)
+    -> [String]
+  {
+    (alacritty ? [stateRoot.appending(path: AlacrittyAdapter.bridgePath).path] : [])
+      + (ids.contains(.kitty)
+        ? [stateRoot.appending(path: KittyAdapter.bridgePath).path] : [])
       + (ids.contains(.starship)
         ? [stateRoot.appending(path: StarshipAdapter.bridgePath).path] : [])
   }
@@ -61,12 +68,17 @@ struct EnvironmentThemeBridgeState: Sendable {
     let paths = entries.map(\.path)
     return entries.allSatisfy(\.hasValidShape)
       && Set(paths).count == paths.count
-      && Set(paths).isSubset(of: Set(Self.paths(ids: [.kitty, .starship], stateRoot: stateRoot)))
+      && Set(paths).isSubset(
+        of: Set(Self.paths(ids: [.kitty, .starship], stateRoot: stateRoot, alacritty: true)))
   }
 
   func restore() throws {
     for entry in entries {
       let url = URL(filePath: entry.path)
+      if entry.path.hasSuffix("/" + AlacrittyAdapter.bridgePath) {
+        try AlacrittyAdapter.restoreBridge(at: url, data: entry.data, mode: entry.mode)
+        continue
+      }
       if let data = entry.data {
         try FileManager.default.createDirectory(
           at: url.deletingLastPathComponent(),
