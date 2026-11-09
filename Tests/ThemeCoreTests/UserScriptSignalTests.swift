@@ -6,8 +6,9 @@ import Testing
 @testable import ThemeCore
 
 struct UserScriptSignalTests {
-  @Test(arguments: [SIGINT, SIGTERM, SIGHUP])
-  func interruptionStopsTheScriptGroupBeforeTheCallerExits(signal: Int32) throws {
+  // Concurrent helpers expose the worker-thread re-raise failure that isolated runs miss.
+  @Test(arguments: [SIGINT, SIGTERM, SIGHUP], 0..<8)
+  func interruptionStopsTheScriptGroupBeforeTheCallerExits(signal: Int32, repetition: Int) throws {
     let directory = try makeTrustedScriptDirectory()
     defer { removeTemporaryRoot(directory) }
     let ready = directory.appending(path: "ready")
@@ -69,11 +70,11 @@ struct UserScriptSignalTests {
       Darwin.signal(number, SIG_DFL)
       sigaddset(&blocked, number)
     }
-    // A process-directed signal still reaches the source; a thread-directed raise
-    // must explicitly unblock it on this worker before performing the default action.
+    // The original process-directed signal can reach the source on another thread.
+    // The final default action must also terminate when this worker starts blocked.
     try #require(pthread_sigmask(SIG_BLOCK, &blocked, nil) == 0)
-    _ = UserScriptRunner().run(URL(filePath: path), environment: [:])
-    Issue.record("Signal should have ended this subprocess after cleaning up")
+    let outcome = UserScriptRunner().run(URL(filePath: path), environment: [:])
+    Issue.record("Signal should have ended this subprocess after cleaning up: \(outcome)")
   }
 }
 
