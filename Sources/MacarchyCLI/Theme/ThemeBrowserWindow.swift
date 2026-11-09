@@ -354,12 +354,11 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       })
   }
 
-  /// Follows a display being connected, removed or rearranged while the picker is open.
+  /// Follows a display being connected, removed or rearranged while the picker is open. With
+  /// no display connected it keeps everything as it is, so a running operation still finishes,
+  /// and the next connected display shows the browser again.
   @objc private func displaysChanged(_ notification: Notification) {
-    guard let layout = ThemeBrowserDisplayLayout.current() else {
-      window?.close()
-      return
-    }
+    guard let layout = ThemeBrowserDisplayLayout.current() else { return }
     self.layout = layout
     guard !isApplying else { return }
     backdrops.show(layout)
@@ -381,10 +380,6 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     if !isBusy { window?.close() }
   }
 
-  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-    true
-  }
-
   func windowDidResignKey(_ notification: Notification) {
     if !isBusy { window?.close() }
   }
@@ -393,11 +388,16 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     !isDeleting && !isSavingScreenSaver && !isSavingFavorite
   }
 
+  /// Closing the picker ends the browser. The picker is a panel, which AppKit does not count for
+  /// terminating after the last window closes, so it terminates explicitly once this close has
+  /// finished.
   func windowWillClose(_ notification: Notification) {
     NotificationCenter.default.removeObserver(
       self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
     backdrops.close()
     statusPanel?.close()
+    NSApplication.shared.perform(
+      #selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0)
     galleryTask?.cancel()
     galleryTimer?.invalidate()
     backgroundImageTask?.cancel()
