@@ -95,6 +95,28 @@ struct UserScriptRunnerTests {
     }
   }
 
+  @Test func timeoutAlsoStopsAChildThatLeavesItsOriginalProcessGroup() throws {
+    try withScriptDirectory { directory in
+      // setpgrp(0, 0) would keep the existing group. Join the parent's group instead,
+      // in the same session, and record proof before the deliberately bounded sleep.
+      let groupFile = directory.appending(path: "group")
+      let script = try makeScript(
+        """
+        #!/usr/bin/perl
+        setpgrp(0, getpgrp(getppid())) or die "setpgrp: $!";
+        open(my $file, '>', '\(groupFile.path)') or die $!;
+        print $file getpgrp(0); close($file);
+        sleep 60;
+
+        """, in: directory)
+      let started = ContinuousClock.now
+      let outcome = UserScriptRunner(executionLimit: 1).run(script, environment: [:])
+      #expect(outcome == .failed("did not finish within 1 seconds and was stopped"))
+      #expect(ContinuousClock.now - started < .seconds(5))
+      #expect(try String(contentsOf: groupFile, encoding: .utf8) == String(getpgrp()))
+    }
+  }
+
   @Test func aBackgroundChildIsStoppedWhenTheScriptExits() throws {
     try withScriptDirectory { directory in
       let script = try makeScript(
