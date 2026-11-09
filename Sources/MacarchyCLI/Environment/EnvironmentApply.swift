@@ -1305,7 +1305,19 @@ struct EnvironmentTeardownCommandRunner: Sendable {
         )
         var themeState = result.restored
         var message = result.message
-        if !dryRun {
+        // Do not resurrect default consumers after their inventory is removed when this
+        // journaled aggregate operation is about to retire its canonical theme. External
+        // canonical themes and standalone teardown still need default reconciliation.
+        let retiringTheme =
+          try withinUnifiedSetup
+          && UnifiedSetupTransactionStore(stateRoot: stateRoot).read().map {
+            $0.operation == .teardown && $0.stages.contains(.theme)
+          } == true
+          && SetupCoreOwnershipStore(stateRoot: stateRoot).read() != nil
+        if !dryRun && retiringTheme {
+          message += " Default consumer reconciliation is deferred to canonical theme retirement."
+        }
+        if !dryRun && !retiringTheme {
           let restored: EnvironmentRestoredThemeState
           do {
             restored = try await reconcileRestoredDefaultConsumers(
