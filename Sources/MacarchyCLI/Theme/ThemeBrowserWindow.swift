@@ -591,8 +591,8 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   /// Shows a finished screensaver or favorite change and the library reloaded after it.
   private func finishSave(_ outcome: SaveOutcome) {
     do {
-      refresh(try outcome.refreshed.get())
-      statusLabel.stringValue = outcome.message
+      let notices = refresh(try outcome.refreshed.get())
+      statusLabel.stringValue = ([outcome.message] + notices).joined(separator: " ")
     } catch {
       browserState.markInventoryStale()
       statusLabel.stringValue = outcome.message + " Library refresh failed; reopen the picker."
@@ -650,8 +650,9 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     applyProcess = nil
     applyRefreshResult = nil
     isApplying = false
+    let notices: [String]
     do {
-      refresh(try refreshed.get())
+      notices = refresh(try refreshed.get())
     } catch {
       browserState.markInventoryStale()
       setControlsEnabled(true)
@@ -664,12 +665,14 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     guard let item = selectedItem else { return }
     if status == 0 {
       statusLabel.textColor = item.metadata.semantic.accent.nsColor
-      statusLabel.stringValue = "Applied \(item.displayName). Choose another or press Esc to close."
+      let message = "Applied \(item.displayName). Choose another or press Esc to close."
+      statusLabel.stringValue = ([message] + notices).joined(separator: " ")
       statusLabel.toolTip = nil
     } else {
       statusLabel.textColor = item.metadata.semantic.error.nsColor
-      statusLabel.stringValue =
+      let message =
         "Theme activation failed\(status.map { " (exit \($0))" } ?? ""). See the test log for details."
+      statusLabel.stringValue = ([message] + notices).joined(separator: " ")
       statusLabel.toolTip = "/tmp/macarchy-theme-browser-test.log"
     }
   }
@@ -728,12 +731,13 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       statusLabel.toolTip = reason
       statusLabel.textColor = selectedItem?.metadata.semantic.error.nsColor
     case .deleted(let content):
-      refresh(content)
-      statusLabel.stringValue =
-        "Moved \(deletedID) to Trash. Choose another theme or press Esc to close."
+      let notices = refresh(content)
+      let message = "Moved \(deletedID) to Trash. Choose another theme or press Esc to close."
+      statusLabel.stringValue = ([message] + notices).joined(separator: " ")
       statusLabel.toolTip = nil
     case .deletedButRefreshFailed(let reason):
-      refresh(content.removingTheme(id: deletedID))
+      // These notices are from the content loaded before the deletion and were already shown.
+      _ = refresh(content.removingTheme(id: deletedID))
       browserState.markInventoryStale()
       statusLabel.stringValue =
         "Moved \(deletedID) to Trash, but library refresh failed. Reopen the picker."
@@ -745,7 +749,9 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     window?.makeFirstResponder(searchField)
   }
 
-  private func refresh(_ content: ThemeBrowserContent) {
+  /// Shows reloaded `content` and returns its notices about the favorites record, which the
+  /// caller adds to the status of the operation that caused the reload.
+  private func refresh(_ content: ThemeBrowserContent) -> [String] {
     galleryTask?.cancel()
     galleryTimer?.invalidate()
     galleryResult = nil
@@ -768,6 +774,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       selectTheme(id: browserState.selectedThemeID)
     }
     updateCount()
+    return content.notices
   }
 
   private func configureContent(in window: NSWindow) {
