@@ -357,7 +357,15 @@ package struct UserScriptsProfile: Equatable, Sendable, PortableProfileSection {
   package static var fields: [PortableProfileField<Self>] { [.init("run", \.run)] }
 }
 
+package struct MacOSLookProfile: Equatable, Sendable, PortableProfileSection {
+  package var accent = false
+  package static let defaults = Self()
+  package static let table = "macos_look"
+  package static var fields: [PortableProfileField<Self>] { [.init("accent", \.accent)] }
+}
+
 package struct EnvironmentProfile: Equatable, Sendable {
+  package var macOSLook: MacOSLookProfile = .defaults
   package var scripts: UserScriptsProfile = .defaults
   package var focusRing: FocusRingProviderSelection
   package var terminal: TerminalProviderSelection
@@ -752,6 +760,7 @@ package struct PortableProfileLoader: Sendable {
         field: "neovim.native_configuration", base: base, source: source)
     )
     var environment = EnvironmentProfile(
+      macOSLook: MacOSLookProfile(accent: document.macOSLook?.accent ?? false),
       scripts: try scripts(document.scripts, source: source, base: base),
       focusRing: try provider(document.focusRing, source: source),
       terminal: terminal,
@@ -1161,6 +1170,7 @@ private struct PortableProfileDocument: Decodable {
   let topBar: ProviderDocument?
   let focusRing: ProviderDocument?
   let scripts: ScriptsDocument?
+  let macOSLook: MacOSLookDocument?
   let sketchyBar: SketchyBarDocument?
   let terminal: ProviderDocument?
   let kitty: KittyDocument?
@@ -1187,6 +1197,7 @@ private struct PortableProfileDocument: Decodable {
     case topBar = "top_bar"
     case focusRing = "focus_ring"
     case scripts
+    case macOSLook = "macos_look"
     case sketchyBar = "sketchybar"
     case terminal
     case kitty
@@ -1205,6 +1216,10 @@ private struct PortableProfileDocument: Decodable {
     case packages
     case macOSPreferences = "macos_preferences"
   }
+}
+
+private struct MacOSLookDocument: Decodable {
+  let accent: Bool?
 }
 
 private struct ScriptsDocument: Decodable {

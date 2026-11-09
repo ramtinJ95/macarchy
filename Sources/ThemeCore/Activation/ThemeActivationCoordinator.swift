@@ -214,6 +214,9 @@ package struct ThemeActivationCoordinator: Sendable {
           ))
       case .borders:
         return RuntimeConsumer(BordersAdapter(managedMode: bordersManagedMode))
+      case .macOSAccent:
+        return RuntimeConsumer(
+          MacOSAccentAdapter(root: root, helper: .sibling(processRunner: processRunner)))
       case .userScripts:
         return RuntimeConsumer(UserScriptsAdapter(root: root, mode: userScriptsMode))
       case .leanFocus:
@@ -851,7 +854,7 @@ package struct ThemeActivationCoordinator: Sendable {
     let enabledIDs = Set(adapters.map(\.id))
     let enabledResults = record.results.filter { enabledIDs.contains($0.adapterID) }
 
-    let alwaysRun = Set([WallpaperAdapter.id, UserScriptsAdapter.id])
+    let alwaysRun = Set([WallpaperAdapter.id, UserScriptsAdapter.id, MacOSAccentAdapter.id])
     if previousEvidence.manifest.generationID == manifest.generationID {
       return (
         adapters.filter { alwaysRun.contains($0.id) },
@@ -956,6 +959,7 @@ private protocol ContextFreeThemeAdapter: Sendable {
   func reconciliation() -> AdapterReconciliation
 }
 
+extension MacOSAccentAdapter: ContextFreeThemeAdapter {}
 extension UserScriptsAdapter: ContextFreeThemeAdapter {}
 extension AtuinAdapter: ContextFreeThemeAdapter {}
 extension BatAdapter: ContextFreeThemeAdapter {}

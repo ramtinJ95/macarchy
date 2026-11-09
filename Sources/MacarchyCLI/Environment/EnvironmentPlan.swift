@@ -249,6 +249,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       entries: provider?.entries ?? [],
       actions: Self.actions(
         for: composition.profile,
+        stateRoot: stateRoot,
         nativeNeovim: nativeNeovimRoot != nil,
         freshNativeNeovim: freshNativeNeovim,
         adoptionRequired: provider?.adoptionEvidenceDigest != nil,
@@ -262,12 +263,31 @@ struct EnvironmentPlanCommandRunner: Sendable {
 
   private static func actions(
     for profile: EnvironmentProfile,
+    stateRoot: URL,
     nativeNeovim: Bool,
     freshNativeNeovim: Bool,
     adoptionRequired: Bool,
     restorationRequired: Bool
   ) -> [PlanAction] {
     var actions: [PlanAction] = []
+    if !profile.macOSLook.accent
+      && FileManager.default.fileExists(atPath: StateLayout(root: stateRoot).macOSAccentRecord.path)
+    {
+      actions.append(
+        PlanAction(
+          id: "restore_macos_accent",
+          message:
+            "Restore the original macOS accent if it still matches Macarchy; preserve and report a later user change. A missing or unsupported helper blocks restoration."
+        ))
+    }
+    if profile.macOSLook.accent {
+      actions.append(
+        PlanAction(
+          id: "configure_macos_accent",
+          message:
+            "Set the macOS accent from the theme through the isolated helper on tested builds; record the original for three-way restoration."
+        ))
+    }
     if !profile.scripts.run.isEmpty {
       actions.append(
         PlanAction(

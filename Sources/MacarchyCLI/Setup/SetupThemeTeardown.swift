@@ -26,6 +26,7 @@ struct SetupAppearanceControl: Sendable {
 struct SetupThemeTeardown: Sendable {
   let appearance: @Sendable (URL) -> SetupAppearanceControl
   let wallpaper: @Sendable (URL) -> WallpaperOriginalRestorer
+  var accent: @Sendable (URL) -> MacOSAccentAdapter = { MacOSAccentAdapter(root: $0) }
 
   static let live = Self(
     appearance: { SetupAppearanceControl(MacOSAppearanceAdapter.live(root: $0)) },
@@ -40,7 +41,27 @@ struct SetupThemeTeardown: Sendable {
     dryRun: Bool
   ) async throws -> UnifiedSetupTeardownStage {
     guard let ownership else {
-      return .noChange("No setup-owned canonical theme exists.")
+      // An applied accent also has ownership when setup preserved an external canonical theme.
+      do {
+        guard try MacOSAccentStore(root: stateRoot).load() != nil else {
+          return .noChange("No setup-owned canonical theme exists.")
+        }
+        let report = try ActivationLock(root: stateRoot).withLock {
+          let report = try self.accent(stateRoot).restoreHoldingActivationLock(dryRun: dryRun)
+          if !dryRun && report.consumesRecord { try MacOSAccentStore(root: stateRoot).remove() }
+          return report
+        }
+        return UnifiedSetupTeardownStage(
+          succeeded: true, mutated: report.mutated,
+          outcome: dryRun ? "planned" : "restored",
+          message: Self.message(
+            "No setup-owned canonical theme exists; the external theme is preserved.",
+            [report.message].compactMap { $0 }))
+      } catch {
+        return UnifiedSetupTeardownStage(
+          succeeded: false, mutated: false, outcome: "blocked",
+          message: "Accent restoration failed: \(error)")
+      }
     }
     let activator = ThemeActivator(root: stateRoot)
     // Refuses a replaced theme before any native appearance or wallpaper access.
@@ -58,6 +79,7 @@ struct SetupThemeTeardown: Sendable {
         "Kept the macOS \(currentAppearance.rawValue) appearance, which was changed after setup.")
     }
     let wallpaper = wallpaper(stateRoot)
+    let accent = accent(stateRoot)
     let scripts: [String]
     do {
       scripts =
@@ -69,6 +91,13 @@ struct SetupThemeTeardown: Sendable {
     }
 
     if dryRun {
+      do {
+        if let message = try accent.restorationPlan().message { notes.append(message) }
+      } catch {
+        return UnifiedSetupTeardownStage(
+          succeeded: false, mutated: false, outcome: "blocked",
+          message: "Accent restoration blocked: \(error)")
+      }
       if !scripts.isEmpty {
         notes.append("Would run \(scripts.count) user scripts with the teardown event.")
       }
@@ -122,22 +151,27 @@ struct SetupThemeTeardown: Sendable {
     // reconciliation can put Macarchy's wallpaper back in between. Its record is removed only
     // once the theme is retired; until then it is still the evidence a retry needs.
     var wallpaperReport: WallpaperRestoreReport?
+    var accentReport: MacOSAccentRestore?
     let cleanupError: String?
     do {
       cleanupError = try activator.deactivate(
         expectedGenerationID: ownership.themeGenerationID,
         dryRun: false,
-        beforeRetiringLocked: { wallpaperReport = wallpaper.restoreHoldingActivationLock() }
+        beforeRetiringLocked: {
+          accentReport = try accent.restoreHoldingActivationLock()
+          wallpaperReport = wallpaper.restoreHoldingActivationLock()
+        }
       )
     } catch {
       return UnifiedSetupTeardownStage(
         succeeded: false,
-        mutated: mutated || (wallpaperReport?.mutated ?? false),
+        mutated: mutated || (wallpaperReport?.mutated ?? false) || (accentReport?.mutated ?? false),
         outcome: "failed",
         message: Self.message(
           "Canonical theme removal failed: \(error)", notes + (wallpaperReport?.lines ?? []))
       )
     }
+    if let message = accentReport?.message { notes.append(message) }
     if let report = wallpaperReport {
       notes += wallpaper.removeRecord(after: report).lines
     }
@@ -160,6 +194,15 @@ struct SetupThemeTeardown: Sendable {
         message: Self.message(
           "Canonical theme was removed, but setup ownership cleanup failed: \(error)", notes)
       )
+    }
+    if let report = accentReport {
+      if report.consumesRecord {
+        do { try MacOSAccentStore(root: stateRoot).remove() } catch {
+          return UnifiedSetupTeardownStage(
+            succeeded: false, mutated: true, outcome: "recovery_required",
+            message: "Accent restoration record cleanup failed: \(error)")
+        }
+      }
     }
     let summary =
       restoresAppearance

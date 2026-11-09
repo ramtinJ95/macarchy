@@ -12,6 +12,7 @@ package struct ConsumerID: Hashable, RawRepresentable, Sendable {
   package static let bat = ConsumerID(rawValue: BatAdapter.id)
   package static let btop = ConsumerID(rawValue: BtopAdapter.id)
   package static let borders = ConsumerID(rawValue: BordersAdapter.id)
+  package static let macOSAccent = ConsumerID(rawValue: MacOSAccentAdapter.id)
   package static let userScripts = ConsumerID(rawValue: UserScriptsAdapter.id)
   package static let leanFocus = ConsumerID(rawValue: BordersAdapter.leanID)
   package static let codex = ConsumerID(rawValue: CodexAdapter.id)
@@ -39,6 +40,7 @@ package enum RuntimeAdapterKind: CaseIterable, Hashable, Sendable {
   case btop
   case borders
   case userScripts
+  case macOSAccent
   case leanFocus
   case codex
   case eza
@@ -654,6 +656,10 @@ package struct ConsumerCatalog: Sendable {
       },
       dependencies: [.init(id: TuicrAdapter.id, role: .requiredAdapter)],
       setupManaged: true
+    ),
+    ConsumerCatalogEntry(
+      id: .macOSAccent,
+      mode: .runtime(.macOSAccent, requirement: .optional, enabledByDefault: false)
     ),
     ConsumerCatalogEntry(
       id: .userScripts,

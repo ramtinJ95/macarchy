@@ -40,6 +40,7 @@ struct ConsumerCatalogTests {
           "alacritty:required",
           "ghostty:required",
           "tuicr:required",
+          "macos-accent:optional",
           "user-scripts:optional",
           "wallpaper:required",
           "yazi:required",
