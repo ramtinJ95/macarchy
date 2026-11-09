@@ -116,6 +116,64 @@ struct KittyColorOverridesTests {
             + "theme (color0, color1, color2, color3, color4, color5 and 2 more); ") == true)
     }
   }
+
+  @Test func includesExpandEnvironmentVariablesAndGlobLikeKitty() throws {
+    try withTemporaryRoot(named: "macarchy-kitty-overrides") { directory in
+      for path in ["colors", "extra/deep/nested", "extra/.hidden"] {
+        try FileManager.default.createDirectory(
+          at: directory.appending(path: path), withIntermediateDirectories: true)
+      }
+      try write("background #010101\n", "colors/user.conf", in: directory)
+      try write("cursor #020202\n", "extra/deep/nested/a.conf", in: directory)
+      try write("url_color #030303\n", "extra/.hidden/b.conf", in: directory)
+      try write("color1 #040404\n", "extra/.c.conf", in: directory)
+      let configuration = """
+        \(include)
+        include $KITTY_COLORS/${USER_FILE}.conf
+        include $UNSET_VARIABLE/none.conf
+        globinclude extra/**/*.conf
+        """
+
+      let overrides = KittyColorOverrides.inspect(
+        configuration: configuration, directory: directory, includeDirective: include,
+        environment: [
+          "KITTY_COLORS": directory.appending(path: "colors").path, "USER_FILE": "user",
+        ])
+
+      let path = directory.path
+      #expect(
+        overrides.sources.map(\.description) == [
+          "\(path)/colors/user.conf, included after Macarchy's theme",
+          "\(path)/extra/.c.conf, included after Macarchy's theme",
+          "\(path)/extra/.hidden/b.conf, included after Macarchy's theme",
+          "\(path)/extra/deep/nested/a.conf, included after Macarchy's theme",
+        ])
+      #expect(
+        overrides.sources.map(\.keys) == [["background"], ["color1"], ["url_color"], ["cursor"]])
+    }
+  }
+
+  @Test func anUnreadableIncludeIsReportedAsUncheckedNotAsAnOverride() throws {
+    try withTemporaryRoot(named: "macarchy-kitty-overrides") { directory in
+      try write("", "locked.conf", in: directory)
+      try write("background #000000\n", "dark-theme.auto.conf", in: directory)
+      struct Unreadable: Error {}
+
+      let overrides = KittyColorOverrides.inspect(
+        configuration: "\(include)\ninclude locked.conf\n", directory: directory,
+        includeDirective: include,
+        read: { url in
+          guard url.lastPathComponent != "locked.conf" else { throw Unreadable() }
+          return try String(contentsOf: url, encoding: .utf8)
+        })
+
+      #expect(
+        overrides.message
+          == "Theme colors are overridden by dark-theme.auto.conf, which replaces every color "
+          + "when macOS is in Dark mode (background). Not checked for color overrides because "
+          + "it could not be read: \(directory.path)/locked.conf, included after Macarchy's theme")
+    }
+  }
 }
 
 extension AdapterContractTests {
