@@ -349,15 +349,19 @@ package struct ThemeActivationCoordinator: Sendable {
             version: ZedAdapter.installedVersion,
             validateOwnership: consumerPaths.zedValidateOwnership))
       case .alacritty:
+        let alacritty = AlacrittyAdapter(
+          root: root, home: consumerPaths.piDerivedHomeDirectoryURL,
+          configurationFiles: consumerPaths.alacrittyConfigurationFiles,
+          ownedConfigurationURL: consumerPaths.alacrittyOwnedConfigurationURL,
+          ownedImportEdit: consumerPaths.alacrittyOwnedImportEdit,
+          executableURL: AlacrittyAdapter.liveExecutableURL,
+          controlIsAvailable: { controlIsAvailable(AlacrittyAdapter.liveExecutableURL) },
+          processRunner: processRunner)
         return RuntimeConsumer(
-          AlacrittyAdapter(
-            root: root, home: consumerPaths.piDerivedHomeDirectoryURL,
-            configurationFiles: consumerPaths.alacrittyConfigurationFiles,
-            ownedConfigurationURL: consumerPaths.alacrittyOwnedConfigurationURL,
-            ownedImportEdit: consumerPaths.alacrittyOwnedImportEdit,
-            executableURL: AlacrittyAdapter.liveExecutableURL,
-            controlIsAvailable: { controlIsAvailable(AlacrittyAdapter.liveExecutableURL) },
-            processRunner: processRunner))
+          preflight: { _ in try alacritty.preflight() },
+          inspection: { _ in alacritty.inspection() },
+          reconciliation: alacritty.reconciliation,
+          repaint: alacritty.repaintBoundary)
       case .ghostty:
         return RuntimeConsumer(
           GhosttyAdapter(
