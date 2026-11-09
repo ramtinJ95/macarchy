@@ -1427,11 +1427,15 @@ inline `general = {...}`, non-string import arrays, and deprecated top-level
 YAML file exists, run `alacritty migrate` before adoption; Macarchy will not create
 a TOML file that silently shadows it.
 
-First connection reports a next-launch boundary; reopen Alacritty to establish
-its theme-file watcher. Later switches use Alacritty's automatic config reload,
+Macarchy records when the import and bridge were first published. While any
+running Alacritty process predates that connection, reconciliation and review
+keep the next-launch qualification: reopen Alacritty once to establish its
+theme-file watcher. Repeated reconciliation does not clear it. When no such
+process remains (or none runs), later switches use automatic config reload,
 without signals or forced restarts. When the effective `live_config_reload` is
 false (including legacy or imported settings), reconciliation reports
 `restart_required` with a `next_invocation` explanation instead of claiming repaint.
+Review and dry-run use the same effective reload and reopen checks, read-only.
 On Alacritty 0.17.0 in a macOS 26 guest, adoption repainted once but a subsequent
 switch did not reload until the app was reopened. After that one-time reopen,
 two theme switches repainted the same process and matched runtime color readback.
@@ -1442,7 +1446,7 @@ files and color keys without changing them; after external edits, run
 `macarchy reconcile` to refresh the receipt shown by `theme status`.
 
 Disable the preset and apply, or tear down, to remove the owned element and the
-generated bridge. Otherwise-unchanged configuration is restored byte-for-byte;
+generated bridge and connection timestamp. Otherwise-unchanged configuration is restored byte-for-byte;
 unrelated later content remains. An edited, moved, duplicated or missing owned
 element/separator is drift and blocks restoration rather than overwriting it.
 If Macarchy introduced the `[general]` table and you later add settings beneath
