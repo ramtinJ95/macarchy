@@ -3,7 +3,7 @@ Plan for theme 'catppuccin-mocha' with background 'default':
   atuin: Atuin theme (generated/atuin.toml); next invocation; ready
   bat: bat syntax theme (generated/bat.tmTheme); next invocation; ready
   btop: btop theme (generated/btop.theme); reloads; ready
-  codex: Codex TUI syntax palette; fresh session; ready
+  codex: Codex TUI syntax palette (generated/bat.tmTheme); fresh session; ready
   eza: eza colors (generated/eza.yml); next invocation; ready
   herdr: Herdr theme (generated/herdr.txt); reloads; ready
   kitty: Kitty colors (generated/kitty.conf); reloads; ready
@@ -16,5 +16,5 @@ Plan for theme 'catppuccin-mocha' with background 'default':
   wallpaper: desktop wallpaper on every display (generated/wallpaper.png); live; ready
   yazi: Yazi flavor (generated/yazi-flavor.toml, generated/yazi.tmTheme); reloads; ready
 Disabled in the profile: borders, lean-focus-ring
-Canonical state: unchanged (dry run). No files written; no processes run.
+Canonical state: unchanged (dry run). No files written.
 Apply exactly this plan: macarchy theme set catppuccin-mocha --reviewed sha256:d365ce7f23b6c143c77e7f0e03f4a65b7f9bf99ba17043e6ad4c29a28b8bd602

@@ -293,7 +293,10 @@ package struct ThemeActivationCoordinator: Sendable {
           inspection: { context in
             pi.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
           },
-          reconciliation: pi.reconciliation
+          reconciliation: pi.reconciliation,
+          // An externally owned theme link is preserved, so running sessions keep the old
+          // palette until /reload or a new launch.
+          repaint: { (try? pi.themeLinkRefreshIsAllowed()) == false ? .freshSession : nil }
         )
       case .sketchyBar:
         let sketchyBar = SketchyBarAdapter(
@@ -416,7 +419,13 @@ package struct ThemeActivationCoordinator: Sendable {
       } catch {
         preflight = .failed(String(describing: error))
       }
-      return ThemeActivationReview.Consumer(entry: adapter.entry, preflight: preflight)
+      let consumer = ThemeActivationReview.Consumer(
+        entry: adapter.entry, preflight: preflight, repaint: adapter.repaint())
+      // Without a background the wallpaper adapter leaves the desktop picture as it is.
+      if adapter.entry.mode.runtimeKind == .wallpaper, background.selection == nil {
+        return consumer.unchanged(because: "unchanged: the theme has no background")
+      }
+      return consumer
     }
     return try ThemeActivationReview(
       themeID: package.id,
@@ -650,7 +659,8 @@ package struct ThemeActivationCoordinator: Sendable {
         entry: entry,
         preflight: consumer.preflight,
         inspection: { consumer.inspection(context) },
-        reconciliation: consumer.reconciliation
+        reconciliation: consumer.reconciliation,
+        repaint: consumer.repaint
       )
     }
   }
@@ -918,6 +928,8 @@ private struct RuntimeConsumer: Sendable {
   let preflight: @Sendable (AdapterPreflightContext) throws -> Void
   let inspection: @Sendable (AdapterResolutionContext) -> AdapterInspection
   let reconciliation: @Sendable () -> AdapterReconciliation
+  /// The repaint boundary for the adapter's current ownership; nil for its kind's usual one.
+  var repaint: @Sendable () -> ThemeRepaintBoundary? = { nil }
 }
 
 extension RuntimeConsumer {
@@ -935,17 +947,21 @@ private struct ConfiguredAdapter: Sendable {
   private let runPreflight: @Sendable (AdapterPreflightContext) throws -> Void
   private let inspect: @Sendable () -> AdapterInspection
   private let reconcile: @Sendable () -> AdapterReconciliation
+  /// The repaint boundary for the adapter's current ownership; nil for its kind's usual one.
+  let repaint: @Sendable () -> ThemeRepaintBoundary?
 
   init(
     entry: ConsumerCatalogEntry,
     preflight: @escaping @Sendable (AdapterPreflightContext) throws -> Void,
     inspection: @escaping @Sendable () -> AdapterInspection,
-    reconciliation: @escaping @Sendable () -> AdapterReconciliation
+    reconciliation: @escaping @Sendable () -> AdapterReconciliation,
+    repaint: @escaping @Sendable () -> ThemeRepaintBoundary? = { nil }
   ) {
     self.entry = entry
     runPreflight = preflight
     inspect = inspection
     reconcile = reconciliation
+    self.repaint = repaint
   }
 
   var id: String { entry.id.rawValue }

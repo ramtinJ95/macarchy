@@ -48,7 +48,7 @@
       },
       {
         "artifacts" : [
-
+          "generated/bat.tmTheme"
         ],
         "change" : "Codex TUI syntax palette",
         "id" : "codex",

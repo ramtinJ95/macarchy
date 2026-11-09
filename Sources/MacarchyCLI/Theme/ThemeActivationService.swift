@@ -143,7 +143,9 @@ struct ThemeActivationService: Sendable {
   ) async throws -> ThemeSetReport {
     if dryRun {
       do {
-        return .dryRun(review: try review(package, requestedBackgroundID, stateRoot, consumerPaths))
+        return .dryRun(
+          review: try review(package, requestedBackgroundID, stateRoot, consumerPaths),
+          setReproduces: requestedBackgroundID == nil)
       } catch {
         return .precommitFailure(themeID: package.id, error: error)
       }

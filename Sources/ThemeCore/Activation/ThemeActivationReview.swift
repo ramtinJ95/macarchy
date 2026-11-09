@@ -52,7 +52,13 @@ extension RuntimeAdapterKind {
     }
   }
 
-  /// When the change shows, as the adapter's reconciliation delivers it.
+  /// Generated files this consumer reads that another consumer's renderer writes.
+  package var sharedArtifacts: [String] {
+    self == .codex ? [TextMateThemeArtifact.outputPath] : []
+  }
+
+  /// When the change shows, as the adapter's reconciliation usually delivers it; an adapter
+  /// whose current ownership delivers it later reports its own boundary to the review.
   package var repaint: ThemeRepaintBoundary {
     switch self {
     case .macOSAppearance, .borders, .leanFocus, .neovim, .pi, .sketchyBar, .wallpaper: .live
@@ -80,22 +86,34 @@ package struct ThemeActivationReview: Encodable, Equatable, Sendable {
   package struct Consumer: Encodable, Equatable, Sendable {
     package let id: String
     package let requirement: AdapterRequirement
-    package let change: String
+    package private(set) var change: String
     /// Generated files this consumer reads, relative to the generation.
-    package let artifacts: [String]
+    package private(set) var artifacts: [String]
     package let repaint: ThemeRepaintBoundary
     package let preflight: Preflight
 
-    package init(entry: ConsumerCatalogEntry, preflight: Preflight) {
+    /// `repaint` is the boundary the adapter reports for its current ownership, when that
+    /// differs from its kind's usual one.
+    package init(
+      entry: ConsumerCatalogEntry, preflight: Preflight, repaint: ThemeRepaintBoundary? = nil
+    ) {
       guard let kind = entry.mode.runtimeKind else {
         preconditionFailure("Only runtime consumers are reviewed")
       }
       id = entry.id.rawValue
       requirement = kind.requirement
       change = kind.reviewChange
-      artifacts = entry.renderer?.artifacts.map(\.path) ?? []
-      repaint = kind.repaint
+      artifacts = (entry.renderer?.artifacts.map(\.path) ?? []) + kind.sharedArtifacts
+      self.repaint = repaint ?? kind.repaint
       self.preflight = preflight
+    }
+
+    /// This consumer when activation leaves it as it is, and why.
+    package func unchanged(because reason: String) -> Self {
+      var consumer = self
+      consumer.change = reason
+      consumer.artifacts = []
+      return consumer
     }
 
     enum CodingKeys: String, CodingKey {

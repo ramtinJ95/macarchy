@@ -11,8 +11,10 @@ enum ThemeSetReport {
     case committedReconciliationError = "committed_reconciliation_error"
   }
 
-  /// A planned activation; it succeeds only when the plan can be applied.
-  case dryRun(review: ThemeActivationReview)
+  /// A planned activation; it succeeds only when the plan can be applied. `setReproduces` is
+  /// false when the plan asked for a background `theme set` cannot ask for, so its
+  /// `--reviewed` command would plan a different background.
+  case dryRun(review: ThemeActivationReview, setReproduces: Bool = true)
   case precommitFailure(themeID: String, error: String)
   case committed(result: ThemeActivationResult, requiredFailure: Bool, slackTheme: String?)
   case committedActivationError(
@@ -61,8 +63,8 @@ enum ThemeSetReport {
     }
 
     switch self {
-    case .dryRun(let review):
-      return renderReview(review).joined(separator: "\n")
+    case .dryRun(let review, let setReproduces):
+      return renderReview(review, setReproduces: setReproduces).joined(separator: "\n")
     case .precommitFailure(let themeID, let error):
       return [
         "Theme '\(themeID)' was not activated.",
@@ -93,7 +95,7 @@ enum ThemeSetReport {
 
   var jsonReport: ThemeSetJSONReport {
     switch self {
-    case .dryRun(let review):
+    case .dryRun(let review, _):
       ThemeSetJSONReport(
         themeID: review.themeID,
         outcome: review.canApply ? .dryRun : .precommitFailure,
@@ -175,7 +177,7 @@ struct ThemeSetJSONReport: Encodable, Sendable {
 
 /// A dry run's plan: what each enabled consumer would change and when it shows, its preflight,
 /// the disabled consumers, and how to apply exactly this plan.
-func renderReview(_ review: ThemeActivationReview) -> [String] {
+func renderReview(_ review: ThemeActivationReview, setReproduces: Bool = true) -> [String] {
   var lines = [
     "Plan for theme '\(review.themeID)'"
       + (review.backgroundID.map { " with background '\($0)'" } ?? "") + ":"
@@ -196,12 +198,12 @@ func renderReview(_ review: ThemeActivationReview) -> [String] {
   if !review.disabledConsumerIDs.isEmpty {
     lines.append("Disabled in the profile: \(review.disabledConsumerIDs.joined(separator: ", "))")
   }
-  lines.append("Canonical state: unchanged (dry run). No files written; no processes run.")
-  if review.canApply {
+  lines.append("Canonical state: unchanged (dry run). No files written.")
+  if !review.canApply {
+    lines.append(ThemeActivationReviewError.blocked(review.failedConsumerIDs).description + ".")
+  } else if setReproduces {
     lines.append(
       "Apply exactly this plan: macarchy theme set \(review.themeID) --reviewed \(review.digest)")
-  } else {
-    lines.append(ThemeActivationReviewError.blocked(review.failedConsumerIDs).description + ".")
   }
   return lines
 }
