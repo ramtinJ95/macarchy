@@ -250,6 +250,7 @@ package struct PiAdapter: Sendable {
     return String(decoding: data, as: UTF8.self) + "\n"
   }
 
+  /// Inputs are palette raw values or `mixed` results, so always `#rrggbb`.
   private static func readableForeground(
     _ foreground: SRGBColor,
     toward text: SRGBColor,
@@ -257,29 +258,12 @@ package struct PiAdapter: Sendable {
   ) -> String {
     for percentage in 0...100 {
       let candidate = foreground.mixed(with: text, amount: Double(percentage) / 100)
-      if backgrounds.allSatisfy({ contrast(candidate, $0) >= 4.5 }) {
+      let color = SRGBColor(rawValue: candidate)!
+      if backgrounds.allSatisfy({ color.contrast(with: SRGBColor(rawValue: $0)!) >= 4.5 }) {
         return candidate
       }
     }
     return text.rawValue
-  }
-
-  private static func contrast(_ first: String, _ second: String) -> Double {
-    let firstLuminance = relativeLuminance(first)
-    let secondLuminance = relativeLuminance(second)
-    return (max(firstLuminance, secondLuminance) + 0.05)
-      / (min(firstLuminance, secondLuminance) + 0.05)
-  }
-
-  /// Inputs are palette raw values or `mixed` results, so always `#rrggbb`.
-  private static func relativeLuminance(_ color: String) -> Double {
-    let (red, green, blue) = SRGBColor(rawValue: color)!.components
-    let linear = [red, green, blue].map { value in
-      value <= 0.04045
-        ? value / 12.92
-        : pow((value + 0.055) / 1.055, 2.4)
-    }
-    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
   }
 
   private func selectedTheme() throws -> String? {
