@@ -8,6 +8,38 @@ import Testing
 @testable import ThemeCore
 
 struct EnvironmentLifecycleTests {
+
+  @Test(arguments: [false, true])
+  func aggregateRetirementDoesNotReconcileAbsentDefaultsButExternalThemesStillDo(owned: Bool)
+    async throws
+  {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try fixture.activateTheme()
+    let originalEntries = try fixture.entryEvidence()
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String)
+    #expect(try await fixture.apply(adopt: digest, theme: recordingThemeController()).succeeded)
+    if owned {
+      let active = try ThemeGenerationReader(root: fixture.state).activeManifest()
+      try SetupCoreOwnershipStore(stateRoot: fixture.state).write(
+        SetupCoreOwnership(themeGenerationID: active.generationID, originalAppearance: .light))
+    }
+    try UnifiedSetupTransactionStore(stateRoot: fixture.state).write(
+      UnifiedSetupTransaction(
+        operation: .teardown, stages: [.environment, .theme], desiredAppearance: .dark,
+        contextDigest: "sha256:" + String(repeating: "a", count: 64)))
+    let requests = Mutex(0)
+    let theme = recordingThemeController { _ in requests.withLock { $0 += 1 } }
+    let result = try await fixture.teardown(theme: theme, withinUnifiedSetup: true)
+    #expect(result.succeeded, "\(result.output)")
+    #expect(requests.withLock { $0 } == (owned ? 0 : 1))
+    #expect(result.output.contains("deferred to canonical theme retirement") == owned)
+    #expect(try fixture.entryEvidence() == originalEntries)
+    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
+    #expect(!EnvironmentStateStore(stateRoot: fixture.state).transactionExists)
+  }
+
   @Test func optionalScriptFailureStaysVisibleWithoutRollingBackSetup() async throws {
     let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
