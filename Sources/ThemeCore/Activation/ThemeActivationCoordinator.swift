@@ -348,6 +348,16 @@ package struct ThemeActivationCoordinator: Sendable {
               home: consumerPaths.piDerivedHomeDirectoryURL),
             version: ZedAdapter.installedVersion,
             validateOwnership: consumerPaths.zedValidateOwnership))
+      case .alacritty:
+        return RuntimeConsumer(
+          AlacrittyAdapter(
+            root: root, home: consumerPaths.piDerivedHomeDirectoryURL,
+            configurationFiles: consumerPaths.alacrittyConfigurationFiles,
+            ownedConfigurationURL: consumerPaths.alacrittyOwnedConfigurationURL,
+            ownedImportEdit: consumerPaths.alacrittyOwnedImportEdit,
+            executableURL: AlacrittyAdapter.liveExecutableURL,
+            controlIsAvailable: { controlIsAvailable(AlacrittyAdapter.liveExecutableURL) },
+            processRunner: processRunner))
       case .ghostty:
         return RuntimeConsumer(
           GhosttyAdapter(
@@ -952,6 +962,8 @@ extension KittyAdapter: ContextFreeThemeAdapter {}
 extension SpicetifyAdapter: ContextFreeThemeAdapter {}
 extension StarshipAdapter: ContextFreeThemeAdapter {}
 extension TuicrAdapter: ContextFreeThemeAdapter {}
+extension AlacrittyAdapter: ContextFreeThemeAdapter {}
+
 extension GhosttyAdapter: ContextFreeThemeAdapter {}
 extension ZedAdapter: ContextFreeThemeAdapter {}
 extension YaziAdapter: ContextFreeThemeAdapter {}

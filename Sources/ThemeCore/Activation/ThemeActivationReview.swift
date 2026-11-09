@@ -40,6 +40,8 @@ extension RuntimeAdapterKind {
     case .leanFocus: "lean focus ring color"
     case .codex: "Codex TUI syntax palette"
     case .eza: "eza colors"
+    case .alacritty:
+      "Alacritty colors (automatic reload when enabled; first connection may require next launch)"
     case .ghostty: "Ghostty colors (live since 1.2.0; older versions reload manually)"
     case .zed: "Zed theme member and family (live)"
     case .herdr: "Herdr theme"
@@ -64,7 +66,7 @@ extension RuntimeAdapterKind {
   /// whose current ownership delivers it later reports its own boundary to the review.
   package var repaint: ThemeRepaintBoundary {
     switch self {
-    case .zed, .ghostty, .macOSAppearance, .borders, .leanFocus, .neovim, .pi, .sketchyBar,
+    case .zed, .alacritty, .ghostty, .macOSAppearance, .borders, .leanFocus, .neovim, .pi, .sketchyBar,
       .wallpaper:
       .live
     case .btop, .herdr, .kitty, .yazi: .reload

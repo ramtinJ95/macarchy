@@ -16,6 +16,7 @@ package struct ConsumerID: Hashable, RawRepresentable, Sendable {
   package static let leanFocus = ConsumerID(rawValue: BordersAdapter.leanID)
   package static let codex = ConsumerID(rawValue: CodexAdapter.id)
   package static let eza = ConsumerID(rawValue: EzaAdapter.id)
+  package static let alacritty = ConsumerID(rawValue: AlacrittyAdapter.id)
   package static let ghostty = ConsumerID(rawValue: GhosttyAdapter.id)
   package static let zed = ConsumerID(rawValue: ZedAdapter.id)
   package static let herdr = ConsumerID(rawValue: HerdrAdapter.id)
@@ -41,6 +42,7 @@ package enum RuntimeAdapterKind: CaseIterable, Hashable, Sendable {
   case leanFocus
   case codex
   case eza
+  case alacritty
   case ghostty
   case zed
   case herdr
@@ -618,6 +620,17 @@ package struct ConsumerCatalog: Sendable {
           renderer: .init(id: ZedAdapter.id), minimumVersion: 1)
       ) { package, _ in try ZedAdapter.render(package: package) },
       dependencies: [.init(id: ZedAdapter.id, role: .requiredAdapter)]
+    ),
+    ConsumerCatalogEntry(
+      id: .alacritty,
+      mode: .runtime(.alacritty, requirement: .required, enabledByDefault: false),
+      renderer: .text(
+        id: AlacrittyAdapter.id, version: AlacrittyAdapter.rendererVersion,
+        path: AlacrittyAdapter.outputPath,
+        requirement: .requiredWhenRendererVersion(
+          renderer: .init(id: AlacrittyAdapter.id), minimumVersion: 1)
+      ) { package, _ in AlacrittyAdapter.render(package: package) },
+      dependencies: [.init(id: AlacrittyAdapter.id, role: .requiredAdapter)]
     ),
     ConsumerCatalogEntry(
       id: .ghostty,

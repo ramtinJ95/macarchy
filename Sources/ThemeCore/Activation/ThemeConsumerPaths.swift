@@ -8,6 +8,16 @@ package struct ThemeConsumerPaths: Sendable {
   package static func zedConfigurationDirectory(home: URL) -> URL {
     home.appending(path: ".config/zed").standardizedFileURL
   }
+  package var alacrittyOwnedConfigurationURL: URL?
+  package var alacrittyOwnedImportEdit: AlacrittyImportEdit?
+  package var alacrittyConfigurationFiles: [URL] {
+    Self.alacrittyConfigurationFiles(home: piDerivedHomeDirectoryURL)
+  }
+  package static func alacrittyConfigurationFiles(
+    home: URL, environment: [String: String] = ProcessInfo.processInfo.environment
+  ) -> [URL] {
+    AlacrittyConfiguration.files(home: home, environment: environment)
+  }
   package var ghosttyOwnedConfigurationURL: URL?
   package var ghosttyOwnedLineIndex: Int?
   package var ghosttyConfigurationFiles: [URL] {

@@ -428,7 +428,8 @@ package struct EnvironmentConfigurationComposer: Sendable {
         "tuicr": options.presets.tuicr,
       ].merging(
         options.presets.ghostty ? ["ghostty": true] : [:], uniquingKeysWith: { _, new in new }
-      ).merging(options.presets.zed ? ["zed": true] : [:], uniquingKeysWith: { _, new in new }),
+      ).merging(options.presets.zed ? ["zed": true] : [:], uniquingKeysWith: { _, new in new })
+      .merging(options.presets.alacritty ? ["alacritty": true] : [:], uniquingKeysWith: { _, new in new }),
       artifacts: Dictionary(uniqueKeysWithValues: artifacts.map { ($0.path, $0.digest) })
     )
     return EnvironmentComposition(
