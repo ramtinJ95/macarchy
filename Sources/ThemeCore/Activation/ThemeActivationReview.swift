@@ -66,7 +66,8 @@ extension RuntimeAdapterKind {
   /// whose current ownership delivers it later reports its own boundary to the review.
   package var repaint: ThemeRepaintBoundary {
     switch self {
-    case .zed, .alacritty, .ghostty, .macOSAppearance, .borders, .leanFocus, .neovim, .pi, .sketchyBar,
+    case .zed, .alacritty, .ghostty, .macOSAppearance, .borders, .leanFocus, .neovim, .pi,
+      .sketchyBar,
       .wallpaper:
       .live
     case .btop, .herdr, .kitty, .yazi: .reload

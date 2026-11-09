@@ -16,7 +16,8 @@ struct PresetLifecycleTestHarness {
 
   func plan() throws -> (output: String, succeeded: Bool) {
     try EnvironmentPlanCommandRunner(
-      prerequisites: .assumed, alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion, zedVersion: zedVersion
+      prerequisites: .assumed, alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion,
+      zedVersion: zedVersion
     )
     .execute(
       resourcesRoot: repositoryRoot.appending(path: "Environment"),
