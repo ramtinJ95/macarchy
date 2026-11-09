@@ -92,7 +92,7 @@ extension Theme {
       let root = URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
       emit(
         ThemeFavorites.live.list(
-          try roots.repository().packages(),
+          try roots.repository(userRoot: StateLayout(root: root).userThemes).packages(),
           search: ThemeSearch(search ?? ""),
           stateRoot: root
         ))
