@@ -105,7 +105,13 @@ snapshot built-in, and `theme status --json`. See `features/theme.md` for assert
 It rechecks target, session ownership, binary identity and fresh state.
 The closed journeys are `theme`, `borders`, `lean` and `packaged-lean`.
 `borders`, `lean` and `packaged-lean` also need the guest console owned by
-`omarchy`. Drives never log in; after a ready doctor, run:
+`omarchy`. Drives never log in. After a ready doctor, capture and inspect the
+owned Tart window before any input. With a visible empty `Enter Password` field,
+run login directly; never press Space or another character on a visible login
+screen. Only a black display needs waking: prefer supported PID-targeted
+non-typing input and recapture. See `Scripts/vm/README.md` "Inspect before guest
+login" for controller limits and the black-screen-only fallback. Stop if the
+field is populated; never clear it or retry credentials. Then run:
 
 ```sh
 uv run --project Scripts/vm --locked python -B Scripts/vm/verify.py login --run setup-<run-id> --session verify-<session-id>

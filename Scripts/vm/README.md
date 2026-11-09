@@ -64,6 +64,24 @@ are source-CLI evidence only, not Homebrew, GUI or guided-setup qualification.
 python3 -B Scripts/vm/test_verify.py   # Pure checks; no VM, SSH or special files.
 ```
 
+### Inspect before guest login
+
+Before any input, capture the exact owned Tart window with `lab.checked_capture`
+(as `verify.py login` does) and inspect it yourself. On a visible login screen,
+never send Space or another character to wake it: Space types into the focused
+password field and hides `Enter Password`. If that placeholder is visible in an
+empty field, run `verify.py login` directly. This succeeded on the prepared test
+baseline during M6.7.3b verification; no wake input was needed.
+
+Only a black, sleeping display needs waking. Prefer a supported PID-targeted,
+non-typing input, such as a standalone modifier or pointer move, then capture and
+inspect again. Check the controller's supported actions first; the current
+`window-control` has no standalone modifier or pointer-move action. If Space is
+the only available wake input, use it only while the display is still black,
+then recapture and proceed only with an empty field. This sleeping-display path
+was not exercised in that verification. If the field is ever populated, stop
+and report it; do not clear it or retry credentials.
+
 ## Verified scope
 
 The lab now has a reusable Homebrew-equipped macOS baseline. Disposable clones
