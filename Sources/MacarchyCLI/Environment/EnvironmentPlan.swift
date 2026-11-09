@@ -296,6 +296,25 @@ struct EnvironmentPlanCommandRunner: Sendable {
             "Set the macOS accent from the theme through the isolated helper on tested builds; record the original for three-way restoration."
         ))
     }
+    if !profile.macOSLook.iconStyle
+      && FileManager.default.fileExists(
+        atPath: StateLayout(root: stateRoot).macOSIconStyleRecord.path)
+    {
+      actions.append(
+        PlanAction(
+          id: "restore_macos_icon_style",
+          message:
+            "Restore the original macOS icon & widget style if it still matches Macarchy; preserve and report a later user change. A missing or unsupported helper blocks restoration."
+        ))
+    }
+    if profile.macOSLook.iconStyle {
+      actions.append(
+        PlanAction(
+          id: "configure_macos_icon_style",
+          message:
+            "Set the macOS icon & widget style from the theme through the isolated helper on tested builds; record the original for three-way restoration."
+        ))
+    }
     if !profile.scripts.run.isEmpty {
       actions.append(
         PlanAction(

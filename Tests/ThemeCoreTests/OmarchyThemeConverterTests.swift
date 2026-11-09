@@ -56,6 +56,7 @@ struct OmarchyThemeConverterTests {
     let converted = try fixture.convert()
 
     #expect(converted.package.id == "purple-dream")
+    #expect(converted.package.macos == nil)
     #expect(converted.package.appearance == .dark)
     #expect(converted.package.semantic.background.rawValue == "#1a0d2e")
     #expect(converted.package.mappings.isEmpty)

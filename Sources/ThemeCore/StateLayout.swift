@@ -49,6 +49,7 @@ package struct StateLayout: Sendable {
   }
 
   // Provider generation stores, relative to the state root.
+  package var macOSIconStyleRecord: URL { root.appending(path: "state/macos-look/icon-style.json") }
   package var macOSAccentRecord: URL { root.appending(path: "state/macos-look/accent.json") }
 
   package static let environmentDirectory = "environment"

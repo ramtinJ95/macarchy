@@ -26,6 +26,7 @@ struct SetupAppearanceControl: Sendable {
 struct SetupThemeTeardown: Sendable {
   let appearance: @Sendable (URL) -> SetupAppearanceControl
   let wallpaper: @Sendable (URL) -> WallpaperOriginalRestorer
+  var iconStyle: @Sendable (URL) -> MacOSIconStyleAdapter = { MacOSIconStyleAdapter(root: $0) }
   var accent: @Sendable (URL) -> MacOSAccentAdapter = { MacOSAccentAdapter(root: $0) }
 
   static let live = Self(
@@ -41,26 +42,38 @@ struct SetupThemeTeardown: Sendable {
     dryRun: Bool
   ) async throws -> UnifiedSetupTeardownStage {
     guard let ownership else {
-      // An applied accent also has ownership when setup preserved an external canonical theme.
+      // Look receipts also have ownership when setup preserved an external canonical theme.
+      var reports: [MacOSLookRestore] = []
       do {
-        guard try MacOSAccentStore(root: stateRoot).load() != nil else {
+        guard
+          try MacOSAccentStore(root: stateRoot).load() != nil
+            || MacOSIconStyleStore(root: stateRoot).load() != nil
+        else { return .noChange("No setup-owned canonical theme exists.") }
+        try ActivationLock(root: stateRoot).withLock {
+          let accent = try self.accent(stateRoot).restoreHoldingActivationLock(dryRun: dryRun)
+          reports.append(accent)
+          let icons = try self.iconStyle(stateRoot).restoreHoldingActivationLock(dryRun: dryRun)
+          reports.append(icons)
+          if !dryRun {
+            if accent.consumesRecord { try MacOSAccentStore(root: stateRoot).remove() }
+            if icons.consumesRecord { try MacOSIconStyleStore(root: stateRoot).remove() }
+          }
+        }
+        guard reports.contains(where: { $0.consumesRecord }) else {
           return .noChange("No setup-owned canonical theme exists.")
         }
-        let report = try ActivationLock(root: stateRoot).withLock {
-          let report = try self.accent(stateRoot).restoreHoldingActivationLock(dryRun: dryRun)
-          if !dryRun && report.consumesRecord { try MacOSAccentStore(root: stateRoot).remove() }
-          return report
-        }
         return UnifiedSetupTeardownStage(
-          succeeded: true, mutated: report.mutated,
+          succeeded: true, mutated: reports.contains(where: { $0.mutated }),
           outcome: dryRun ? "planned" : "restored",
           message: Self.message(
             "No setup-owned canonical theme exists; the external theme is preserved.",
-            [report.message].compactMap { $0 }))
+            reports.compactMap(\.message)))
+
       } catch {
         return UnifiedSetupTeardownStage(
-          succeeded: false, mutated: false, outcome: "blocked",
-          message: "Accent restoration failed: \(error)")
+          succeeded: false, mutated: reports.contains(where: { $0.mutated }), outcome: "blocked",
+          message: Self.message(
+            "macOS look restoration failed: \(error)", reports.compactMap(\.message)))
       }
     }
     let activator = ThemeActivator(root: stateRoot)
@@ -80,6 +93,7 @@ struct SetupThemeTeardown: Sendable {
     }
     let wallpaper = wallpaper(stateRoot)
     let accent = accent(stateRoot)
+    let iconStyle = iconStyle(stateRoot)
     let scripts: [String]
     do {
       scripts =
@@ -93,10 +107,11 @@ struct SetupThemeTeardown: Sendable {
     if dryRun {
       do {
         if let message = try accent.restorationPlan().message { notes.append(message) }
+        if let message = try iconStyle.restorationPlan().message { notes.append(message) }
       } catch {
         return UnifiedSetupTeardownStage(
           succeeded: false, mutated: false, outcome: "blocked",
-          message: "Accent restoration blocked: \(error)")
+          message: "macOS look restoration blocked: \(error)")
       }
       if !scripts.isEmpty {
         notes.append("Would run \(scripts.count) user scripts with the teardown event.")
@@ -151,7 +166,8 @@ struct SetupThemeTeardown: Sendable {
     // reconciliation can put Macarchy's wallpaper back in between. Its record is removed only
     // once the theme is retired; until then it is still the evidence a retry needs.
     var wallpaperReport: WallpaperRestoreReport?
-    var accentReport: MacOSAccentRestore?
+    var accentReport: MacOSLookRestore?
+    var iconReport: MacOSLookRestore?
     let cleanupError: String?
     do {
       cleanupError = try activator.deactivate(
@@ -159,19 +175,22 @@ struct SetupThemeTeardown: Sendable {
         dryRun: false,
         beforeRetiringLocked: {
           accentReport = try accent.restoreHoldingActivationLock()
+          iconReport = try iconStyle.restoreHoldingActivationLock()
           wallpaperReport = wallpaper.restoreHoldingActivationLock()
         }
       )
     } catch {
       return UnifiedSetupTeardownStage(
         succeeded: false,
-        mutated: mutated || (wallpaperReport?.mutated ?? false) || (accentReport?.mutated ?? false),
+        mutated: mutated || (wallpaperReport?.mutated ?? false) || (accentReport?.mutated ?? false)
+          || (iconReport?.mutated ?? false),
         outcome: "failed",
         message: Self.message(
           "Canonical theme removal failed: \(error)", notes + (wallpaperReport?.lines ?? []))
       )
     }
     if let message = accentReport?.message { notes.append(message) }
+    if let message = iconReport?.message { notes.append(message) }
     if let report = wallpaperReport {
       notes += wallpaper.removeRecord(after: report).lines
     }
@@ -201,6 +220,15 @@ struct SetupThemeTeardown: Sendable {
           return UnifiedSetupTeardownStage(
             succeeded: false, mutated: true, outcome: "recovery_required",
             message: "Accent restoration record cleanup failed: \(error)")
+        }
+      }
+    }
+    if let report = iconReport {
+      if report.consumesRecord {
+        do { try MacOSIconStyleStore(root: stateRoot).remove() } catch {
+          return UnifiedSetupTeardownStage(
+            succeeded: false, mutated: true, outcome: "recovery_required",
+            message: "Icon style restoration record cleanup failed: \(error)")
         }
       }
     }

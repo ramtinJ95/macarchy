@@ -36,12 +36,6 @@ package struct MacOSAccentStore: Sendable {
   package func remove() throws { try FileManager.default.removeItem(at: url) }
 }
 
-package struct MacOSAccentRestore: Sendable {
-  package let message: String?
-  package let mutated: Bool
-  package let consumesRecord: Bool
-}
-
 package struct MacOSAccentAdapter: Sendable {
   package static let id = "macos-accent"
   let root: URL
@@ -138,25 +132,25 @@ package struct MacOSAccentAdapter: Sendable {
     }
   }
 
-  package func restorationPlan() throws -> MacOSAccentRestore {
+  package func restorationPlan() throws -> MacOSLookRestore {
     try ActivationLock(root: root).withLock { try restoreHoldingActivationLock(dryRun: true) }
   }
 
   /// Three-way restoration. Throws on failure and retains the record for a retry. The caller
   /// removes it only after its enclosing teardown/disable operation succeeds.
-  package func restoreHoldingActivationLock(dryRun: Bool = false) throws -> MacOSAccentRestore {
+  package func restoreHoldingActivationLock(dryRun: Bool = false) throws -> MacOSLookRestore {
     guard let record = try MacOSAccentStore(root: root).load() else {
-      return MacOSAccentRestore(message: nil, mutated: false, consumesRecord: false)
+      return MacOSLookRestore(message: nil, mutated: false, consumesRecord: false)
     }
     try helper.requireAccentSupport()
     let current = try helper.accent()
     if current == record.original {
-      return MacOSAccentRestore(
+      return MacOSLookRestore(
         message: "The \(current.name) accent is already the original.", mutated: false,
         consumesRecord: true)
     }
     guard current == record.applied || current == record.pending else {
-      return MacOSAccentRestore(
+      return MacOSLookRestore(
         message: "Kept the \(current.name) accent, which was changed after setup.", mutated: false,
         consumesRecord: true)
     }
@@ -167,7 +161,7 @@ package struct MacOSAccentAdapter: Sendable {
           "accent restore read back \(restored.name), expected \(record.original.name)")
       }
     }
-    return MacOSAccentRestore(
+    return MacOSLookRestore(
       message:
         "\(dryRun ? "Would restore" : "Restored") the original \(record.original.name) accent.",
       mutated: !dryRun, consumesRecord: true)

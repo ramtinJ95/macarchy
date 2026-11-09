@@ -24,7 +24,8 @@ public struct ThemePackageLoader: Sendable {
       packageURL: metadata.packageURL, schemaVersion: metadata.schemaVersion,
       id: metadata.id, displayName: metadata.displayName, appearance: metadata.appearance,
       semantic: metadata.semantic, terminal: metadata.terminal,
-      backgrounds: metadata.backgrounds, backgroundData: data, mappings: metadata.mappings)
+      backgrounds: metadata.backgrounds, backgroundData: data, mappings: metadata.mappings,
+      macos: metadata.macos)
   }
 
   package func loadMetadata(packageURL: URL) throws -> ThemePackageMetadata {
@@ -47,6 +48,7 @@ public struct ThemePackageLoader: Sendable {
     let backgrounds = try validateBackgrounds(
       theme: theme, packageURL: packageURL, index: themeIndex, file: themeFile)
 
+    let macos = try validateMacOS(theme.macos, index: themeIndex, file: themeFile)
     return ThemePackageMetadata(
       packageURL: packageURL,
       schemaVersion: theme.schemaVersion,
@@ -56,8 +58,22 @@ public struct ThemePackageLoader: Sendable {
       semantic: validated.semantic,
       terminal: validated.terminal,
       backgrounds: backgrounds,
-      mappings: mappings.mappings
+      mappings: mappings.mappings, macos: macos
     )
+  }
+
+  private func validateMacOS(
+    _ options: RawMacOSThemeOptions?, index: TOMLSourceIndex, file: URL
+  ) throws -> MacOSThemeOptions? {
+    guard let options else { return nil }
+    guard let raw = options.iconStyle else { return MacOSThemeOptions(iconStyle: nil) }
+    guard let style = ThemeIconStyle(rawValue: raw) else {
+      throw ThemeDiagnostic(
+        location: index.location(for: "macos.icon_style", file: file),
+        field: "macos.icon_style",
+        message: "Icon style must be 'default', 'dark', 'clear' or 'tinted'; found '\(raw)'")
+    }
+    return MacOSThemeOptions(iconStyle: style)
   }
 
   private func readText(_ file: URL, role: String) throws -> String {

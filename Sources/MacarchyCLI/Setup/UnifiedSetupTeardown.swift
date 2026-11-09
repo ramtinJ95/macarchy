@@ -106,8 +106,9 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         succeeded: true,
         mutated: result.changed,
         outcome: result.changed ? (commit ? "committed" : "restored") : "no_change",
-        message: [summary, result.accentRestoration?.message].compactMap { $0 }.joined(
-          separator: " ")
+        message: [summary, result.accentRestoration?.message, result.iconStyleRestoration?.message]
+          .compactMap { $0 }.joined(
+            separator: " ")
       )
     }
   }
