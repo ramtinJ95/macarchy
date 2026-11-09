@@ -62,6 +62,11 @@ expect_layout_rejected focus-mode "a focus helper with invalid mode" \
 expect_layout_rejected focus-signature "a focus helper with an invalid signature" \
   /usr/bin/codesign --remove-signature bin/macarchy-focus-ring
 
+expect_layout_rejected look-missing "a missing accent helper" rm bin/macarchy-look
+expect_layout_rejected look-mode "an accent helper with invalid mode" chmod 0744 bin/macarchy-look
+expect_layout_rejected look-signature "an accent helper with an invalid signature" \
+  /usr/bin/codesign --remove-signature bin/macarchy-look
+
 # The bundled ttfx engine and its licences ship together or not at all.
 expect_layout_rejected ttfx-missing "a missing ttfx engine" rm libexec/ttfx
 expect_layout_rejected ttfx-license "a missing ttfx licence" rm share/doc/macarchy/ttfx/LICENSE

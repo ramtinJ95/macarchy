@@ -9,7 +9,7 @@ import verify_lean as lean
 q = shlex.quote
 CELLAR = "/opt/homebrew/Cellar/macarchy"
 BIN = "/opt/homebrew/bin"
-PRODUCTS = ("macarchy", "macarchy-menu", "macarchy-focus-ring")
+PRODUCTS = ("macarchy", "macarchy-menu", "macarchy-focus-ring", "macarchy-look")
 
 
 def link_guard(copy):
