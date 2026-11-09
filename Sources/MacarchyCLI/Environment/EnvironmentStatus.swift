@@ -482,6 +482,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
   let theme: DesktopThemeController?
   let verifier: EnvironmentSessionVerifier
   let bordersRuntime: EnvironmentBordersRuntime
+  let alacrittyVersion: @Sendable () throws -> [Int]
   let ghosttyVersion: @Sendable () throws -> [Int]
   let zedVersion: @Sendable () throws -> [Int]
 
@@ -492,6 +493,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
     theme: DesktopThemeController?,
     verifier: EnvironmentSessionVerifier = .assumed,
     bordersRuntime: EnvironmentBordersRuntime = .live,
+    alacrittyVersion: @escaping @Sendable () throws -> [Int] = AlacrittyAdapter.installedVersion,
     ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion,
     zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion
   ) {
@@ -499,6 +501,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
     self.theme = theme
     self.verifier = verifier
     self.bordersRuntime = bordersRuntime
+    self.alacrittyVersion = alacrittyVersion
     self.ghosttyVersion = ghosttyVersion
     self.zedVersion = zedVersion
   }
@@ -617,7 +620,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
 
     let generation = EnvironmentGenerationStore(stateRoot: stateRoot).inspect(expected: composition)
     let provider = EnvironmentProviderInspector(
-      ghosttyVersion: ghosttyVersion, zedVersion: zedVersion
+      alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion, zedVersion: zedVersion
     )
     .inspectIncludingBordersRuntime(
       composition: composition,

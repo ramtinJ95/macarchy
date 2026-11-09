@@ -356,6 +356,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         expected,
         at: try file.configurationURL(
           home: homeDirectory, ownership: inspection.ownership,
+          proposedAlacritty: inspection.proposedAlacrittyOwnership,
           proposedGhostty: inspection.proposedGhosttyOwnership),
         file.revalidationLabel
       ) { evidence in
@@ -399,7 +400,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let desiredBridgePaths = Set(
       EnvironmentThemeBridgeState.paths(
         ids: Set(inspection.desiredEntries.map(\.id)),
-        stateRoot: stateRoot
+        stateRoot: stateRoot, alacritty: inspection.proposedAlacrittyOwnership != nil
       )
     )
     let previousBridges = Dictionary(
@@ -424,7 +425,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
           (previous?.createdDirectories ?? []).filter { directory in
             inspection.desiredEntries.contains {
               $0.url.path.hasPrefix(directory + "/")
-            } || inspection.proposedGhosttyOwnership?.path.hasPrefix(directory + "/") == true
+            } || inspection.proposedAlacrittyOwnership?.path.hasPrefix(directory + "/") == true
+              || inspection.proposedGhosttyOwnership?.path.hasPrefix(directory + "/") == true
               || inspection.proposedZedOwnership?.path.hasPrefix(directory + "/") == true
               || inspection.proposedZedFamilyOwnership?.path.hasPrefix(directory + "/") == true
           }
@@ -440,6 +442,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       ghostty: inspection.proposedGhosttyOwnership,
       zed: inspection.proposedZedOwnership,
       zedFamily: inspection.proposedZedFamilyOwnership,
+      alacritty: inspection.proposedAlacrittyOwnership,
       tuicr: inspection.proposedTuicrOwnership,
       codexEnabled: composition.profile.presets.codex,
       herdrEnabled: composition.profile.presets.herdr,
@@ -463,6 +466,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       || previous?.spicetify != proposed.spicetify
       || previous?.ghostty != proposed.ghostty
       || previous?.zed != proposed.zed || previous?.zedFamily != proposed.zedFamily
+      || previous?.alacritty != proposed.alacritty
       || previous?.tuicr != proposed.tuicr
       || previous?.codexEnabled != proposed.codexEnabled
       || previous?.herdrEnabled != proposed.herdrEnabled
@@ -650,7 +654,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         .currentDestination(),
       rollbackThemeBridges: try EnvironmentThemeBridgeState.capture(
         ids: Set(ownership.records.map(\.id)),
-        stateRoot: stateRoot
+        stateRoot: stateRoot, alacritty: ownership.alacritty != nil
       ).entries,
       replacementNames: EnvironmentReplacementNames(from: ownership, to: nil),
       bordersPreviousRuntime: bordersService
@@ -860,6 +864,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
         homeDirectory: homeDirectory
       )
       .transition(from: old, to: new, replacementName: replacementName)
+    case .alacritty:
+      try EnvironmentAlacrittyFileTransaction(homeDirectory: homeDirectory)
+        .transition(from: old, to: new, replacementName: replacementName)
     case .ghostty:
       try EnvironmentGhosttyFileTransaction(homeDirectory: homeDirectory)
         .transition(from: old, to: new, replacementName: replacementName)
@@ -902,6 +909,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
     guard let ownership else { return }
     guard ownership.hasValidShape,
       ownership.zedFamily == nil || ownership.zedFamily?.stateRoot == stateRoot.path,
+      ownership.alacritty == nil
+        || ownership.alacritty?.edit.themePath
+          == stateRoot.appending(path: AlacrittyAdapter.bridgePath).path,
       ownership.ghostty == nil
         || ownership.ghostty?.directive == GhosttyConfiguration.includeDirective(root: stateRoot)
     else {
@@ -967,7 +977,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           homeDirectory.appending(path: ".config/zed").path,
           homeDirectory.appending(path: ".config/zed/themes").path,
           homeDirectory.appending(path: ConsumerHomePath.herdrDirectory).path,
-        ] + ghosttyParentDirectories()
+        ] + themePresetParentDirectories()
     )
     guard Set(ownership.createdDirectories).isSubset(of: allowedDirectories) else {
       throw EnvironmentLifecycleError.blocked("ownership contains an unexpected created directory")
@@ -983,6 +993,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
   }
 
   private func validOwnedPath(_ path: String, file: EnvironmentKeyOwnedFile) -> Bool {
+    if file == .alacritty {
+      return ThemeConsumerPaths.alacrittyConfigurationFiles(home: homeDirectory).contains {
+        $0.path == path
+      }
+    }
     if file == .ghostty {
       return ThemeConsumerPaths.ghosttyConfigurationFiles(home: homeDirectory).contains {
         $0.path == path
@@ -991,8 +1006,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
     return path == homeDirectory.appending(path: file.configurationPath).path
   }
 
-  private func ghosttyParentDirectories() -> [String] {
-    ThemeConsumerPaths.ghosttyConfigurationFiles(home: homeDirectory).flatMap { url in
+  private func themePresetParentDirectories() -> [String] {
+    let files =
+      ThemeConsumerPaths.ghosttyConfigurationFiles(home: homeDirectory)
+      + ThemeConsumerPaths.alacrittyConfigurationFiles(home: homeDirectory)
+    return files.flatMap { url in
       var parent = url.deletingLastPathComponent()
       var paths: [String] = []
       while parent.path.hasPrefix(homeDirectory.path + "/") {
@@ -1076,6 +1094,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
       try EnvironmentPresetFileTransaction<EnvironmentZedFamilyOwnership>(
         homeDirectory: homeDirectory
       ).preflight(family)
+    }
+    if let alacritty = ownership.alacritty {
+      try EnvironmentAlacrittyFileTransaction(homeDirectory: homeDirectory).preflight(alacritty)
     }
     if let ghostty = ownership.ghostty {
       try EnvironmentGhosttyFileTransaction(homeDirectory: homeDirectory).preflight(ghostty)

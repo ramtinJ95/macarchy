@@ -266,6 +266,8 @@ enum ThemeRuntimeSelection {
         else { throw ZedAdapter.Failure.drift }
       }
     }
+    paths.alacrittyOwnedConfigurationURL = ownership.alacritty.map { URL(filePath: $0.path) }
+    paths.alacrittyOwnedImportEdit = ownership.alacritty?.edit
     paths.ghosttyOwnedConfigurationURL = ownership.ghostty.map { URL(filePath: $0.path) }
     paths.ghosttyOwnedLineIndex = ownership.ghostty?.lineIndex
     paths.starshipBehaviorURL = EnvironmentNativeFileMigration.starshipBehaviorURL(
