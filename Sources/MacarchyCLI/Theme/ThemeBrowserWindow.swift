@@ -4,8 +4,10 @@ import ImageIO
 import Synchronization
 import ThemeCore
 
+/// The picker: a non-activating panel, so it takes key focus over any app, including a
+/// full-screen one, without switching Spaces or activating Macarchy.
 @MainActor
-private final class ThemeBrowserWindow: NSWindow {
+private final class ThemeBrowserWindow: NSPanel {
   enum Navigation {
     case nextBackground
     case nextPreview
@@ -14,10 +16,12 @@ private final class ThemeBrowserWindow: NSWindow {
   }
 
   var navigate: ((Navigation) -> Void)?
-  var canDismiss: (() -> Bool)?
+  var cancel: (() -> Void)?
+
+  override var canBecomeKey: Bool { true }
 
   override func cancelOperation(_ sender: Any?) {
-    if canDismiss?() != false { close() }
+    cancel?()
   }
 
   override func sendEvent(_ event: NSEvent) {
@@ -89,8 +93,9 @@ private final class ThemeBrowserTableRowView: NSTableRowView {
   }
 }
 
+/// Draws its image to fill the view, cropping the overflow like a desktop wallpaper.
 @MainActor
-private final class ThemeBrowserWallpaperImageView: NSImageView {
+final class ThemeBrowserWallpaperImageView: NSImageView {
   override func draw(_ dirtyRect: NSRect) {
     guard let image else {
       super.draw(dirtyRect)
@@ -229,6 +234,10 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private var deletionTimer: Timer?
   private var deletingThemeID: String?
 
+  private var layout: ThemeBrowserDisplayLayout
+  private let backdrops = ThemeBrowserBackdrops()
+  private var statusPanel: ThemeBrowserStatusPanel?
+
   private let rootView = NSView()
   private let focusBorder = PopupFocusBorder(accent: .clear)
   private let sidebar = NSStackView()
@@ -280,35 +289,27 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     backgroundImageCache.countLimit = 24
     backgroundImageCache.totalCostLimit = 96 * 1_024 * 1_024
 
-    guard let visibleFrame = popupActiveScreen()?.visibleFrame else {
+    guard let layout = ThemeBrowserDisplayLayout.current() else {
       throw ThemeBrowserError.noActiveDisplay
     }
-    let width = min(720, visibleFrame.width - 96)
-    let height = min(640, visibleFrame.height - 96)
-    let frame = NSRect(
-      x: visibleFrame.midX - width / 2,
-      y: visibleFrame.midY - height / 2,
-      width: width,
-      height: height
-    )
+    self.layout = layout
     let window = ThemeBrowserWindow(
-      contentRect: frame,
-      styleMask: [.titled, .closable, .fullSizeContentView],
+      contentRect: layout.picker,
+      styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
       backing: .buffered,
       defer: false
     )
     window.title = Self.windowTitle
     window.isReleasedWhenClosed = false
-    window.level = .floating
-    window.collectionBehavior = [.moveToActiveSpace, .transient, .fullScreenAuxiliary]
+    window.hidesOnDeactivate = false
+    window.level = ThemeBrowserLevel.picker
+    window.collectionBehavior = ThemeBrowserLevel.collectionBehavior
     window.titlebarAppearsTransparent = true
     window.titleVisibility = .hidden
     super.init(window: window)
     window.delegate = self
-    window.canDismiss = { [weak self] in
-      self?.isDeleting == false && self?.isSavingScreenSaver == false
-        && self?.isSavingFavorite == false
-    }
+    window.cancel = { [weak self] in self?.cancel() }
+    backdrops.onClick = { [weak self] in self?.dismiss() }
     window.navigate = { [weak self] navigation in
       guard self?.isBusy == false else { return }
       switch navigation {
@@ -343,7 +344,41 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   func run() throws {
     try runAccessoryPopup(
       self, focusing: searchField,
-      cannotActivate: ThemeBrowserError.cannotActivateAccessoryApplication)
+      cannotActivate: ThemeBrowserError.cannotActivateAccessoryApplication,
+      activates: false,
+      beforeRun: {
+        backdrops.show(layout)
+        NotificationCenter.default.addObserver(
+          self, selector: #selector(displaysChanged(_:)),
+          name: NSApplication.didChangeScreenParametersNotification, object: nil)
+      })
+  }
+
+  /// Follows a display being connected, removed or rearranged while the picker is open.
+  @objc private func displaysChanged(_ notification: Notification) {
+    guard let layout = ThemeBrowserDisplayLayout.current() else {
+      window?.close()
+      return
+    }
+    self.layout = layout
+    guard !isApplying else { return }
+    backdrops.show(layout)
+    window?.setFrame(layout.picker, display: true)
+  }
+
+  /// Escape clears the filter first and closes the browser once the filter is empty.
+  private func cancel() {
+    guard searchField.stringValue.isEmpty else {
+      searchField.stringValue = ""
+      filterChanged()
+      return
+    }
+    dismiss()
+  }
+
+  /// Closes the browser unless a change it started is still being saved.
+  private func dismiss() {
+    if !isBusy { window?.close() }
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -359,6 +394,10 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   }
 
   func windowWillClose(_ notification: Notification) {
+    NotificationCenter.default.removeObserver(
+      self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    backdrops.close()
+    statusPanel?.close()
     galleryTask?.cancel()
     galleryTimer?.invalidate()
     backgroundImageTask?.cancel()
@@ -409,7 +448,11 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   }
 
   func controlTextDidChange(_ notification: Notification) {
-    browserState.updateSearch(searchField.stringValue)
+    filterChanged()
+  }
+
+  private func filterChanged() {
+    browserState.filter(searchField.stringValue)
     tableView.reloadData()
     if let selectedIndex = browserState.visibleItems.firstIndex(where: {
       $0.id == browserState.selectedThemeID
@@ -456,7 +499,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       applySelectedTheme(nil)
       return true
     case #selector(NSResponder.cancelOperation(_:)):
-      window?.close()
+      cancel()
       return true
     default:
       return false
@@ -794,6 +837,8 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     tableView.headerView = nil
     tableView.rowHeight = 30
     tableView.allowsEmptySelection = true
+    // Typing always edits the filter; a click still selects a row.
+    tableView.refusesFirstResponder = true
     tableView.allowsMultipleSelection = false
     tableView.delegate = self
     tableView.dataSource = self
@@ -1103,6 +1148,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     }
     guard !item.backgrounds.isEmpty else {
       backgroundImageView.image = nil
+      backdrops.update(image: nil, color: item.metadata.semantic.background.nsColor)
       backgroundLabel.stringValue = "No backgrounds · wallpaper remains unmanaged"
       backgroundLabel.toolTip = nil
       backgroundPicker.isEnabled = false
@@ -1153,6 +1199,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     backgroundImageKey = key
     if let cached = backgroundImageCache.object(forKey: key.cacheKey) {
       backgroundImageView.image = cached
+      backdrops.update(image: cached, color: item.metadata.semantic.background.nsColor)
       return
     }
     backgroundImageView.image = nil
@@ -1206,7 +1253,9 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
         cost: image.bytesPerRow * image.height
       )
       backgroundImageView.image = decoded
+      backdrops.update(image: decoded, color: item.metadata.semantic.background.nsColor)
     case .failed(let reason):
+      backdrops.update(image: nil, color: item.metadata.semantic.background.nsColor)
       showBackgroundDecodeFailure(item: item, backgroundID: key.backgroundID, reason: reason)
     }
   }

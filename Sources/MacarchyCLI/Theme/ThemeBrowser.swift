@@ -195,6 +195,16 @@ struct ThemeBrowserState: Sendable {
     updateSearch(query)
   }
 
+  /// Typing in the filter: a query narrows the list and selects its first match, and an empty
+  /// query shows every theme and keeps the selection.
+  mutating func filter(_ query: String) {
+    updateSearch(query)
+    if !query.isEmpty, let first = visibleItems.first {
+      selectedThemeID = first.id
+    }
+  }
+
+  /// Keeps the selection while it still matches `query`, as a reload does.
   mutating func updateSearch(_ query: String) {
     visibleItems = content.filteredItems(query: query)
     if !visibleItems.contains(where: { $0.id == selectedThemeID }), let first = visibleItems.first {
