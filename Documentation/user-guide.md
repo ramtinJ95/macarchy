@@ -703,6 +703,14 @@ GitHub repository. The dry run previews the conversion first. Macarchy imports
 palette data, supported wallpapers, and inert previews—not repository scripts
 or application code. Unsupported content is identified in the report.
 
+`theme install` and `theme install --dry-run` also check how well the imported
+palette reads. Colors people cannot read are listed as **Unreadable** and weak
+spots as **Weak**: text, dim text and accent against the background, text on the
+selection, the six terminal hues against the background, a selection or border
+that barely shows, hues that look alike, and a background that contradicts the
+theme's declared appearance. The check only reports; it never stops an install.
+It is ported from Scene's palette check (MIT; see `THIRD_PARTY_NOTICES.md`).
+
 Slack remains a manual import: run `macarchy theme get slack`, then paste the
 value under **Slack → Preferences → Appearance → Custom theme → Theme colors →
 Import theme**. Slack may map the colors to its own supported palette.
