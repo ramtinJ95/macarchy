@@ -36,6 +36,7 @@ extension RuntimeAdapterKind {
     case .bat: "bat syntax theme"
     case .btop: "btop theme"
     case .borders: "JankyBorders window border colors"
+    case .userScripts: "runs the profile’s scripts with the palette"
     case .leanFocus: "lean focus ring color"
     case .codex: "Codex TUI syntax palette"
     case .eza: "eza colors"
@@ -63,7 +64,7 @@ extension RuntimeAdapterKind {
     switch self {
     case .macOSAppearance, .borders, .leanFocus, .neovim, .pi, .sketchyBar, .wallpaper: .live
     case .btop, .herdr, .kitty, .yazi: .reload
-    case .atuin, .bat, .eza: .nextInvocation
+    case .atuin, .bat, .eza, .userScripts: .nextInvocation
     case .codex, .tuicr: .freshSession
     case .spicetify: .appRestart
     case .starship: .nextPrompt

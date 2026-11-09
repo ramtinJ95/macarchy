@@ -172,7 +172,8 @@
     "digest" : "sha256:a7320f9973e77e61ea5e2a0c8b7016952743ae798bfa261fda9195ac63a72324",
     "disabled_consumers" : [
       "borders",
-      "lean-focus-ring"
+      "lean-focus-ring",
+      "user-scripts"
     ],
     "theme_id" : "catppuccin-mocha"
   },

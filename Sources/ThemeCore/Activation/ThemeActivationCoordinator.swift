@@ -76,6 +76,7 @@ package struct ThemeActivationCoordinator: Sendable {
     herdrManagedMode: HerdrManagedMode? = nil,
     bordersManagedMode: BordersManagedMode? = nil,
     leanFocusManagedMode: BordersManagedMode? = nil,
+    userScriptsMode: UserScriptsMode? = nil,
     piSelectionIsApplied: @escaping @Sendable () throws -> Bool = { true },
     piThemeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true }
   ) {
@@ -102,6 +103,7 @@ package struct ThemeActivationCoordinator: Sendable {
       herdrManagedMode: herdrManagedMode,
       bordersManagedMode: bordersManagedMode,
       leanFocusManagedMode: leanFocusManagedMode,
+      userScriptsMode: userScriptsMode,
       piSelectionIsApplied: piSelectionIsApplied,
       piThemeLinkRefreshIsAllowed: piThemeLinkRefreshIsAllowed,
       spicetifyVersionProvider: {
@@ -134,6 +136,7 @@ package struct ThemeActivationCoordinator: Sendable {
     herdrManagedMode: HerdrManagedMode? = nil,
     bordersManagedMode: BordersManagedMode? = nil,
     leanFocusManagedMode: BordersManagedMode? = nil,
+    userScriptsMode: UserScriptsMode? = nil,
     piSelectionIsApplied: @escaping @Sendable () throws -> Bool = { true },
     piThemeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true },
     spicetifyVersionProvider: @escaping @Sendable () throws -> String = {
@@ -211,6 +214,8 @@ package struct ThemeActivationCoordinator: Sendable {
           ))
       case .borders:
         return RuntimeConsumer(BordersAdapter(managedMode: bordersManagedMode))
+      case .userScripts:
+        return RuntimeConsumer(UserScriptsAdapter(root: root, mode: userScriptsMode))
       case .leanFocus:
         return RuntimeConsumer(
           BordersAdapter(managedMode: leanFocusManagedMode, consumer: .leanFocus))
@@ -814,14 +819,15 @@ package struct ThemeActivationCoordinator: Sendable {
     let enabledIDs = Set(adapters.map(\.id))
     let enabledResults = record.results.filter { enabledIDs.contains($0.adapterID) }
 
+    let alwaysRun = Set([WallpaperAdapter.id, UserScriptsAdapter.id])
     if previousEvidence.manifest.generationID == manifest.generationID {
       return (
-        adapters.filter { $0.id == WallpaperAdapter.id },
-        enabledResults.filter { $0.adapterID != WallpaperAdapter.id }
+        adapters.filter { alwaysRun.contains($0.id) },
+        enabledResults.filter { !alwaysRun.contains($0.adapterID) }
       )
     }
 
-    let carried = enabledResults.filter { $0.adapterID != WallpaperAdapter.id }.map { result in
+    let carried = enabledResults.filter { !alwaysRun.contains($0.adapterID) }.map { result in
       AdapterResult(
         adapterID: result.adapterID,
         requirement: result.requirement,
@@ -918,6 +924,7 @@ private protocol ContextFreeThemeAdapter: Sendable {
   func reconciliation() -> AdapterReconciliation
 }
 
+extension UserScriptsAdapter: ContextFreeThemeAdapter {}
 extension AtuinAdapter: ContextFreeThemeAdapter {}
 extension BatAdapter: ContextFreeThemeAdapter {}
 extension BtopAdapter: ContextFreeThemeAdapter {}

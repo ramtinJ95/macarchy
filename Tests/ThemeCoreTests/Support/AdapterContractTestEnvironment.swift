@@ -136,7 +136,7 @@ extension AdapterContractTests {
     kittyConfigurationURL: URL? = nil,
     sketchyBarConfigurationURL: URL? = nil,
     adapterIDs: Set<String> = Set(ThemeActivationCoordinator.adapterRequirements.keys)
-      .subtracting([BordersAdapter.id, BordersAdapter.leanID])
+      .subtracting([BordersAdapter.id, BordersAdapter.leanID, UserScriptsAdapter.id])
   ) throws -> ThemeConsumerPaths {
     for adapterID in adapterIDs.sorted() {
       switch adapterID {

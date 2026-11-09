@@ -76,12 +76,19 @@ struct AdapterOutcome: Sendable {
 struct AdapterReconciliation: Sendable {
   let id: String
   let requirement: AdapterRequirement
+  /// Runs once every other adapter has finished, in order, rather than alongside them.
+  var runsAfterOthers = false
   let run: @Sendable () async throws -> AdapterOutcome
 }
 
 extension AdapterReconciliation {
-  init(_ consumer: RuntimeAdapterKind, run: @escaping @Sendable () async throws -> AdapterOutcome) {
-    self.init(id: consumer.adapterID, requirement: consumer.requirement, run: run)
+  init(
+    _ consumer: RuntimeAdapterKind, runsAfterOthers: Bool = false,
+    run: @escaping @Sendable () async throws -> AdapterOutcome
+  ) {
+    self.init(
+      id: consumer.adapterID, requirement: consumer.requirement,
+      runsAfterOthers: runsAfterOthers, run: run)
   }
 }
 
@@ -99,6 +106,30 @@ struct ThemeReconciler: Sendable {
   let statusStore: ReconciliationStatusStore
   var faultInjector: @Sendable (ReconciliationCheckpoint) throws -> Void = { _ in }
 
+  /// `adapter`'s result; an error other than cancellation becomes a failed result.
+  private static func result(of adapter: AdapterReconciliation) async throws -> AdapterResult {
+    do {
+      try Task.checkCancellation()
+      let outcome = try await adapter.run()
+      try Task.checkCancellation()
+      return AdapterResult(
+        adapterID: adapter.id,
+        requirement: adapter.requirement,
+        status: outcome.status,
+        message: outcome.message
+      )
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      return AdapterResult(
+        adapterID: adapter.id,
+        requirement: adapter.requirement,
+        status: .failed,
+        message: String(describing: error)
+      )
+    }
+  }
+
   func reconcile(
     manifest: GenerationManifest,
     adapters: [AdapterReconciliation],
@@ -107,29 +138,10 @@ struct ThemeReconciler: Sendable {
     guard Set(adapters.map(\.id)).count == adapters.count else {
       throw ReconciliationStatusError.duplicateAdapterID
     }
-    let results = try await withThrowingTaskGroup(of: AdapterResult.self) { group in
-      for adapter in adapters {
+    var results = try await withThrowingTaskGroup(of: AdapterResult.self) { group in
+      for adapter in adapters where !adapter.runsAfterOthers {
         group.addTask(executorPreference: Self.adapterExecutor) {
-          do {
-            try Task.checkCancellation()
-            let outcome = try await adapter.run()
-            try Task.checkCancellation()
-            return AdapterResult(
-              adapterID: adapter.id,
-              requirement: adapter.requirement,
-              status: outcome.status,
-              message: outcome.message
-            )
-          } catch is CancellationError {
-            throw CancellationError()
-          } catch {
-            return AdapterResult(
-              adapterID: adapter.id,
-              requirement: adapter.requirement,
-              status: .failed,
-              message: String(describing: error)
-            )
-          }
+          try await Self.result(of: adapter)
         }
       }
 
@@ -138,6 +150,12 @@ struct ThemeReconciler: Sendable {
         results.append(result)
       }
       return results
+    }
+    for adapter in adapters where adapter.runsAfterOthers {
+      results.append(
+        try await withTaskExecutorPreference(Self.adapterExecutor) {
+          try await Self.result(of: adapter)
+        })
     }
     let selectedIDs = Set(adapters.map(\.id))
     let combinedResults = preservedResults.filter { !selectedIDs.contains($0.adapterID) } + results
