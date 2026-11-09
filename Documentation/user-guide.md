@@ -724,6 +724,45 @@ Each script receives `MACARCHY_EVENT` (`apply` or `teardown`),
 each script's last result as the `user-scripts` consumer; a failing script shows
 the start of what it wrote to standard error.
 
+### Match the macOS accent to the theme
+
+The optional `macos-accent` consumer maps the theme's semantic accent to the
+nearest macOS color preset by hue. Very dark, very light and nearly gray colors
+use graphite. It is off by default. Add this to your portable or machine profile,
+review `macarchy setup plan`, then run `macarchy setup apply`:
+
+```toml
+[macos_look]
+accent = true
+```
+
+The machine layer can set `accent = false` to override the portable profile.
+Only the applied profile enables the consumer; editing the file alone does not.
+`macarchy theme status` and `macarchy doctor` report support and the current and
+desired preset names. A failure is optional: it is reported without rolling back
+the canonical theme.
+
+Private AppKit functions are isolated in the short-lived `macarchy-look`
+executable, never loaded by the main CLI or core. It ships beside `macarchy` and
+has a 20-second process limit, readback and revert on mismatch. Source builds
+must also build it (`swift build --product macarchy-look`). The tested-build
+allowlist contains **25G83** (macOS 26.6.2), qualified in a disposable guest:
+System Settings Appearance controls repainted live between purple and blue
+without restarting the app. Other applications' repaint behavior is not
+qualified. The Mac mini host's **25G241** is untested and unsupported.
+Other builds and missing functions/helpers report unsupported without changing
+the accent. There is no untested-build override and no new permission grant.
+A hardware-matched accent is left unchanged because it cannot be restored
+once changed.
+
+The first write records the original preset. Later theme changes never replace
+that original. On `setup teardown`, or a later setup apply with `accent = false`,
+Macarchy restores it only if the current accent still equals its last applied
+preset. An already-original value stays; a different, user-chosen value stays
+and is reported as kept. Failed restoration retains the record for a retry,
+including when a macOS upgrade leaves the helper unsupported. This record is
+not a second theme authority: the active theme still determines the desired color.
+
 ### Bring an Omarchy theme
 
 ```sh
