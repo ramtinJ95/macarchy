@@ -5,6 +5,8 @@ package struct AlacrittyAdapter: Sendable {
   package static let id = "alacritty"
   package static let outputPath = "generated/alacritty.toml"
   package static let bridgePath = "state/adapters/alacritty.toml"
+  package static let connectionPath = "state/adapters/alacritty-connection.json"
+  package static let statePaths = [bridgePath, connectionPath]
   static let rendererVersion = 1
   package static let liveExecutableURL = URL(
     filePath: "/Applications/Alacritty.app/Contents/MacOS/alacritty")
@@ -16,6 +18,9 @@ package struct AlacrittyAdapter: Sendable {
   let executableURL: URL
   let controlIsAvailable: @Sendable () -> Bool
   let processRunner: ProcessRunner
+  var runningProcessStarts: @Sendable () throws -> [UInt64] = AlacrittyConnection
+    .runningProcessStarts
+  var now: @Sendable () -> UInt64 = AlacrittyConnection.now
 
   enum Failure: Error, CustomStringConvertible {
     case version(String)
@@ -89,7 +94,7 @@ package struct AlacrittyAdapter: Sendable {
       throw AdapterConfigurationError.controlUnavailable("Alacritty", executableURL)
     }
     try Self.requireSupported(Self.version(executableURL: executableURL, runner: processRunner))
-    _ = try configuration()
+    _ = try delivery()
   }
   func inspection() -> AdapterInspection {
     do {
@@ -128,6 +133,36 @@ package struct AlacrittyAdapter: Sendable {
     return AlacrittyConfiguration.overrideMessage(
       configuration: text, source: url, root: root, home: home)
   }
+  private func delivery() throws -> (ThemeRepaintBoundary, String, [String]) {
+    let (url, text) = try configuration()
+    let reload = try AlacrittyConfiguration.reloadState(
+      configuration: text, source: url, home: home)
+    // Validate persisted state even when reload is disabled; corrupt state is not readiness.
+    let connection = try AlacrittyConnection.read(root: root)
+    if !reload.enabled {
+      return (
+        .nextInvocation,
+        "Alacritty live_config_reload is false: next_invocation; reopen Alacritty to use the theme.",
+        reload.notices
+      )
+    }
+    let starts = try runningProcessStarts()
+    if starts.contains(where: { $0 <= (connection?.adoptedAt ?? UInt64.max) }) {
+      return (.nextLaunch, "Reopen Alacritty once to pick up the Macarchy import.", reload.notices)
+    }
+    return (
+      .live,
+      "Alacritty watches the stable theme file; live repaint expected when live_config_reload is enabled.",
+      reload.notices
+    )
+  }
+
+  /// Read-only, shared with reconciliation. Preflight exposes errors; the callback
+  /// conservatively retains next-launch qualification when it cannot establish readiness.
+  func repaintBoundary() -> ThemeRepaintBoundary {
+    (try? delivery().0) ?? .nextLaunch
+  }
+
   func reconciliation() -> AdapterReconciliation {
     AdapterReconciliation(.alacritty) {
       do { try preflight() } catch Failure.unsupported {
@@ -136,34 +171,37 @@ package struct AlacrittyAdapter: Sendable {
         return AdapterOutcome(status: .drifted, message: error.description)
       }
       let (url, text) = try configuration()
-      let first = try ActivationLock(root: root).withLock {
-        try Self.publishBridge(root: root)
+      try ActivationLock(root: root).withLock {
+        try Self.publishBridge(root: root, now: now)
       }
-      let reload = try AlacrittyConfiguration.reloadState(
-        configuration: text, source: url, home: home)
-      let boundary =
-        !reload.enabled
-        ? "Alacritty live_config_reload is false: next_invocation; reopen Alacritty to use the theme."
-        : first
-          ? "First Alacritty connection: reopen Alacritty to establish its theme-file watcher; later switches reload automatically."
-          : "Alacritty watches the stable theme file; live repaint expected when live_config_reload is enabled."
+      let (repaint, boundary, notices) = try delivery()
       let overrides = AlacrittyConfiguration.overrideMessage(
         configuration: text, source: url, root: root, home: home)
       return AdapterOutcome(
-        status: first || !reload.enabled ? .restartRequired : .applied,
-        message: ([boundary, overrides].compactMap { $0 } + reload.notices).joined(separator: " "))
+        status: repaint == .live ? .applied : .restartRequired,
+        message: ([boundary, overrides].compactMap { $0 } + notices).joined(separator: " "))
     }
   }
   /// Real parent directories, pinned descriptors and atomic replacement. Never a
   /// generation symlink: Alacritty canonicalizes its watched paths at startup.
-  static func publishBridge(root: URL) throws -> Bool {
+  static func publishBridge(root: URL, now: @Sendable () -> UInt64 = AlacrittyConnection.now) throws
+  {
     let desired = try activeConfiguration(root: root)
-    return try withBridgeParent(root: root) { parent, url in
-      let first = try bridgeIsAbsent(parent: parent, url: url)
+    let connection = try AlacrittyConnection.read(root: root)
+    try withBridgeParent(root: root) { parent, url in
+      _ = try bridgeIsAbsent(parent: parent, url: url)
       try PinnedFilesystem.replaceRegularFileAtomically(
         parentDescriptor: parent,
         name: url.lastPathComponent, url: url, data: desired, mode: 0o644)
-      return first
+      if connection == nil {
+        let timestamp = now()
+        guard timestamp > 0 else { throw AlacrittyConnection.Failure.invalid }
+        let state = root.appending(path: connectionPath)
+        _ = try bridgeIsAbsent(parent: parent, url: state)
+        try PinnedFilesystem.replaceRegularFileAtomically(
+          parentDescriptor: parent, name: state.lastPathComponent, url: state,
+          data: JSONEncoder().encode(AlacrittyConnection(adoptedAt: timestamp)), mode: 0o600)
+      }
     }
   }
 
@@ -173,6 +211,9 @@ package struct AlacrittyAdapter: Sendable {
   }
 
   package static func restoreBridge(at url: URL, data: Data?, mode: UInt16?) throws {
+    guard statePaths.contains(where: { url.path.hasSuffix("/" + $0) }) else {
+      throw Failure.unsafe(url.path)
+    }
     if data == nil {
       guard
         let parent = try PinnedFilesystem.openDirectoryIfPresent(
@@ -186,11 +227,11 @@ package struct AlacrittyAdapter: Sendable {
     } else if let data {
       let root = url.deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent()
-      try withBridgeParent(root: root) { parent, target in
-        _ = try bridgeIsAbsent(parent: parent, url: target)
+      try withBridgeParent(root: root) { parent, _ in
+        _ = try bridgeIsAbsent(parent: parent, url: url)
         try PinnedFilesystem.replaceRegularFileAtomically(
           parentDescriptor: parent,
-          name: target.lastPathComponent, url: target, data: data, mode: mode_t(mode ?? 0o644))
+          name: url.lastPathComponent, url: url, data: data, mode: mode_t(mode ?? 0o644))
       }
     }
   }

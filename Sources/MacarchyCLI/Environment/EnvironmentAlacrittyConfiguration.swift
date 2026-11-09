@@ -106,11 +106,12 @@ extension EnvironmentProviderInspector {
       )
     }
     // A pre-existing bridge has no ownership authority and must not be overwritten.
-    if FileManager.default.fileExists(
-      atPath: root.appending(path: AlacrittyAdapter.bridgePath).path)
+    for path in AlacrittyAdapter.statePaths
+    where FileManager.default.fileExists(
+      atPath: root.appending(path: path).path)
     {
       throw EnvironmentLifecycleError.blocked(
-        "Unowned Alacritty theme bridge exists: \(root.appending(path: AlacrittyAdapter.bridgePath).path)"
+        "Unowned Alacritty adapter state exists: \(root.appending(path: path).path)"
       )
     }
     let proposed = try EnvironmentAlacrittyOwnership.adopting(current, at: url, root: root)
