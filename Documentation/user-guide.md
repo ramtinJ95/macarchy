@@ -109,6 +109,11 @@ preflight failure, without writing anything. It ends with a digest; `macarchy th
 set <theme> --reviewed <digest>` applies exactly that plan and refuses if the theme,
 its background, the enabled consumers or the active theme changed since the review.
 
+In the theme browser, Review or Command-R shows the same plan for the selected theme
+and background. Apply Reviewed applies exactly that plan; if the theme changed
+elsewhere in the meantime, the browser refuses and asks you to review again. Edit
+Profile opens your portable profile, where consumers are turned on or off.
+
 In the theme browser, Add Favorite or Command-D stars the selected theme. The action
 menu lists starred themes under Appearance and finds any installed theme as you
 type; choosing one applies it.
