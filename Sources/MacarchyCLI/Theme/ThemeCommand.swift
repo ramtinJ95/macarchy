@@ -281,6 +281,15 @@ extension Theme {
               themeID: selection.themeID, backgroundID: selection.backgroundID,
               followWallpaper: selection.backgroundID == nil)
           },
+          saveFavorite: { themeID, favorite in
+            let packages: @Sendable () throws -> [ThemePackage] = { try repository.packages() }
+            let favorites = ThemeFavorites.live
+            let output =
+              favorite
+              ? try await favorites.add(themeID, packages: packages, stateRoot: stateRoot)
+              : try await favorites.remove(themeID, packages: packages, stateRoot: stateRoot)
+            return (output.lines + output.notices).joined(separator: " ")
+          },
           deleteSelection: { target in
             await ThemeBrowserDeletionRunner.live.execute(
               target: target, repository: repository, stateRoot: stateRoot

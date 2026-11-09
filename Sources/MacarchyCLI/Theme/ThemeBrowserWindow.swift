@@ -189,8 +189,11 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     @Sendable (ThemePackageDeletionTarget) async -> ThemeBrowserDeletionOutcome
   private let reloadContent: @Sendable () async throws -> ThemeBrowserContent
   private let saveScreenSaverSelection: @Sendable (ThemeBrowserSelection) async throws -> String
+  /// Adds (true) or removes (false) a theme from favorites and describes the result.
+  private let saveFavorite: @Sendable (String, Bool) async throws -> String
 
-  private struct ScreenSaverOutcome: Sendable {
+  /// A screensaver or favorite change, and the library reloaded after it.
+  private struct SaveOutcome: Sendable {
     let message: String
     let succeeded: Bool
     let refreshed: Result<ThemeBrowserContent, any Error>
@@ -214,9 +217,14 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private var isApplying = false
   private var isDeleting = false
   private var isSavingScreenSaver = false
-  private var screenSaverResult: ThemeBrowserAsyncResult<ScreenSaverOutcome>?
+  private var screenSaverResult: ThemeBrowserAsyncResult<SaveOutcome>?
   private var screenSaverTimer: Timer?
-  private var isBusy: Bool { isApplying || isDeleting || isSavingScreenSaver }
+  private var isSavingFavorite = false
+  private var favoriteResult: ThemeBrowserAsyncResult<SaveOutcome>?
+  private var favoriteTimer: Timer?
+  private var isBusy: Bool {
+    isApplying || isDeleting || isSavingScreenSaver || isSavingFavorite
+  }
   private var deletionResult: ThemeBrowserAsyncResult<ThemeBrowserDeletionOutcome>?
   private var deletionTimer: Timer?
   private var deletingThemeID: String?
@@ -244,14 +252,17 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private let nextBackgroundButton = NSButton(title: "Next", target: nil, action: nil)
   private let applyButton = NSButton(title: "Apply", target: nil, action: nil)
   private let deleteButton = NSButton(title: "Delete Theme", target: nil, action: nil)
+  private let favoriteButton = NSButton(title: "Add Favorite", target: nil, action: nil)
   private let statusLabel = NSTextField(wrappingLabelWithString: "")
   private let keyboardHelp = NSTextField(
-    labelWithString: "↑↓ theme   ←→ wallpaper   ⇧←→ preview   ↩ apply   esc close"
+    labelWithString:
+      "↑↓ theme   ←→ wallpaper   ⇧←→ preview   ⌘D favorite   ↩ apply   esc close"
   )
 
   init(
     content: ThemeBrowserContent,
     saveScreenSaverSelection: @escaping @Sendable (ThemeBrowserSelection) async throws -> String,
+    saveFavorite: @escaping @Sendable (String, Bool) async throws -> String,
     galleryLoader: ThemeBrowserGalleryLoader = .live,
     deleteSelection:
       @escaping @Sendable (ThemePackageDeletionTarget) async -> ThemeBrowserDeletionOutcome,
@@ -263,6 +274,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     self.deleteSelection = deleteSelection
     self.reloadContent = reloadContent
     self.saveScreenSaverSelection = saveScreenSaverSelection
+    self.saveFavorite = saveFavorite
     self.launchSelection = launchSelection
     browserState = ThemeBrowserState(content: content)
     backgroundImageCache.countLimit = 24
@@ -295,6 +307,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     window.delegate = self
     window.canDismiss = { [weak self] in
       self?.isDeleting == false && self?.isSavingScreenSaver == false
+        && self?.isSavingFavorite == false
     }
     window.navigate = { [weak self] navigation in
       guard self?.isBusy == false else { return }
@@ -315,6 +328,10 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       $0.id == browserState.selectedThemeID
     }) {
       selectVisibleRow(initialRow)
+    }
+    if !content.notices.isEmpty {
+      statusLabel.stringValue = content.notices.joined(separator: " ")
+      statusLabel.toolTip = statusLabel.stringValue
     }
   }
 
@@ -338,7 +355,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   }
 
   func windowShouldClose(_ sender: NSWindow) -> Bool {
-    !isDeleting && !isSavingScreenSaver
+    !isDeleting && !isSavingScreenSaver && !isSavingFavorite
   }
 
   func windowWillClose(_ notification: Notification) {
@@ -349,6 +366,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     applyTimer?.invalidate()
     deletionTimer?.invalidate()
     screenSaverTimer?.invalidate()
+    favoriteTimer?.invalidate()
   }
 
   func numberOfRows(in tableView: NSTableView) -> Int {
@@ -365,7 +383,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     let cell =
       tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView
       ?? makeThemeCell(identifier: identifier)
-    cell.textField?.stringValue = item.displayName
+    cell.textField?.stringValue = item.isFavorite ? "★ \(item.displayName)" : item.displayName
     cell.textField?.toolTip = "\(item.id) · \(item.appearance.rawValue)"
     if let selectedItem {
       cell.textField?.textColor =
@@ -484,7 +502,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     setControlsEnabled(false)
     statusLabel.stringValue = "Saving this theme's screensaver choice…"
     statusLabel.toolTip = nil
-    let result = ThemeBrowserAsyncResult<ScreenSaverOutcome>()
+    let result = ThemeBrowserAsyncResult<SaveOutcome>()
     screenSaverResult = result
     let save = saveScreenSaverSelection
     let reload = reloadContent
@@ -505,7 +523,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
         refreshed = .failure(error)
       }
       result.complete(
-        ScreenSaverOutcome(message: message, succeeded: succeeded, refreshed: refreshed))
+        SaveOutcome(message: message, succeeded: succeeded, refreshed: refreshed))
     }
     screenSaverTimer = poll(every: 0.05, #selector(checkScreenSaverResult(_:)))
   }
@@ -522,6 +540,56 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     screenSaverTimer = nil
     screenSaverResult = nil
     isSavingScreenSaver = false
+    finishSave(outcome)
+  }
+
+  @objc private func toggleSelectedFavorite(_ sender: Any?) {
+    guard !isBusy, let item = selectedItem else { return }
+    isSavingFavorite = true
+    setControlsEnabled(false)
+    statusLabel.stringValue =
+      item.isFavorite
+      ? "Removing \(item.displayName) from favorites…"
+      : "Adding \(item.displayName) to favorites…"
+    statusLabel.toolTip = nil
+    let result = ThemeBrowserAsyncResult<SaveOutcome>()
+    favoriteResult = result
+    let save = saveFavorite
+    let reload = reloadContent
+    let themeID = item.id
+    let favorite = !item.isFavorite
+    Task.detached(priority: .userInitiated) {
+      let message: String
+      let succeeded: Bool
+      do {
+        message = try await save(themeID, favorite)
+        succeeded = true
+      } catch {
+        message = String(describing: error)
+        succeeded = false
+      }
+      let refreshed: Result<ThemeBrowserContent, any Error>
+      do {
+        refreshed = .success(try await reload())
+      } catch {
+        refreshed = .failure(error)
+      }
+      result.complete(SaveOutcome(message: message, succeeded: succeeded, refreshed: refreshed))
+    }
+    favoriteTimer = poll(every: 0.05, #selector(checkFavoriteResult(_:)))
+  }
+
+  @objc private func checkFavoriteResult(_ timer: Timer) {
+    guard let outcome = favoriteResult?.value() else { return }
+    timer.invalidate()
+    favoriteTimer = nil
+    favoriteResult = nil
+    isSavingFavorite = false
+    finishSave(outcome)
+  }
+
+  /// Shows a finished screensaver or favorite change and the library reloaded after it.
+  private func finishSave(_ outcome: SaveOutcome) {
     do {
       refresh(try outcome.refreshed.get())
       statusLabel.stringValue = outcome.message
@@ -815,6 +883,9 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     applyButton.controlSize = .small
     applyButton.keyEquivalent = "\r"
     configureButton(deleteButton, action: #selector(deleteSelectedTheme(_:)))
+    configureButton(favoriteButton, action: #selector(toggleSelectedFavorite(_:)))
+    favoriteButton.keyEquivalent = "d"
+    favoriteButton.keyEquivalentModifierMask = .command
     statusLabel.font = .systemFont(ofSize: 11)
     statusLabel.maximumNumberOfLines = 2
 
@@ -824,7 +895,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     let bottomSpacer = NSView()
     bottomSpacer.setContentHuggingPriority(.init(1), for: .horizontal)
     let bottomBar = NSStackView(views: [
-      keyboardHelp, bottomSpacer, deleteButton, applyButton,
+      keyboardHelp, bottomSpacer, favoriteButton, deleteButton, applyButton,
     ])
     bottomBar.orientation = .horizontal
     bottomBar.alignment = .centerY
@@ -942,6 +1013,8 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     statusLabel.toolTip = browserState.deletionAvailability.explanation
     deleteButton.isEnabled = !isBusy && browserState.deletionAvailability.target != nil
     deleteButton.toolTip = browserState.deletionAvailability.explanation
+    favoriteButton.title = item.isFavorite ? "Remove Favorite" : "Add Favorite"
+    favoriteButton.isEnabled = !isBusy
     updateVisibleThemeRowPalette(item: item)
     previews = [item.generatedPreview]
     previewIndex = 0
@@ -1197,6 +1270,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     tableView.isEnabled = enabled
     applyButton.isEnabled = enabled
     deleteButton.isEnabled = enabled && browserState.deletionAvailability.target != nil
+    favoriteButton.isEnabled = enabled && selectedItem != nil
     if let item = selectedItem {
       backgroundPicker.isEnabled = enabled && !item.backgrounds.isEmpty
       previousBackgroundButton.isEnabled = enabled && item.backgrounds.count > 1
