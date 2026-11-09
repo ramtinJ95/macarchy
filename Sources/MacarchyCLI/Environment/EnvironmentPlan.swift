@@ -135,7 +135,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
     let provider = homeDirectory.map {
       EnvironmentProviderInspector(
         bootstrapTheme: bootstrapTheme,
-        proposedNativeSources: Set(starterPlans.map(\.destination)), alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion,
+        proposedNativeSources: Set(starterPlans.map(\.destination)),
+        alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion,
         vscodeDiscover: vscodeDiscover, vscodeRunner: vscodeRunner, zedVersion: zedVersion
       ).inspectIncludingBordersRuntime(
         composition: composition,
@@ -382,7 +383,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
     // Plan JSON lists preset actions in this order.
     for preset in [
-      EnvironmentPreset.vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .ghostty, .tuicr, .codex,
+      EnvironmentPreset.vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .ghostty, .tuicr,
+      .codex,
       .herdr, .pi, .spicetify, .slack,
     ]
     where preset.isEnabled(in: profile.presets) {

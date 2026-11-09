@@ -202,7 +202,8 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     switch self {
     case .herdr:
       UnifiedSetupService(id: "herdr", ownership: "external", lifecycle: "reload_if_running")
-    case .vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .ghostty, .codex, .pi, .slack, .spicetify,
+    case .vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .ghostty, .codex, .pi, .slack,
+      .spicetify,
       .tuicr:
       nil
     }
@@ -217,7 +218,8 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
         kind: "application_ui",
         instruction: "Import the generated four-color theme in each Slack workspace."
       )
-    case .vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .ghostty, .codex, .herdr, .pi, .spicetify,
+    case .vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .ghostty, .codex, .herdr, .pi,
+      .spicetify,
       .tuicr:
       nil
     }
@@ -347,7 +349,9 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
   /// The linked preset whose enablement and external tuple also govern the file.
   var linkedPreset: EnvironmentLinkedPreset? {
     switch self {
-    case .vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .zedFamily, .ghostty, .btop, .herdr: nil
+    case .vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .zedFamily, .ghostty, .btop,
+      .herdr:
+      nil
     case .codex: .codex
     case .pi: .pi
     case .spicetify: .spicetify

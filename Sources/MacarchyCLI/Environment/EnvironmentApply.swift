@@ -597,7 +597,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
     let alacritty = Result { try profile.environment.presets.alacritty ? alacrittyVersion() : [] }
     let version = Result { try profile.environment.presets.ghostty ? ghosttyVersion() : [] }
     let providerInspector = EnvironmentProviderInspector(
-      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() }, vscodeDiscover: vscodeDiscover,
+      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() },
+      vscodeDiscover: vscodeDiscover,
       vscodeRunner: vscodeRunner, zedVersion: zedVersion)
     let coordinator = EnvironmentTransactionCoordinator(
       homeDirectory: homeDirectory,
@@ -1026,7 +1027,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
         prerequisites: prerequisites,
         theme: theme,
         verifier: verifier,
-        bordersRuntime: runtimes.borders, alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() },
+        bordersRuntime: runtimes.borders, alacrittyVersion: { try alacritty.get() },
+        ghosttyVersion: { try version.get() },
         vscodeDiscover: vscodeDiscover, vscodeRunner: vscodeRunner, zedVersion: zedVersion
       ).reportAfterApply(
         EnvironmentApplyObservation(
@@ -1066,7 +1068,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
       try commit && profile?.environment.presets.ghostty == true ? ghosttyVersion() : []
     }
     let inspector = EnvironmentProviderInspector(
-      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() }, vscodeDiscover: vscodeDiscover,
+      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() },
+      vscodeDiscover: vscodeDiscover,
       vscodeRunner: vscodeRunner, zedVersion: zedVersion)
     return try EnvironmentLifecycleLock(stateRoot: stateRoot).withLock {
       let store = EnvironmentStateStore(stateRoot: stateRoot)
