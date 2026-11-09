@@ -84,6 +84,10 @@ struct SetupThemeTeardown: Sendable {
     let activator = ThemeActivator(root: stateRoot)
     let active = try ThemeGenerationReader(root: stateRoot).activeManifest()
     let expected = expectedGenerationID ?? active.generationID
+    guard active.generationID == expected else {
+      throw ThemeDeactivationError.activeGenerationChanged(
+        expected: expected, active: active.generationID)
+    }
     // Refuse invalid or concurrently replaced canonical state before any native access.
     _ = try activator.deactivate(expectedGenerationID: expected, dryRun: true)
     let appliedAppearance = try active.normalizedTheme(root: stateRoot).appearance
