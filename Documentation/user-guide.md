@@ -1316,13 +1316,20 @@ Review and approve adoption when setup requests it. Macarchy appends one line,
 `config-file = ?"<absolute Macarchy root>/current/generated/ghostty.conf"`, to the
 last existing file in Ghostty's load order: `$XDG_CONFIG_HOME/ghostty/config`,
 `config.ghostty` beside it, then `~/Library/Application Support/com.mitchellh.ghostty/config`
-and `config.ghostty` beside that. XDG defaults to `~/.config`; if none exists,
+and `config.ghostty` beside that. Ghostty versions before 1.3.0 read only the
+extensionless `config` files; Macarchy selects from those and reports existing
+`config.ghostty` files as ignored. XDG defaults to `~/.config`; if none exists,
 Macarchy creates the XDG `ghostty/config`. Adoption requires an ordinary file
 within your home, not a dotfile symlink. GUI-launched Ghostty uses launchd's
 environment, which can differ from a shell-only `XDG_CONFIG_HOME`.
 
 The generated theme supplies the 16 ANSI colors, background, foreground, cursor,
-selection and split divider. Ghostty 1.2.0 and newer reload through SIGUSR2;
+selection and split divider. Ghostty 1.2.0 and newer reload through SIGUSR2,
+sent individually only to verified GUI processes from the same app bundle used
+for the version probe; unrelated same-name programs and CLI invocations are excluded.
+The owned config must remain an ordinary file with no symlink ancestors.
+On a downgrade that stops reading the owned file, disable the preset to restore
+it before adopting a supported file. Unknown versions fail explicitly;
 older running versions report `restart_required` with the manual reload shortcut
 **⌘⇧,**. Macarchy never restarts Ghostty; a stopped app uses the theme next launch.
 Use Ghostty's `+show-config` command to inspect its effective colors.
