@@ -7,6 +7,225 @@ import Testing
 @testable import ThemeCore
 
 struct SetupThemeTeardownTests {
+
+  @Test(arguments: [false, true])
+  func teardownAfterSwitchesAndUndoUsesTheCurrentGeneration(undo: Bool) async throws {
+    let fixture = try ApplyFixture()
+    let bootstrap = try fixture.activateSetupOwnedTheme()
+    defer { removeTemporaryRoot(fixture.root) }
+    let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
+    let repository = ThemeRepository(builtInRoot: repositoryRoot.appending(path: "Themes"))
+    let activation = ThemeActivationService.reconciling([], onCommittedLocked: { _ in })
+    let paths = testConsumerPaths()
+    for id in undo ? ["tokyo-night", "kanagawa-wave", "catppuccin-mocha"] : ["tokyo-night"] {
+      let set = try await activation.execute(
+        repository: repository, themeID: id, stateRoot: fixture.state,
+        consumerPaths: paths, dryRun: false, json: true)
+      #expect(set.succeeded, "\(set.output)")
+    }
+    if undo {
+      let result = try await ThemeUndoCommandRunner(
+        activeManifest: { try ThemeGenerationReader(root: $0).activeManifest() },
+        loadHistory: { try ThemeHistoryStore(root: $0).load() }, activation: activation
+      ).execute(
+        repository: repository, stateRoot: fixture.state, consumerPaths: paths, dryRun: false)
+      #expect(result.succeeded, "\(result.output)")
+    }
+    let active = try ThemeGenerationReader(root: fixture.state).activeManifest()
+    #expect(active.generationID != bootstrap.generationID)
+    #expect(active.themeID == (undo ? "kanagawa-wave" : "tokyo-night"))
+    let appearance = FakeAppearance(.dark)
+    // Stale-generation wallpaper is still Macarchy's value after switches and undo.
+    let wallpaper = FakeWallpaper(
+      showing: fixture.state.appending(
+        path: "generations/\(bootstrap.generationID)/generated/wallpaper.png"))
+    try WallpaperOriginalStore(root: fixture.state).persist([
+      WallpaperOriginal(
+        displayUUID: "uuid-1", displayName: "Built-in", imagePath: "/o/original.png",
+        presentation: WallpaperPresentation(), recordedAt: "2026-11-08T00:00:00Z")
+    ])
+    let teardown = SetupThemeTeardown(
+      appearance: { _ in appearance.control },
+      wallpaper: { root in
+        WallpaperOriginalRestorer(
+          root: root, control: wallpaper.control, originalExists: { _ in true })
+      })
+    let preview = try await teardown.run(
+      stateRoot: fixture.state, ownership: ownership, dryRun: true)
+    #expect(preview.outcome == "planned")
+    #expect(preview.plannedThemeGenerationID == active.generationID)
+    #expect(appearance.applied().isEmpty)
+    #expect(try SetupCoreOwnershipStore(stateRoot: fixture.state).read() == ownership)
+    #expect(
+      try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
+        == active.generationID)
+    let result = try await teardown.run(
+      stateRoot: fixture.state, ownership: ownership,
+      expectedGenerationID: preview.plannedThemeGenerationID, dryRun: false)
+    #expect(result.succeeded, "\(result.message)")
+    #expect(appearance.current() == .light)
+    #expect(wallpaper.current().path == "/o/original.png")
+    #expect(try ThemeGenerationReader(root: fixture.state).activeManifestIfPresent() == nil)
+    #expect(try SetupCoreOwnershipStore(stateRoot: fixture.state).read() == nil)
+  }
+
+  @Test func comparesAppearanceWithTheActiveThemeNotTheBootstrapOrProfile() async throws {
+    let fixture = try ApplyFixture()
+    let bootstrap = try fixture.activateSetupOwnedTheme()
+    defer { removeTemporaryRoot(fixture.root) }
+    let store = SetupCoreOwnershipStore(stateRoot: fixture.state)
+    try store.remove()
+    let ownership = SetupCoreOwnership(
+      themeGenerationID: bootstrap.generationID, originalAppearance: .dark)
+    try store.write(ownership)
+    let packageURL = fixture.root.appending(path: "light-theme")
+    try FileManager.default.copyItem(
+      at: repositoryRoot.appending(path: "Themes/tokyo-night"), to: packageURL)
+    let manifestURL = packageURL.appending(path: "theme.toml")
+    try String(contentsOf: manifestURL, encoding: .utf8)
+      .replacingOccurrences(of: #"appearance = "dark""#, with: #"appearance = "light""#)
+      .write(to: manifestURL, atomically: true, encoding: .utf8)
+    _ = try ThemeActivator(root: fixture.state).activate(
+      package: ThemePackageLoader().load(packageURL: packageURL))
+    let appearance = FakeAppearance(.light)
+    let wallpaper = FakeWallpaper(showing: URL(filePath: "/user/chosen.png"))
+    let teardown = SetupThemeTeardown(
+      appearance: { _ in appearance.control },
+      wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) })
+    let result = try await teardown.run(
+      stateRoot: fixture.state, ownership: ownership, dryRun: false)
+    #expect(result.succeeded)
+    #expect(appearance.applied() == [.dark])
+    #expect(!result.message.contains("Kept the macOS"))
+  }
+
+  @Test func aSwitchBetweenStagePreflightAndRetirementRefusesBeforeNativeWrites() async throws {
+    let fixture = try ApplyFixture()
+    let bootstrap = try fixture.activateSetupOwnedTheme()
+    defer { removeTemporaryRoot(fixture.root) }
+    let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
+    let replacement = try ThemePackageLoader().load(
+      packageURL: repositoryRoot.appending(path: "Themes/tokyo-night"))
+    let appearance = FakeAppearance(.dark)
+    let wallpaper = FakeWallpaper(
+      showing: fixture.state.appending(
+        path: "generations/\(bootstrap.generationID)/generated/wallpaper.png"))
+    let teardown = SetupThemeTeardown(
+      appearance: { root in
+        SetupAppearanceControl(
+          read: {
+            _ = try ThemeActivator(root: root).activate(package: replacement)
+            return appearance.current()
+          }, apply: appearance.control.apply)
+      },
+      wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) })
+    let result = try await teardown.run(
+      stateRoot: fixture.state, ownership: ownership, dryRun: false)
+    #expect(!result.succeeded)
+    #expect(!result.mutated)
+    #expect(result.message.contains("Retry setup teardown"))
+    #expect(appearance.applied().isEmpty)
+    #expect(wallpaper.current().path.contains(bootstrap.generationID))
+    #expect(try SetupCoreOwnershipStore(stateRoot: fixture.state).read() == ownership)
+    #expect(
+      try ThemeGenerationReader(root: fixture.state).activeManifest().themeID == "tokyo-night")
+  }
+
+  @Test func aSwitchAfterAggregatePreviewRefusesBeforeCreatingTheJournal() async throws {
+    let fixture = try ApplyFixture()
+    _ = try fixture.activateSetupOwnedTheme()
+    defer { removeTemporaryRoot(fixture.root) }
+    let replacement = try ThemePackageLoader().load(
+      packageURL: repositoryRoot.appending(path: "Themes/tokyo-night"))
+    let appearance = FakeAppearance(.dark)
+    let wallpaper = FakeWallpaper(showing: URL(filePath: "/user/chosen.png"))
+    let stage = SetupThemeTeardown(
+      appearance: { _ in appearance.control },
+      wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) })
+    let runner = UnifiedSetupTeardownCommandRunner(
+      planner: fixture.planner(),
+      environmentTeardown: { _, _, _ in environmentReportStub("no_change", mutated: false) },
+      desktopTeardown: { _, _, _ in desktopTeardownStub("no_change", message: "desktop") },
+      themeTeardown: { state, ownership, expected, dryRun in
+        #expect(dryRun)
+        let preview = try await stage.run(
+          stateRoot: state, ownership: ownership, expectedGenerationID: expected, dryRun: dryRun)
+        _ = try ThemeActivator(root: state).activate(package: replacement)
+        return preview
+      })
+    let result = try await runner.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths(), dryRun: false, json: true)
+    #expect(!result.succeeded)
+    let report = try jsonObject(result.output)
+    #expect(report["outcome"] as? String == "blocked")
+    #expect(report["mutated"] as? Bool == false)
+    #expect(result.output.contains("Retry setup teardown"))
+    #expect(appearance.applied().isEmpty)
+    #expect(try UnifiedSetupTransactionStore(stateRoot: fixture.state).read() == nil)
+  }
+
+  @Test func aggregatePinsPreflightAndARetryCanFinishAfterAConcurrentSwitch() async throws {
+    let fixture = try ApplyFixture()
+    _ = try fixture.activateSetupOwnedTheme()
+    defer { removeTemporaryRoot(fixture.root) }
+    let replacement = try ThemePackageLoader().load(
+      packageURL: repositoryRoot.appending(path: "Themes/tokyo-night"))
+    let appearance = FakeAppearance(.dark)
+    let wallpaper = FakeWallpaper(showing: URL(filePath: "/user/chosen.png"))
+    let stage = SetupThemeTeardown(
+      appearance: { _ in appearance.control },
+      wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) })
+    let runner = UnifiedSetupTeardownCommandRunner(
+      planner: fixture.planner(),
+      environmentTeardown: { context, _, dryRun in
+        if !dryRun {
+          _ = try ThemeActivator(root: context.stateRoot).activate(package: replacement)
+        }
+        return environmentTeardownStub(dryRun: dryRun, mutated: !dryRun)
+      },
+      desktopTeardown: { _, _, _ in desktopTeardownStub("no_change", message: "desktop") },
+      themeTeardown: { state, ownership, expected, dryRun in
+        try await stage.run(
+          stateRoot: state, ownership: ownership, expectedGenerationID: expected, dryRun: dryRun)
+      })
+    let first = try await runner.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths(), dryRun: false, json: true)
+    #expect(!first.succeeded)
+    #expect(first.output.contains("Retry setup teardown"))
+    #expect(appearance.applied().isEmpty)
+    #expect(try UnifiedSetupTransactionStore(stateRoot: fixture.state).read()?.stages == [.theme])
+    let retry = try await runner.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths(), dryRun: false, json: true)
+    #expect(retry.succeeded, "\(retry.output)")
+    #expect(appearance.current() == .light)
+    #expect(try UnifiedSetupTransactionStore(stateRoot: fixture.state).read() == nil)
+    #expect(try ThemeGenerationReader(root: fixture.state).activeManifestIfPresent() == nil)
+  }
+
+  @Test(arguments: [false, true])
+  func aPreexistingCanonicalThemeIsPreservedWithoutNativeAccess(dryRun: Bool) async throws {
+    let fixture = try ApplyFixture()
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    try SetupCoreOwnershipStore(stateRoot: fixture.state).remove()
+    let stage = SetupThemeTeardown(
+      appearance: { _ in
+        Issue.record("A preexisting theme does not authorize appearance access")
+        return FakeAppearance(.dark).control
+      },
+      wallpaper: { root in
+        Issue.record("A preexisting theme does not authorize wallpaper access")
+        return WallpaperOriginalRestorer(
+          root: root, control: FakeWallpaper(showing: URL(filePath: "/user/chosen.png")).control)
+      })
+    let result = try await stage.run(stateRoot: fixture.state, ownership: nil, dryRun: dryRun)
+    #expect(result.succeeded)
+    #expect(!result.mutated)
+    #expect(
+      try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
+        == manifest.generationID)
+  }
+
   @Test func accentEvidenceCanBeConsumedWithoutOwningTheCanonicalTheme() async throws {
     let fixture = try ApplyFixture()
     let manifest = try fixture.activateSetupOwnedTheme()
@@ -30,7 +249,7 @@ struct SetupThemeTeardownTests {
             executableURL: URL(filePath: "/usr/bin/true"), processRunner: fake.runner))
       })
     let result = try await teardown.run(
-      stateRoot: fixture.state, ownership: nil, desiredAppearance: .dark, dryRun: false)
+      stateRoot: fixture.state, ownership: nil, dryRun: false)
     #expect(result.succeeded)
     #expect(result.message.contains("external theme is preserved"))
     #expect(try store.load() == nil)
@@ -57,7 +276,7 @@ struct SetupThemeTeardownTests {
           root: root, helper: MacOSLookHelper(executableURL: root.appending(path: "missing")))
       })
     let result = try await teardown.run(
-      stateRoot: fixture.state, ownership: ownership, desiredAppearance: .dark, dryRun: dryRun)
+      stateRoot: fixture.state, ownership: ownership, dryRun: dryRun)
     #expect(!result.succeeded)
     #expect(result.message.contains("macOS look helper is missing"))
     #expect(try store.load() != nil)
@@ -71,6 +290,10 @@ struct SetupThemeTeardownTests {
     let fixture = try ApplyFixture()
     let manifest = try fixture.activateSetupOwnedTheme()
     defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    let switched = try ThemeActivator(root: fixture.state).activate(
+      package: ThemePackageLoader().load(
+        packageURL: repositoryRoot.appending(path: "Themes/tokyo-night")))
+
     let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
     let store = MacOSAccentStore(root: fixture.state)
     try store.persist(
@@ -85,7 +308,7 @@ struct SetupThemeTeardownTests {
     let runner = ProcessRunner { request in
       #expect(
         try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
-          == manifest.generationID)
+          == switched.generationID)
       #expect(try store.load() != nil)
       return try fake.runner.run(request)
     }
@@ -99,7 +322,7 @@ struct SetupThemeTeardownTests {
             executableURL: URL(filePath: "/usr/bin/true"), processRunner: runner))
       })
     let result = try await teardown.run(
-      stateRoot: fixture.state, ownership: ownership, desiredAppearance: .dark, dryRun: false)
+      stateRoot: fixture.state, ownership: ownership, dryRun: false)
     #expect(result.succeeded, "\(result.message)")
     #expect(try store.load() == nil)
     #expect(
@@ -316,12 +539,12 @@ struct SetupThemeTeardownTests {
       wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) })
     let preview = try await teardown.run(
       stateRoot: fixture.state, ownership: ownership,
-      desiredAppearance: .dark, dryRun: true)
+      dryRun: true)
     #expect(preview.message.contains("Would run 2 user scripts"))
     #expect(!FileManager.default.fileExists(atPath: recorded.path))
     let result = try await teardown.run(
       stateRoot: fixture.state, ownership: ownership,
-      desiredAppearance: .dark, dryRun: false)
+      dryRun: false)
     #expect(result.succeeded)
     #expect(result.message.contains("record succeeded"))
     #expect(result.message.contains("shared refused"))
@@ -351,7 +574,7 @@ struct SetupThemeTeardownTests {
     )
 
     let plan = try await teardown.run(
-      stateRoot: fixture.state, ownership: ownership, desiredAppearance: .dark, dryRun: true)
+      stateRoot: fixture.state, ownership: ownership, dryRun: true)
     #expect(plan.outcome == "planned")
     #expect(
       plan.message
@@ -361,7 +584,7 @@ struct SetupThemeTeardownTests {
     #expect(wallpaper.current().path.hasSuffix("generated/wallpaper.png"))
 
     let stage = try await teardown.run(
-      stateRoot: fixture.state, ownership: ownership, desiredAppearance: .dark, dryRun: false)
+      stateRoot: fixture.state, ownership: ownership, dryRun: false)
 
     #expect(stage.succeeded)
     #expect(stage.outcome == "restored")
@@ -382,6 +605,10 @@ struct SetupThemeTeardownTests {
     let fixture = try ApplyFixture()
     let manifest = try fixture.activateSetupOwnedTheme()
     defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    _ = try ThemeActivator(root: fixture.state).activate(
+      package: ThemePackageLoader().load(
+        packageURL: repositoryRoot.appending(path: "Themes/tokyo-night")))
+
     // Setup found Dark and kept it; the user switched to Light afterwards.
     let store = SetupCoreOwnershipStore(stateRoot: fixture.state)
     try store.remove()
@@ -404,7 +631,7 @@ struct SetupThemeTeardownTests {
     )
 
     let stage = try await teardown.run(
-      stateRoot: fixture.state, ownership: ownership, desiredAppearance: .dark, dryRun: false)
+      stateRoot: fixture.state, ownership: ownership, dryRun: false)
 
     #expect(stage.succeeded)
     #expect(stage.outcome == "restored")
@@ -432,7 +659,7 @@ struct SetupThemeTeardownTests {
     )
 
     let stage = try await teardown.run(
-      stateRoot: fixture.state, ownership: ownership, desiredAppearance: .dark, dryRun: false)
+      stateRoot: fixture.state, ownership: ownership, dryRun: false)
 
     #expect(stage.succeeded)
     #expect(stage.message == "Removed the setup-owned canonical theme.")

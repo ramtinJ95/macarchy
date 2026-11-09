@@ -966,15 +966,16 @@ struct UnifiedSetupApplyTests {
     #expect(!health.succeeded)
     #expect(health.status == "drifted")
     if replaced {
-      // The real teardown rejects the replacement before any native appearance access.
+      // Apply rollback still refuses a replacement; only explicit teardown retires it.
       await #expect(throws: (any Error).self) {
         _ = try await UnifiedSetupTeardownCommandRunner.live.themeTeardown(
-          fixture.state, ownership, model.themePackage.appearance, false)
+          fixture.state, ownership, bootstrap.generationID, false)
       }
       #expect(try SetupCoreOwnershipStore(stateRoot: fixture.state).read() == ownership)
       #expect(
         try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
           == manifest.generationID)
     }
+
   }
 }

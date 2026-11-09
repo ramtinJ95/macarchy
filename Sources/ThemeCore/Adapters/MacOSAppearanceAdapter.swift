@@ -94,45 +94,59 @@ package struct MacOSAppearanceAdapter: Sendable {
   ) -> AdapterReconciliation {
     AdapterReconciliation(.macOSAppearance) {
       try activationLock.withLock {
-        let observed: ThemeAppearance
-        do {
-          observed = try preflight()
-        } catch {
-          return AdapterOutcome(status: .failed, message: String(describing: error))
-        }
-        let desiredAppearance = try desiredAppearance()
-
-        if observed == desiredAppearance {
-          return AdapterOutcome(status: .applied)
-        }
-
-        let command = try processRunner.run(
-          ProcessRequest(
-            executableURL: Self.controlURL,
-            arguments: ["-e", Self.setAppearanceScript(desiredAppearance)],
-            timeout: 2
-          )
-        )
-        guard command.terminationStatus == 0 else {
-          return AdapterOutcome(
-            status: .failed,
-            message: command.output.isEmpty
-              ? "System Events rejected the appearance change"
-              : command.output
-          )
-        }
-
-        let appliedAppearance = try currentAppearance()
-        guard appliedAppearance == desiredAppearance else {
-          return AdapterOutcome(
-            status: .drifted,
-            message:
-              "System Events completed, but macOS remains \(appliedAppearance.rawValue); expected \(desiredAppearance.rawValue)"
-          )
-        }
-        return AdapterOutcome(status: .applied)
+        try applyAppearanceHoldingActivationLock(desiredAppearance())
       }
     }
+  }
+
+  /// The caller holds the activation lock through restoration and canonical retirement.
+  package func applyHoldingActivationLock(_ desiredAppearance: ThemeAppearance) throws
+    -> AdapterResult
+  {
+    let outcome = try applyAppearanceHoldingActivationLock(desiredAppearance)
+    return AdapterResult(
+      adapterID: Self.id, requirement: .required, status: outcome.status, message: outcome.message)
+  }
+
+  private func applyAppearanceHoldingActivationLock(_ desiredAppearance: ThemeAppearance) throws
+    -> AdapterOutcome
+  {
+    let observed: ThemeAppearance
+    do {
+      observed = try preflight()
+    } catch {
+      return AdapterOutcome(status: .failed, message: String(describing: error))
+    }
+
+    if observed == desiredAppearance {
+      return AdapterOutcome(status: .applied)
+    }
+
+    let command = try processRunner.run(
+      ProcessRequest(
+        executableURL: Self.controlURL,
+        arguments: ["-e", Self.setAppearanceScript(desiredAppearance)],
+        timeout: 2
+      )
+    )
+    guard command.terminationStatus == 0 else {
+      return AdapterOutcome(
+        status: .failed,
+        message: command.output.isEmpty
+          ? "System Events rejected the appearance change"
+          : command.output
+      )
+    }
+
+    let appliedAppearance = try currentAppearance()
+    guard appliedAppearance == desiredAppearance else {
+      return AdapterOutcome(
+        status: .drifted,
+        message:
+          "System Events completed, but macOS remains \(appliedAppearance.rawValue); expected \(desiredAppearance.rawValue)"
+      )
+    }
+    return AdapterOutcome(status: .applied)
   }
 
   private static func setAppearanceScript(_ appearance: ThemeAppearance) -> String {
