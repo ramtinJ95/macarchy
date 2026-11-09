@@ -400,7 +400,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let desiredBridgePaths = Set(
       EnvironmentThemeBridgeState.paths(
         ids: Set(inspection.desiredEntries.map(\.id)),
-        stateRoot: stateRoot, alacritty: inspection.proposedAlacrittyOwnership != nil
+        stateRoot: stateRoot, alacritty: inspection.proposedAlacrittyOwnership != nil,
+        ghostty: inspection.proposedGhosttyOwnership != nil
       )
     )
     let previousBridges = Dictionary(
@@ -654,7 +655,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
         .currentDestination(),
       rollbackThemeBridges: try EnvironmentThemeBridgeState.capture(
         ids: Set(ownership.records.map(\.id)),
-        stateRoot: stateRoot, alacritty: ownership.alacritty != nil
+        stateRoot: stateRoot, alacritty: ownership.alacritty != nil,
+        ghostty: ownership.ghostty != nil
       ).entries,
       replacementNames: EnvironmentReplacementNames(from: ownership, to: nil),
       bordersPreviousRuntime: bordersService

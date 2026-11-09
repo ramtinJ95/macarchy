@@ -42,7 +42,7 @@ package enum GhosttyConfiguration {
   }
 
   package static func includeDirective(root: URL) -> String {
-    "config-file = ?\"\(StateLayout(root: root).currentThemeArtifact(GhosttyAdapter.outputPath).path)\""
+    "config-file = ?\"\(root.appending(path: GhosttyAdapter.bridgePath).path)\""
   }
 
   package static func read(_ url: URL) throws -> String {
@@ -102,7 +102,7 @@ package enum GhosttyConfiguration {
   /// Read-only, bounded simulation of Config.loadDefaultFiles/loadRecursiveFiles. Nested
   /// includes append to the same queue, not a recursive depth-first traversal. A reset clears it.
   package static func overrideMessage(files: [URL], root: URL, home: URL) -> String? {
-    let canonical = StateLayout(root: root).currentThemeArtifact(GhosttyAdapter.outputPath)
+    let canonical = root.appending(path: GhosttyAdapter.bridgePath)
       .standardizedFileURL
     var queue: [Include] = []
     var notices: [String] = []

@@ -5,7 +5,7 @@ import Foundation
 /// replacement. These files are rebuildable projections, never generation authority.
 package enum StableAdapterBridge {
   package static var statePaths: [String] {
-    AlacrittyAdapter.statePaths
+    AlacrittyAdapter.statePaths + [GhosttyAdapter.bridgePath]
   }
 
   enum Failure: Error, CustomStringConvertible {
