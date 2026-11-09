@@ -1302,6 +1302,46 @@ over every configured color, and colors set after the theme include win over it.
 `macarchy theme set` and `macarchy theme status` report each such file or line with
 the colors it sets; Macarchy never edits them. Delete or rename them to see the theme.
 
+### Ghostty theme consumer
+
+Ghostty is opt-in and theming-only: install `/Applications/Ghostty.app` yourself,
+then add this to your profile and run `macarchy setup plan` / `macarchy setup apply`:
+
+```toml
+[presets]
+ghostty = true
+```
+
+Review and approve adoption when setup requests it. Macarchy appends one line,
+`config-file = ?"<absolute Macarchy root>/current/generated/ghostty.conf"`, to the
+last existing file in Ghostty's load order: `$XDG_CONFIG_HOME/ghostty/config`,
+`config.ghostty` beside it, then `~/Library/Application Support/com.mitchellh.ghostty/config`
+and `config.ghostty` beside that. XDG defaults to `~/.config`; if none exists,
+Macarchy creates the XDG `ghostty/config`. Adoption requires an ordinary file
+within your home, not a dotfile symlink. GUI-launched Ghostty uses launchd's
+environment, which can differ from a shell-only `XDG_CONFIG_HOME`.
+
+The generated theme supplies the 16 ANSI colors, background, foreground, cursor,
+selection and split divider. Ghostty 1.2.0 and newer reload through SIGUSR2;
+older running versions report `restart_required` with the manual reload shortcut
+**⌘⇧,**. Macarchy never restarts Ghostty; a stopped app uses the theme next launch.
+Use Ghostty's `+show-config` command to inspect its effective colors.
+
+Includes load after all main files, so ordinary user color lines do not override
+Macarchy. Includes loaded later can, including nested includes queued by earlier
+files. Theme set and reconcile report those sources and color keys without editing
+them. Theme status shows the last reconciliation result; after an external config
+edit, run `macarchy reconcile` to refresh it.
+Inspection is bounded to 128 includes and 4 MiB; missing optional includes are
+skipped, while unreadable sources, queue resets and inspection limits are visible.
+Command-line configuration overrides are outside this default-file inspection.
+
+Setting `ghostty = false` and applying, or tearing down, removes only the owned
+line and restores the original file byte-for-byte if it is otherwise unchanged.
+A file created by Macarchy is deleted only while it contains nothing else.
+Unrelated later user edits survive; an edited, moved or removed owned line is
+reported as drift and blocks teardown rather than overwriting the file.
+
 ### Writable Atuin configuration
 
 To preserve the active Atuin settings as a writable native file:
