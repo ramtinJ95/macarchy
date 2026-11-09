@@ -49,7 +49,7 @@ struct VSCodeAdapterTests {
     #expect(throws: AdapterConfigurationError.self) { try editor.discover(exists: { _ in false }) }
     #expect(!ConsumerCatalog.shared.defaultEnabledAdapterIDs.contains(editor.rawValue))
     #expect(editor.runtimeKind.requirement == .required)
-    #expect(editor.runtimeKind.repaint == .nextLaunch)
+    #expect(editor.runtimeKind.repaint == (editor == .vscode ? .reloadWindow : .nextLaunch))
   }
 
   @Test func ambiguousWindsurfInstallationsBlock() {
@@ -101,7 +101,9 @@ struct VSCodeAdapterTests {
       let adapter = VSCodeAdapter(
         editor: .vscode, root: root, home: root,
         discover: { $0.installations[0] }, runner: fake.runner, validateOwnership: { _, _ in })
-      #expect(try await adapter.reconciliation().run().status == .restartRequired)
+      let first = try await adapter.reconciliation().run()
+      #expect(first.status == .restartRequired)
+      #expect(first.message?.contains("Developer: Reload Window") == true)
       #expect(fake.state.withLock { $0.installs } == 1)
       #expect(try await adapter.reconciliation().run().status == .restartRequired)
       #expect(fake.state.withLock { $0.installs } == 1)

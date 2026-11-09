@@ -174,11 +174,14 @@ package struct VSCodeAdapter: Sendable {
       try publish(theme, installation: installation)
       try validateOwnership(editor, installation.settings(home: home))
       let profiles = try Self.profiles(installation: installation, home: home)
-      // Guest qualification determines whether this conservative boundary can be narrowed.
+      let repaint =
+        editor == .vscode
+        ? "Run Developer: Reload Window to display an updated palette; first adoption can repaint live."
+        : "Reload Window or next launch may be needed; this editor's live boundary is unqualified."
       return AdapterOutcome(
         status: .restartRequired,
         message:
-          "\(editor.label): selected \(installation.application).app; extension installed. Reload Window or next launch may be needed; Macarchy never reloads the editor. Default profile only; workspace settings can override."
+          "\(editor.label): selected \(installation.application).app; extension installed. \(repaint) Macarchy never reloads the editor. Default profile only; workspace settings can override."
           + (profiles.isEmpty
             ? "" : " Non-default profiles with settings: \(profiles.joined(separator: ", ")).")
       )
