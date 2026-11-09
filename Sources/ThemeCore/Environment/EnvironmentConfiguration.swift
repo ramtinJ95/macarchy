@@ -431,7 +431,18 @@ package struct EnvironmentConfigurationComposer: Sendable {
       ).merging(options.presets.zed ? ["zed": true] : [:], uniquingKeysWith: { _, new in new })
         .merging(
           options.presets.alacritty ? ["alacritty": true] : [:], uniquingKeysWith: { _, new in new }
-        ),
+        )
+        .merging(
+          options.presets.vscode ? ["vscode": true] : [:], uniquingKeysWith: { _, new in new }
+        )
+        .merging(
+          options.presets.cursor ? ["cursor": true] : [:], uniquingKeysWith: { _, new in new }
+        )
+        .merging(
+          options.presets.vscodium ? ["vscodium": true] : [:], uniquingKeysWith: { _, new in new }
+        )
+        .merging(
+          options.presets.windsurf ? ["windsurf": true] : [:], uniquingKeysWith: { _, new in new }),
       artifacts: Dictionary(uniqueKeysWithValues: artifacts.map { ($0.path, $0.digest) })
     )
     return EnvironmentComposition(

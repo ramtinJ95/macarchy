@@ -245,6 +245,15 @@ enum ThemeRuntimeSelection {
         provider, homeDirectory: homeDirectory, stateRoot: stateRoot)
     }
     var paths = consumerPaths
+    paths.vscodeValidateOwnership = { editor, settings in
+      guard let owner = ownership.vscodeEditors?[editor.rawValue], owner.hasValidShape,
+        owner.path == settings.path, owner.installation.settings(home: homeDirectory) == settings,
+        try owner.matchesManaged(PinnedFilesystem.readRegularFile(at: settings).data, at: settings)
+      else { throw VSCodeAdapter.Failure.drift }
+      try owner.adapter(root: stateRoot, home: homeDirectory).authenticate(
+        version: VSCodeAdapter.installedVersion(cli: owner.installation.cli),
+        installation: owner.installation, initialVersion: owner.initialVersion)
+    }
     if let zed = ownership.zed, let family = ownership.zedFamily {
       paths.zedValidateOwnership = { target in
         guard target.standardizedFileURL.path == family.path,

@@ -350,6 +350,17 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
       }
     }
+    for owner in inspection.proposedVSCodeOwnership?.values
+      ?? [String: EnvironmentVSCodeOwnership]().values
+    where inspection.ownership?.vscodeEditors?[owner.editor.rawValue] == nil {
+      guard try inspector.vscodeDiscover(owner.editor) == owner.installation,
+        try VSCodeAdapter.installedVersion(
+          cli: owner.installation.cli, runner: inspector.vscodeRunner) == nil
+      else {
+        throw EnvironmentLifecycleError.blocked(
+          "VS Code-family installation changed after planning; run environment plan again")
+      }
+    }
     for file in EnvironmentKeyOwnedFile.allCases {
       guard let expected = inspection.keyOwnedExternalEvidence[file] else { continue }
       try revalidate(
@@ -357,7 +368,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
         at: try file.configurationURL(
           home: homeDirectory, ownership: inspection.ownership,
           proposedAlacritty: inspection.proposedAlacrittyOwnership,
-          proposedGhostty: inspection.proposedGhosttyOwnership),
+          proposedGhostty: inspection.proposedGhosttyOwnership,
+          proposedVSCode: inspection.proposedVSCodeOwnership),
         file.revalidationLabel
       ) { evidence in
         guard file.revalidatesExternalTuple, let linked = file.linkedPreset else { return true }
@@ -427,6 +439,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
               $0.url.path.hasPrefix(directory + "/")
             } || inspection.proposedAlacrittyOwnership?.path.hasPrefix(directory + "/") == true
               || inspection.proposedGhosttyOwnership?.path.hasPrefix(directory + "/") == true
+              || inspection.proposedVSCodeOwnership?.values.contains(where: {
+                $0.path.hasPrefix(directory + "/")
+              }) == true
               || inspection.proposedZedOwnership?.path.hasPrefix(directory + "/") == true
               || inspection.proposedZedFamilyOwnership?.path.hasPrefix(directory + "/") == true
           }
@@ -440,6 +455,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       pi: inspection.proposedPiOwnership,
       spicetify: inspection.proposedSpicetifyOwnership,
       ghostty: inspection.proposedGhosttyOwnership,
+      vscodeEditors: inspection.proposedVSCodeOwnership,
       zed: inspection.proposedZedOwnership,
       zedFamily: inspection.proposedZedFamilyOwnership,
       alacritty: inspection.proposedAlacrittyOwnership,
@@ -465,6 +481,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       || previous?.pi != proposed.pi
       || previous?.spicetify != proposed.spicetify
       || previous?.ghostty != proposed.ghostty
+      || previous?.vscodeEditors != proposed.vscodeEditors
       || previous?.zed != proposed.zed || previous?.zedFamily != proposed.zedFamily
       || previous?.alacritty != proposed.alacritty
       || previous?.tuicr != proposed.tuicr
@@ -856,6 +873,24 @@ struct EnvironmentTransactionCoordinator: Sendable {
     case .spicetify:
       try EnvironmentSpicetifyFileTransaction(homeDirectory: homeDirectory)
         .transition(from: old, to: new, replacementName: replacementName)
+    case .vscode, .cursor, .vscodium, .windsurf:
+      let previous = old?.vscodeEditors?[file.rawValue]
+      let proposed = new?.vscodeEditors?[file.rawValue]
+      let owner = previous ?? proposed
+      if let owner {
+        try owner.adapter(root: stateRoot, home: homeDirectory, runner: inspector.vscodeRunner)
+          .authenticate(
+            version: VSCodeAdapter.installedVersion(
+              cli: owner.installation.cli, runner: inspector.vscodeRunner),
+            installation: owner.installation, initialVersion: owner.initialVersion)
+      }
+      try EnvironmentPresetFileTransaction<EnvironmentVSCodeOwnership>(homeDirectory: homeDirectory)
+        .transitionOwnership(from: previous, to: proposed, replacementName: replacementName)
+      if let previous, proposed == nil {
+        // The aggregate journal retains ownership until uninstall and its readback succeed.
+        try VSCodeAdapter.uninstall(
+          installation: previous.installation, runner: inspector.vscodeRunner)
+      }
     case .zed:
       try EnvironmentPresetFileTransaction<EnvironmentZedOwnership>(homeDirectory: homeDirectory)
         .transition(from: old, to: new, replacementName: replacementName)
@@ -978,6 +1013,16 @@ struct EnvironmentTransactionCoordinator: Sendable {
           homeDirectory.appending(path: ".config/zed/themes").path,
           homeDirectory.appending(path: ConsumerHomePath.herdrDirectory).path,
         ] + themePresetParentDirectories()
+        + VSCodeEditor.allCases.flatMap { editor in
+          editor.installations.flatMap { installation -> [String] in
+            let user = installation.settings(home: homeDirectory).deletingLastPathComponent()
+            return [
+              user.path, user.deletingLastPathComponent().path,
+              homeDirectory.appending(path: "Library/Application Support").path,
+              homeDirectory.appending(path: "Library").path,
+            ]
+          }
+        }
     )
     guard Set(ownership.createdDirectories).isSubset(of: allowedDirectories) else {
       throw EnvironmentLifecycleError.blocked("ownership contains an unexpected created directory")
@@ -997,6 +1042,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
       return ThemeConsumerPaths.alacrittyConfigurationFiles(home: homeDirectory).contains {
         $0.path == path
       }
+    }
+    if let editor = VSCodeEditor(rawValue: file.rawValue) {
+      return editor.installations.contains { $0.settings(home: homeDirectory).path == path }
     }
     if file == .ghostty {
       return ThemeConsumerPaths.ghosttyConfigurationFiles(home: homeDirectory).contains {
@@ -1085,6 +1133,18 @@ struct EnvironmentTransactionCoordinator: Sendable {
       try EnvironmentSpicetifyFileTransaction(homeDirectory: homeDirectory).preflight(spicetify)
     } else {
       try preflightExternalTuple(.spicetify, in: ownership)
+    }
+    for owner in ownership.vscodeEditors?.values ?? [String: EnvironmentVSCodeOwnership]().values {
+      guard owner.path == owner.installation.settings(home: homeDirectory).path else {
+        throw VSCodeAdapter.Failure.drift
+      }
+      try EnvironmentPresetFileTransaction<EnvironmentVSCodeOwnership>(homeDirectory: homeDirectory)
+        .preflight(owner)
+      try owner.adapter(root: stateRoot, home: homeDirectory, runner: inspector.vscodeRunner)
+        .authenticate(
+          version: VSCodeAdapter.installedVersion(
+            cli: owner.installation.cli, runner: inspector.vscodeRunner),
+          installation: owner.installation, initialVersion: owner.initialVersion)
     }
     if let zed = ownership.zed {
       try EnvironmentPresetFileTransaction<EnvironmentZedOwnership>(homeDirectory: homeDirectory)

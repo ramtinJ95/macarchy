@@ -280,6 +280,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
   let pi: EnvironmentPiOwnership?
   let spicetify: EnvironmentSpicetifyOwnership?
   let ghostty: EnvironmentGhosttyOwnership?
+  let vscodeEditors: [String: EnvironmentVSCodeOwnership]?
   let zed: EnvironmentZedOwnership?
   let zedFamily: EnvironmentZedFamilyOwnership?
   let alacritty: EnvironmentAlacrittyOwnership?
@@ -307,6 +308,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     pi: EnvironmentPiOwnership? = nil,
     spicetify: EnvironmentSpicetifyOwnership? = nil,
     ghostty: EnvironmentGhosttyOwnership? = nil,
+    vscodeEditors: [String: EnvironmentVSCodeOwnership]? = nil,
     zed: EnvironmentZedOwnership? = nil,
     zedFamily: EnvironmentZedFamilyOwnership? = nil,
     alacritty: EnvironmentAlacrittyOwnership? = nil,
@@ -336,6 +338,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     self.pi = pi
     self.spicetify = spicetify
     self.ghostty = ghostty
+    self.vscodeEditors = vscodeEditors
     self.zed = zed
     self.zedFamily = zedFamily
     self.alacritty = alacritty
@@ -368,7 +371,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       createdDirectories: base?.createdDirectories ?? [],
       originalThemeBridges: base?.originalThemeBridges ?? [],
       btop: base?.btop, borders: base?.borders, codex: base?.codex, herdr: herdr, pi: base?.pi,
-      spicetify: base?.spicetify, ghostty: base?.ghostty, zed: base?.zed,
+      spicetify: base?.spicetify, ghostty: base?.ghostty, vscodeEditors: base?.vscodeEditors,
+      zed: base?.zed,
       zedFamily: base?.zedFamily, alacritty: base?.alacritty, tuicr: base?.tuicr,
       codexEnabled: base?.codexEnabled ?? false, herdrEnabled: base?.herdrEnabled ?? false,
       piEnabled: base?.piEnabled ?? false, slackEnabled: base?.slackEnabled ?? false,
@@ -392,6 +396,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     case pi
     case spicetify
     case ghostty
+    case vscodeEditors = "vscode_editors"
     case zed
     case zedFamily = "zed_family"
     case alacritty
@@ -427,6 +432,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     alacritty = try container.decodeIfPresent(
       EnvironmentAlacrittyOwnership.self, forKey: .alacritty)
     ghostty = try container.decodeIfPresent(EnvironmentGhosttyOwnership.self, forKey: .ghostty)
+    vscodeEditors = try container.decodeIfPresent(
+      [String: EnvironmentVSCodeOwnership].self, forKey: .vscodeEditors)
     zed = try container.decodeIfPresent(EnvironmentZedOwnership.self, forKey: .zed)
     zedFamily = try container.decodeIfPresent(
       EnvironmentZedFamilyOwnership.self, forKey: .zedFamily)
@@ -483,6 +490,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       pi?.hasValidShape ?? true,
       spicetify?.hasValidShape ?? true,
       ghostty?.hasValidShape ?? true,
+      vscodeEditors?.allSatisfy({ $0.key == $0.value.editor.rawValue && $0.value.hasValidShape })
+        ?? true,
       zed?.hasValidShape ?? true, zedFamily?.hasValidShape ?? true,
       (zed == nil) == (zedFamily == nil),
       alacritty?.hasValidShape ?? true,

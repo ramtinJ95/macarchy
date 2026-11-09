@@ -416,6 +416,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
   let runtimes: EnvironmentProviderRuntimes
   let alacrittyVersion: @Sendable () throws -> [Int]
   let ghosttyVersion: @Sendable () throws -> [Int]
+  let vscodeDiscover: @Sendable (VSCodeEditor) throws -> VSCodeEditor.Installation
+  let vscodeRunner: ProcessRunner
   let zedVersion: @Sendable () throws -> [Int]
   let accent: @Sendable (URL) -> MacOSAccentAdapter
   let transactionFaultInjector: @Sendable (EnvironmentTransactionCheckpoint) throws -> Void
@@ -439,6 +441,10 @@ struct EnvironmentApplyCommandRunner: Sendable {
     bordersRuntime: EnvironmentBordersRuntime = .live,
     alacrittyVersion: @escaping @Sendable () throws -> [Int] = AlacrittyAdapter.installedVersion,
     ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion,
+    vscodeDiscover: @escaping @Sendable (VSCodeEditor) throws -> VSCodeEditor.Installation = {
+      try $0.discover()
+    },
+    vscodeRunner: ProcessRunner = .live,
     zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion,
     accent: @escaping @Sendable (URL) -> MacOSAccentAdapter = { MacOSAccentAdapter(root: $0) },
     transactionFaultInjector:
@@ -454,6 +460,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
       herdr: herdrRuntime, spicetify: spicetifyRuntime, borders: bordersRuntime)
     self.alacrittyVersion = alacrittyVersion
     self.ghosttyVersion = ghosttyVersion
+    self.vscodeDiscover = vscodeDiscover
+    self.vscodeRunner = vscodeRunner
     self.zedVersion = zedVersion
     self.accent = accent
     self.transactionFaultInjector = transactionFaultInjector
@@ -589,8 +597,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
     let alacritty = Result { try profile.environment.presets.alacritty ? alacrittyVersion() : [] }
     let version = Result { try profile.environment.presets.ghostty ? ghosttyVersion() : [] }
     let providerInspector = EnvironmentProviderInspector(
-      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() },
-      zedVersion: zedVersion)
+      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() }, vscodeDiscover: vscodeDiscover,
+      vscodeRunner: vscodeRunner, zedVersion: zedVersion)
     let coordinator = EnvironmentTransactionCoordinator(
       homeDirectory: homeDirectory,
       stateRoot: stateRoot,
@@ -1016,9 +1024,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
         prerequisites: prerequisites,
         theme: theme,
         verifier: verifier,
-        bordersRuntime: runtimes.borders, alacrittyVersion: { try alacritty.get() },
-        ghosttyVersion: { try version.get() },
-        zedVersion: zedVersion
+        bordersRuntime: runtimes.borders, alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() },
+        vscodeDiscover: vscodeDiscover, vscodeRunner: vscodeRunner, zedVersion: zedVersion
       ).reportAfterApply(
         EnvironmentApplyObservation(
           theme: appliedTheme,
@@ -1057,8 +1064,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
       try commit && profile?.environment.presets.ghostty == true ? ghosttyVersion() : []
     }
     let inspector = EnvironmentProviderInspector(
-      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() },
-      zedVersion: zedVersion)
+      alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() }, vscodeDiscover: vscodeDiscover,
+      vscodeRunner: vscodeRunner, zedVersion: zedVersion)
     return try EnvironmentLifecycleLock(stateRoot: stateRoot).withLock {
       let store = EnvironmentStateStore(stateRoot: stateRoot)
       guard let transaction = try store.readTransaction() else { return (false, nil) }
@@ -1132,6 +1139,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
 }
 
 struct EnvironmentTeardownCommandRunner: Sendable {
+  let vscodeRunner: ProcessRunner
   let prerequisites: EnvironmentPrerequisiteInspector
   let theme: DesktopThemeController?
   let runtimes: EnvironmentProviderRuntimes
@@ -1148,8 +1156,10 @@ struct EnvironmentTeardownCommandRunner: Sendable {
     theme: DesktopThemeController? = nil,
     herdrRuntime: EnvironmentHerdrRuntimeReloader = .assumed,
     spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher = .assumed,
-    bordersRuntime: EnvironmentBordersRuntime = .live
+    bordersRuntime: EnvironmentBordersRuntime = .live,
+    vscodeRunner: ProcessRunner = .live
   ) {
+    self.vscodeRunner = vscodeRunner
     self.prerequisites = prerequisites
     self.theme = theme
     self.runtimes = EnvironmentProviderRuntimes(
@@ -1234,7 +1244,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
         }
         let coordinator = EnvironmentTransactionCoordinator(
           homeDirectory: homeDirectory,
-          stateRoot: stateRoot
+          stateRoot: stateRoot, inspector: EnvironmentProviderInspector(vscodeRunner: vscodeRunner)
         )
         let result = try runEnvironmentTeardown(
           coordinator: coordinator,

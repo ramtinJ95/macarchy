@@ -1391,6 +1391,60 @@ A file created by Macarchy is deleted only while it contains nothing else.
 Unrelated later user edits survive; an edited, moved or removed owned line is
 reported as drift and blocks teardown rather than overwriting the file.
 
+### VS Code-family theme consumers
+
+Install the editor yourself in `/Applications`, then enable only the editors you use:
+
+```toml
+[presets]
+vscode = true
+cursor = false
+vscodium = false
+windsurf = false
+```
+
+Run `macarchy setup plan`, review the settings adoption, then `macarchy setup apply`
+with the requested adoption digest. These presets are off by default and theme-only:
+they do not install editors, select an editor role, or change fonts and keybindings.
+
+Macarchy uses each app's **bundled CLI**, never a `code` command found on PATH:
+
+| Preset | Application | Bundled CLI (`Contents/Resources/app/bin/`) | Settings under `~/Library/Application Support/` |
+| --- | --- | --- | --- |
+| `vscode` | Visual Studio Code.app | `code` | `Code/User/settings.json` |
+| `cursor` | Cursor.app | `code` | `Cursor/User/settings.json` |
+| `vscodium` | VSCodium.app | `codium` | `VSCodium/User/settings.json` |
+| `windsurf` | Devin.app | `devin-desktop` | `Devin/User/settings.json` |
+| `windsurf` (legacy) | Windsurf.app | `windsurf` | `Windsurf/User/settings.json` |
+
+Windsurf is now **Windsurf (Devin Desktop)**. Inspection names the selected app.
+Each app is paired only with its own CLI and settings directory. Having both Devin
+and legacy Windsurf installed blocks adoption rather than silently choosing one.
+An app without its bundled CLI is a missing prerequisite, reported with that path.
+
+The generated `macarchy.macarchy-theme` extension contributes one **Macarchy** theme:
+workbench surfaces, semantic colors, terminal ANSI16 and a minimal syntax palette.
+Its version derives from its palette content; reconciliation installs a VSIX only
+when the editor reports a different installed version. No Marketplace download or
+additional packaging dependency is needed. Existing unrecorded extensions with this
+identifier block adoption—even if their display name is Macarchy.
+
+Macarchy owns only `workbench.colorTheme` in the default-profile JSONC file. If
+`window.autoDetectColorScheme` is already `true`, it instead sets **both**
+`workbench.preferredDarkColorTheme` and `workbench.preferredLightColorTheme` to
+`Macarchy`: there is one active palette, not a light/dark pair. Changing auto-detection
+after adoption reports drift; disable the preset and re-adopt to change this choice.
+Comments, trailing commas and unrelated settings are preserved. Teardown restores
+original member bytes (or removes inserted members), then uninstalls the owned
+extension. Failed uninstall retains recoverable ownership for retry.
+
+**Repaint boundary:** a newly installed extension version may require **Reload
+Window** or a new editor launch. Macarchy never issues a reload or restart.
+Non-default `User/profiles/*/settings.json` files are reported but not adopted.
+Workspace settings, color customizations and non-default profiles can override the
+theme; Macarchy does not rewrite them. Missing apps, CLI failures and owned-member
+drift are visible failures, not silent fallback to another editor.
+
 ### Zed theme consumer
 
 Install `/Applications/Zed.app` (0.122.2 or newer), then opt in and review setup:

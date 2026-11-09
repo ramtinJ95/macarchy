@@ -434,6 +434,22 @@ struct DependencyProfile: Sendable {
           remediation: .formula("starship")
         ),
         consumerCapability(
+          .vscode, probes: [.exists(VSCodeEditor.vscode.installations[0].applicationURL)],
+          remediation: .external("Install vscode in /Applications; Macarchy only themes it.")
+        ),
+        consumerCapability(
+          .cursor, probes: [.exists(VSCodeEditor.cursor.installations[0].applicationURL)],
+          remediation: .external("Install cursor in /Applications; Macarchy only themes it.")
+        ),
+        consumerCapability(
+          .vscodium, probes: [.exists(VSCodeEditor.vscodium.installations[0].applicationURL)],
+          remediation: .external("Install vscodium in /Applications; Macarchy only themes it.")
+        ),
+        consumerCapability(
+          .windsurf, probes: [.anyExecutable(VSCodeEditor.windsurf.installations.map(\.cli))],
+          remediation: .external("Install windsurf in /Applications; Macarchy only themes it.")
+        ),
+        consumerCapability(
           .zed,
           probes: [.exists(ZedAdapter.applicationURL)],
           remediation: .external("Install Zed.app in /Applications; Macarchy only themes it.")

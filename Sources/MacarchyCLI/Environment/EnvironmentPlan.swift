@@ -28,6 +28,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
   let bordersRuntime: EnvironmentBordersRuntime
   let alacrittyVersion: @Sendable () throws -> [Int]
   let ghosttyVersion: @Sendable () throws -> [Int]
+  let vscodeDiscover: @Sendable (VSCodeEditor) throws -> VSCodeEditor.Installation
+  let vscodeRunner: ProcessRunner
   let zedVersion: @Sendable () throws -> [Int]
 
   init(
@@ -36,6 +38,10 @@ struct EnvironmentPlanCommandRunner: Sendable {
     bordersRuntime: EnvironmentBordersRuntime = .live,
     alacrittyVersion: @escaping @Sendable () throws -> [Int] = AlacrittyAdapter.installedVersion,
     ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion,
+    vscodeDiscover: @escaping @Sendable (VSCodeEditor) throws -> VSCodeEditor.Installation = {
+      try $0.discover()
+    },
+    vscodeRunner: ProcessRunner = .live,
     zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion
   ) {
     self.prerequisites = prerequisites
@@ -43,6 +49,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
     self.bordersRuntime = bordersRuntime
     self.alacrittyVersion = alacrittyVersion
     self.ghosttyVersion = ghosttyVersion
+    self.vscodeDiscover = vscodeDiscover
+    self.vscodeRunner = vscodeRunner
     self.zedVersion = zedVersion
   }
 
@@ -127,9 +135,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
     let provider = homeDirectory.map {
       EnvironmentProviderInspector(
         bootstrapTheme: bootstrapTheme,
-        proposedNativeSources: Set(starterPlans.map(\.destination)),
-        alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion,
-        zedVersion: zedVersion
+        proposedNativeSources: Set(starterPlans.map(\.destination)), alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion,
+        vscodeDiscover: vscodeDiscover, vscodeRunner: vscodeRunner, zedVersion: zedVersion
       ).inspectIncludingBordersRuntime(
         composition: composition,
         homeDirectory: $0,
@@ -375,7 +382,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
     // Plan JSON lists preset actions in this order.
     for preset in [
-      EnvironmentPreset.zed, .alacritty, .ghostty, .tuicr, .codex, .herdr, .pi, .spicetify, .slack,
+      EnvironmentPreset.vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .ghostty, .tuicr, .codex,
+      .herdr, .pi, .spicetify, .slack,
     ]
     where preset.isEnabled(in: profile.presets) {
       actions.append(preset.planAction)

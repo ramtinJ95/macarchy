@@ -27,7 +27,7 @@ typealias EnvironmentAlacrittyFileTransaction = EnvironmentPresetFileTransaction
   EnvironmentAlacrittyOwnership
 >
 
-extension EnvironmentAlacrittyOwnership: EnvironmentPresetFileOwnership {
+extension EnvironmentAlacrittyOwnership: EnvironmentSelectedPresetFileOwnership {
   static let filesystem = EnvironmentPresetFilesystem(
     configurationLabel: "Alacritty configuration", residueLabel: "Alacritty transaction residue",
     nonRegularMessage: "Alacritty configuration is not an ordinary file")

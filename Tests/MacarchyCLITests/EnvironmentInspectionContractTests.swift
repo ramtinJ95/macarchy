@@ -80,8 +80,8 @@ struct EnvironmentInspectionContractTests {
     let off = selected ? "disabled" : "enabled"
     let tools = ["bat": on, "btop": off, "eza": off, "yazi": on]
     let presets = [
-      "alacritty": on, "codex": on, "ghostty": on, "zed": on, "herdr": off, "pi": on, "slack": off,
-      "spicetify": on,
+      "vscode": "disabled", "cursor": "disabled", "vscodium": "disabled", "windsurf": "disabled",
+      "alacritty": on, "codex": on, "ghostty": on, "zed": on, "herdr": off, "pi": on, "slack": off, "spicetify": on,
       "tuicr": off,
     ]
     let plan = try EnvironmentPlanCommandRunner().execute(
@@ -98,6 +98,7 @@ struct EnvironmentInspectionContractTests {
     let status = EnvironmentStatusCommandRunner.providers(profile.environment)
     #expect(
       status == [
+        "vscode": "disabled", "cursor": "disabled", "vscodium": "disabled", "windsurf": "disabled",
         "focus_ring": "borders",
         "terminal": "kitty", "shell": "zsh", "prompt": "starship", "history": "atuin",
         "editor": "neovim", "bat": on, "btop": off, "eza": off, "yazi": on,
