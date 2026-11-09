@@ -36,6 +36,7 @@ struct ConsumerCatalogTests {
           "sketchybar:required",
           "spicetify:required",
           "starship:required",
+          "vscode:required", "cursor:required", "vscodium:required", "windsurf:required",
           "zed:required",
           "alacritty:required",
           "ghostty:required",

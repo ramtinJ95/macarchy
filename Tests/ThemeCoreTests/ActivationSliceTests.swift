@@ -371,7 +371,7 @@ struct ActivationSliceTests {
       manifest.rendererVersions
         == [
           "atuin": 1, "bat": 1, "btop": 1, "capabilities": 1, "eza": 1, "herdr": 4,
-          "kitty": 3, "ghostty": 1, "zed": 1, "alacritty": 1,
+          "kitty": 3, "ghostty": 1, "zed": 1, "alacritty": 1, "vscode": 1,
           "neovim": 4, "normalized_theme": 1, "pi": 4, "sketchybar": 3,
           "slack": 2, "spicetify": 1, "starship": 1, "tuicr": 1, "wallpaper": 1,
           "yazi": 1,
@@ -390,6 +390,7 @@ struct ActivationSliceTests {
           "generated/starship.toml",
           "generated/alacritty.toml", "generated/ghostty.conf", "generated/zed.json",
           "generated/tuicr.toml",
+          "generated/vscode/package.json", "generated/vscode/themes/macarchy-color-theme.json",
           "generated/wallpaper.png",
           "generated/yazi-flavor.toml",
           "generated/yazi.tmTheme", "theme.json",
