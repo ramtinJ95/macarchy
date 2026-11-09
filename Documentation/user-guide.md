@@ -1254,6 +1254,13 @@ spaces but not `$` expansion or control characters. Native includes are trusted
 user configuration, not a sandbox; plan/status validate the connected file and
 owned theme seam, not arbitrary nested includes or behavior.
 
+Macarchy's Kitty theme sets every color Kitty's bundled themes set, including the
+256-color palette, so no color from an earlier theme remains. Kitty applies
+`light-theme.auto.conf`, `dark-theme.auto.conf` or `no-preference-theme.auto.conf`
+over every configured color, and colors set after the theme include win over it.
+`macarchy theme set` and `macarchy theme status` report each such file or line with
+the colors it sets; Macarchy never edits them. Delete or rename them to see the theme.
+
 ### Writable Atuin configuration
 
 To preserve the active Atuin settings as a writable native file:
