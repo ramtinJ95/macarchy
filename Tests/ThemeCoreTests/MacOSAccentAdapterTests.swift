@@ -69,9 +69,76 @@ struct MacOSAccentAdapterTests {
       let adapter = MacOSAccentAdapter(root: root, helper: fake.helper)
       let result = adapter.reconcileHoldingActivationLock(desired: .red)
       #expect(result.status == (mode == "unsupported" ? .unsupported : .failed))
-      #expect(try store.load() == original)
+      let retained = MacOSAccentRecord(
+        original: .graphite, applied: .blue, pending: mode == "unsupported" ? nil : .red)
+      #expect(try store.load() == retained)
       #expect(throws: (any Error).self) { try adapter.restoreHoldingActivationLock() }
-      #expect(try store.load() == original)
+      #expect(try store.load() == retained)
+    }
+  }
+
+  @Test(arguments: ["crash", "timeout", "garbled", "record-write"], [false, true])
+  func interruptedNativeWriteRestoresTheOriginal(mode: String, laterWrite: Bool) throws {
+    try withTemporaryRoot(named: "accent-interrupted-set") { (root: URL) throws in
+      let store = MacOSAccentStore(root: root)
+      if laterWrite { try store.persist(.init(original: .graphite, applied: .blue)) }
+      let current: MacOSAccent = laterWrite ? .blue : .graphite
+      let fake = AccentFake(current, root: root, mode: "mutating-" + mode)
+      let adapter = MacOSAccentAdapter(root: root, helper: fake.helper)
+      #expect(adapter.reconcileHoldingActivationLock(desired: .red).status == .failed)
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o700], ofItemAtPath: store.url.deletingLastPathComponent().path)
+      #expect(fake.current == .red)
+      #expect(try store.load() == .init(original: .graphite, applied: current, pending: .red))
+      let plan = try adapter.restorationPlan()
+      #expect(plan.message == "Would restore the original graphite accent.")
+      #expect(fake.current == .red)
+      let restored = try adapter.restoreHoldingActivationLock()
+      #expect(restored.message == "Restored the original graphite accent.")
+      #expect(fake.current == .graphite)
+      #expect(try store.load()?.pending == .red)
+    }
+  }
+
+  @Test(arguments: ["crash", "timeout", "garbled", "record-write"])
+  func alreadyDesiredFinalizesInterruptedWriteWithoutAnotherSet(mode: String) throws {
+    try withTemporaryRoot(named: "accent-interrupted-confirm") { (root: URL) throws in
+      let store = MacOSAccentStore(root: root)
+      let fake = AccentFake(.graphite, root: root, mode: "mutating-" + mode)
+      let adapter = MacOSAccentAdapter(root: root, helper: fake.helper)
+      #expect(adapter.reconcileHoldingActivationLock(desired: .red).status == .failed)
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o700], ofItemAtPath: store.url.deletingLastPathComponent().path)
+      #expect(adapter.reconcileHoldingActivationLock(desired: .red).status == .applied)
+      #expect(try store.load() == .init(original: .graphite, applied: .red))
+      #expect(fake.writes == [.red])
+    }
+  }
+
+  @Test func observedPendingValueIsOwnedBeforeAttemptingAnotherTarget() throws {
+    try withTemporaryRoot(named: "accent-interrupted-next-theme") { (root: URL) throws in
+      let store = MacOSAccentStore(root: root)
+      try store.persist(.init(original: .graphite, applied: .blue, pending: .red))
+      let fake = AccentFake(.red, root: root, mode: "failed")
+      #expect(
+        MacOSAccentAdapter(root: root, helper: fake.helper)
+          .reconcileHoldingActivationLock(desired: .purple).status == .failed)
+      #expect(try store.load() == .init(original: .graphite, applied: .red, pending: .purple))
+      let recovery = AccentFake(.red, root: root)
+      let result = try MacOSAccentAdapter(root: root, helper: recovery.helper)
+        .restoreHoldingActivationLock()
+      #expect(result.message == "Restored the original graphite accent.")
+      #expect(recovery.current == .graphite)
+    }
+  }
+
+  @Test func pendingHardwareValueIsInvalidAndLegacyRecordsHaveNoPendingValue() throws {
+    try withTemporaryRoot(named: "accent-record-version") { (root: URL) throws in
+      let store = MacOSAccentStore(root: root)
+      try store.persist(.init(original: .graphite, applied: .blue, pending: .hardware))
+      #expect(throws: MacOSLookError.self) { try store.load() }
+      try Data(#"{"original":-1,"applied":4}"#.utf8).write(to: store.url)
+      #expect(try store.load() == .init(original: .graphite, applied: .blue))
     }
   }
 
@@ -117,6 +184,7 @@ private final class AccentFake: Sendable {
     self.mode = mode
   }
   var writes: [MacOSAccent] { state.withLock { $0.writes } }
+  var current: MacOSAccent { state.withLock { $0.current } }
   var helper: MacOSLookHelper {
     MacOSLookHelper(
       executableURL: URL(filePath: "/usr/bin/true"),
@@ -135,6 +203,34 @@ private final class AccentFake: Sendable {
             output: "{\"ok\":true,\"value\":\(self.state.withLock { $0.current.rawValue })}")
         }
         #expect(try MacOSAccentStore(root: self.root).load() != nil)
+        if self.mode.hasPrefix("mutating-") {
+          let raw = try #require(Int(request.arguments[2]))
+          let value = try #require(MacOSAccent(rawValue: raw))
+          let first = self.state.withLock { state in
+            let first = state.writes.isEmpty
+            state.current = value
+            state.writes.append(value)
+            return first
+          }
+          if first {
+            #expect(try MacOSAccentStore(root: self.root).load()?.pending == value)
+            switch self.mode {
+            case "mutating-timeout": throw ProcessRunnerError.timedOut(request.executableURL, 20)
+            case "mutating-crash":
+              return ProcessResult(terminationStatus: 139, output: "Segmentation fault")
+            case "mutating-garbled":
+              return ProcessResult(terminationStatus: 0, output: "garbled after native write")
+            case "mutating-record-write":
+              try FileManager.default.setAttributes(
+                [.posixPermissions: 0o500],
+                ofItemAtPath: MacOSAccentStore(root: self.root).url.deletingLastPathComponent().path
+              )
+            default: Issue.record("Unexpected mutating failure mode")
+            }
+          }
+          return ProcessResult(
+            terminationStatus: 0, output: "{\"ok\":true,\"value\":\(value.rawValue)}")
+        }
         switch self.mode {
         case "timeout": throw ProcessRunnerError.timedOut(request.executableURL, 20)
         case "crash": return ProcessResult(terminationStatus: 139, output: "Segmentation fault")
