@@ -21,9 +21,10 @@ package enum ChildProcess {
     case spawn(Int32)
   }
 
-  /// Spawns `path` with argv `[path] + arguments` and this process's environment. Attributes
-  /// apply in this order: signal defaults, signal mask, flags, process group, then file actions.
-  /// A nil `fileActions` passes no file-actions object at all.
+  /// Spawns `path` with argv `[path] + arguments` and `environment` (`NAME=value` entries), or
+  /// this process's environment when nil. Attributes apply in this order: signal defaults, signal
+  /// mask, flags, process group, then file actions. A nil `fileActions` passes no file-actions
+  /// object at all.
   package static func spawn(
     _ path: String,
     arguments: [String],
@@ -31,7 +32,8 @@ package enum ChildProcess {
     signalDefaults: sigset_t? = nil,
     signalMask: sigset_t? = nil,
     processGroup: pid_t? = nil,
-    fileActions: [FileAction]? = nil
+    fileActions: [FileAction]? = nil,
+    environment: [String]? = nil
   ) -> Result<pid_t, SpawnFailure> {
     var attributes: posix_spawnattr_t?
     var code = posix_spawnattr_init(&attributes)
@@ -81,11 +83,20 @@ package enum ChildProcess {
     }
     guard storage.count == argv.count else { return .failure(.allocateArguments) }
     var pointers: [UnsafeMutablePointer<CChar>?] = storage.map { $0 } + [nil]
+    let environmentStorage = (environment ?? []).compactMap { strdup($0) }
+    defer {
+      for pointer in environmentStorage { free(pointer) }
+    }
+    guard environmentStorage.count == (environment ?? []).count else {
+      return .failure(.allocateArguments)
+    }
+    var environmentPointers: [UnsafeMutablePointer<CChar>?] = environmentStorage.map { $0 } + [nil]
     var pid: pid_t = 0
-    if actionsInitialized {
-      code = posix_spawn(&pid, path, &actions, &attributes, &pointers, environ)
-    } else {
-      code = posix_spawn(&pid, path, nil, &attributes, &pointers, environ)
+    code = environmentPointers.withUnsafeMutableBufferPointer { custom in
+      let envp = environment == nil ? environ : custom.baseAddress
+      return actionsInitialized
+        ? posix_spawn(&pid, path, &actions, &attributes, &pointers, envp)
+        : posix_spawn(&pid, path, nil, &attributes, &pointers, envp)
     }
     guard code == 0 else { return .failure(.spawn(code)) }
     return .success(pid)
