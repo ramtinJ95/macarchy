@@ -16,6 +16,24 @@ package struct GhosttyAdapter: Sendable {
   let executableURL: URL
   let controlIsAvailable: @Sendable () -> Bool
   let processRunner: ProcessRunner
+  let processes: GhosttyProcesses
+
+  init(
+    root: URL, home: URL, configurationFiles: [URL], ownedConfigurationURL: URL?,
+    ownedLineIndex: Int?, executableURL: URL, controlIsAvailable: @escaping @Sendable () -> Bool,
+    processRunner: ProcessRunner, processes: GhosttyProcesses = .live
+  ) {
+    self.root = root
+    self.home = home
+    self.configurationFiles = configurationFiles
+    self.ownedConfigurationURL = ownedConfigurationURL
+    self.ownedLineIndex = ownedLineIndex
+    // proc_pidpath returns the real executable. Probe this exact resolved bundle path too.
+    self.executableURL = executableURL.resolvingSymlinksInPath()
+    self.controlIsAvailable = controlIsAvailable
+    self.processRunner = processRunner
+    self.processes = processes
+  }
 
   enum Failure: Error, CustomStringConvertible {
     case includeDrift
@@ -81,14 +99,8 @@ package struct GhosttyAdapter: Sendable {
       // activated by an older Macarchy build). Re-select the theme to generate it.
       _ = try GhosttyConfiguration.read(
         StateLayout(root: root).currentThemeArtifact(Self.outputPath))
-      let running = try processRunner.run(
-        ProcessRequest(
-          executableURL: URL(filePath: "/usr/bin/pgrep"), arguments: ["-x", "ghostty"], timeout: 5))
-      guard running.terminationStatus == 0 || running.terminationStatus == 1 else {
-        return AdapterOutcome(
-          status: .failed, message: "Cannot inspect running Ghostty processes: \(running.output)")
-      }
-      if running.terminationStatus == 1 {
+      let running = try processes.matching(executablePath: executableURL.path)
+      if running.isEmpty {
         return AdapterOutcome(
           status: .applied,
           message: ["Ghostty will use the theme on next launch.", overrideMessage()].compactMap {
@@ -107,14 +119,7 @@ package struct GhosttyAdapter: Sendable {
             "Ghostty versions before 1.2.0: press ⌘⇧, in Ghostty to reload.", overrideMessage(),
           ].compactMap { $0 }.joined(separator: " "))
       }
-      let reload = try processRunner.run(
-        ProcessRequest(
-          executableURL: URL(filePath: "/usr/bin/killall"), arguments: ["-USR2", "ghostty"],
-          timeout: 5))
-      guard reload.terminationStatus == 0 else {
-        return AdapterOutcome(
-          status: .failed, message: "Ghostty rejected SIGUSR2: \(reload.output)")
-      }
+      for identity in running { try processes.reload(identity) }
       return AdapterOutcome(status: .applied, message: overrideMessage())
     }
   }
