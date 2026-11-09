@@ -105,6 +105,23 @@ enum ThemeBrowserApplyLaunchError: Error, CustomStringConvertible, Sendable {
   }
 }
 
+/// Asks the browser's child process to undo the last theme change instead of opening a browser.
+enum ThemeBrowserUndoRequest {
+  static let environmentKey = "MACARCHY_THEME_BROWSER_UNDO"
+
+  static func isPresent(in environment: [String: String]) -> Bool {
+    environment[environmentKey] == "1"
+  }
+
+  static func environment(addingTo base: [String: String]) -> [String: String] {
+    var environment = base
+    environment[environmentKey] = "1"
+    environment.removeValue(forKey: ThemeBrowserApplyRequest.themeEnvironmentKey)
+    environment.removeValue(forKey: ThemeBrowserApplyRequest.backgroundEnvironmentKey)
+    return environment
+  }
+}
+
 struct ThemeBrowserApplyProcessLauncher: Sendable {
   struct RunningProcess: Sendable {
     let isRunning: @Sendable () -> Bool
@@ -136,6 +153,17 @@ struct ThemeBrowserApplyProcessLauncher: Sendable {
     guard let executableURL else { throw ThemeBrowserApplyLaunchError.missingExecutable }
     let request = ThemeBrowserApplyRequest(selection: selection)
     return try spawn(executableURL, arguments, request.environment(addingTo: environment))
+  }
+
+  /// Runs `theme undo` in a child process, through the same command and options as the browser.
+  func launchUndo(
+    executableURL: URL? = Bundle.main.executableURL,
+    arguments: [String] = Array(CommandLine.arguments.dropFirst()),
+    environment: [String: String] = ProcessInfo.processInfo.environment
+  ) throws -> RunningProcess {
+    guard let executableURL else { throw ThemeBrowserApplyLaunchError.missingExecutable }
+    return try spawn(
+      executableURL, arguments, ThemeBrowserUndoRequest.environment(addingTo: environment))
   }
 }
 

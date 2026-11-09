@@ -17,6 +17,7 @@ private final class ThemeBrowserWindow: NSPanel {
 
   var navigate: ((Navigation) -> Void)?
   var cancel: (() -> Void)?
+  var undo: (() -> Void)?
 
   override var canBecomeKey: Bool { true }
 
@@ -30,6 +31,11 @@ private final class ThemeBrowserWindow: NSPanel {
       return
     }
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    // Command-Z undoes the last theme change, not typing in the filter.
+    if modifiers == .command, event.charactersIgnoringModifiers == "z" {
+      undo?()
+      return
+    }
     let direction = event.keyCode == 123 ? -1 : event.keyCode == 124 ? 1 : 0
     if direction != 0, modifiers.contains(.shift),
       modifiers.isDisjoint(with: [.command, .control, .option])
@@ -190,6 +196,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private let galleryLoader: ThemeBrowserGalleryLoader
   private let launchSelection:
     (ThemeBrowserSelection) throws -> ThemeBrowserApplyProcessLauncher.RunningProcess
+  private let launchUndo: () throws -> ThemeBrowserApplyProcessLauncher.RunningProcess
   private let deleteSelection:
     @Sendable (ThemePackageDeletionTarget) async -> ThemeBrowserDeletionOutcome
   private let reloadContent: @Sendable () async throws -> ThemeBrowserContent
@@ -218,7 +225,15 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private let backgroundImageCache = NSCache<NSString, NSImage>()
   private var applyProcess: ThemeBrowserApplyProcessLauncher.RunningProcess?
   private var applyTimer: Timer?
-  private var applyingItem: ThemeBrowserItem?
+  /// What the status panel reports when the running apply or undo process ends.
+  private struct PendingResult {
+    /// The selected theme when the process started; its palette colors the status panel.
+    let item: ThemeBrowserItem
+    let success: String
+    /// Describes a failure from the process's exit status.
+    let failure: (Int32) -> String
+  }
+  private var pendingResult: PendingResult?
   private var isApplying = false
   private var isDeleting = false
   private var isSavingScreenSaver = false
@@ -265,7 +280,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private let statusLabel = NSTextField(wrappingLabelWithString: "")
   private let keyboardHelp = NSTextField(
     labelWithString:
-      "↑↓ theme   ←→ wallpaper   ⇧←→ preview   ⌘D favorite   ↩ apply   esc close"
+      "↑↓ theme   ←→ wallpaper   ⇧←→ preview   ⌘D favorite   ⌘Z undo   ↩ apply   esc close"
   )
 
   init(
@@ -276,6 +291,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     deleteSelection:
       @escaping @Sendable (ThemePackageDeletionTarget) async -> ThemeBrowserDeletionOutcome,
     reloadContent: @escaping @Sendable () async throws -> ThemeBrowserContent,
+    launchUndo: @escaping () throws -> ThemeBrowserApplyProcessLauncher.RunningProcess,
     launchSelection:
       @escaping (ThemeBrowserSelection) throws -> ThemeBrowserApplyProcessLauncher.RunningProcess
   ) throws {
@@ -285,6 +301,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     self.saveScreenSaverSelection = saveScreenSaverSelection
     self.saveFavorite = saveFavorite
     self.launchSelection = launchSelection
+    self.launchUndo = launchUndo
     browserState = ThemeBrowserState(content: content)
     backgroundImageCache.countLimit = 24
     backgroundImageCache.totalCostLimit = 96 * 1_024 * 1_024
@@ -309,6 +326,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     super.init(window: window)
     window.delegate = self
     window.cancel = { [weak self] in self?.cancel() }
+    window.undo = { [weak self] in self?.undoLastChange() }
     backdrops.onClick = { [weak self] in self?.dismiss() }
     window.navigate = { [weak self] navigation in
       guard self?.isBusy == false else { return }
@@ -648,45 +666,75 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     setControlsEnabled(true)
   }
 
-  /// Starts activation, then hands over to the status panel: the picker and backdrops leave the
-  /// screen, the panel reports the result and closes, and the browser exits with it.
   @objc private func applySelectedTheme(_ sender: Any?) {
-    guard !isBusy, let item = selectedItem else { return }
+    guard let item = selectedItem else { return }
+    let selection = browserState.selection
+    runActivation(
+      { try self.launchSelection(selection) },
+      progress: "Applying \(item.displayName)…",
+      result: PendingResult(
+        item: item, success: "Applied \(item.displayName).",
+        failure: {
+          "Theme activation failed (exit \($0)). Run 'macarchy theme status' for details."
+        }))
+  }
+
+  private func undoLastChange() {
+    guard let item = selectedItem else { return }
+    runActivation(
+      launchUndo,
+      progress: "Undoing the last theme change…",
+      result: PendingResult(
+        item: item, success: "Returned to the previous theme.",
+        failure: {
+          "Nothing was undone (exit \($0)). Run 'macarchy theme undo --dry-run' for details."
+        }))
+  }
+
+  /// Starts an apply or undo process, then hands over to the status panel: the picker and
+  /// backdrops leave the screen, the panel reports the result and closes, and the browser exits.
+  private func runActivation(
+    _ launch: () throws -> ThemeBrowserApplyProcessLauncher.RunningProcess,
+    progress: String,
+    result: PendingResult
+  ) {
+    guard !isBusy else { return }
     isApplying = true
     setControlsEnabled(false)
     do {
-      applyProcess = try launchSelection(browserState.selection)
+      applyProcess = try launch()
     } catch {
       isApplying = false
       setControlsEnabled(true)
-      statusLabel.textColor = item.metadata.semantic.error.nsColor
+      statusLabel.textColor = result.item.metadata.semantic.error.nsColor
       statusLabel.stringValue = "Could not start theme activation: \(error)"
       statusLabel.toolTip = String(describing: error)
       return
     }
-    applyingItem = item
+    pendingResult = result
     window?.orderOut(nil)
     backdrops.close()
     let panel = ThemeBrowserStatusPanel(display: layout.pickerDisplay)
     panel.show(
-      "Applying \(item.displayName)…", text: item.metadata.semantic.text.nsColor,
-      background: item.metadata.semantic.surface.nsColor)
+      progress, text: result.item.metadata.semantic.text.nsColor,
+      background: result.item.metadata.semantic.surface.nsColor)
     statusPanel = panel
     applyTimer = poll(every: 0.1, #selector(checkApplyProcess(_:)))
   }
 
   @objc private func checkApplyProcess(_ timer: Timer) {
-    guard let process = applyProcess, !process.isRunning(), let item = applyingItem else { return }
+    guard let process = applyProcess, !process.isRunning(), let result = pendingResult else {
+      return
+    }
     timer.invalidate()
     applyTimer = nil
     applyProcess = nil
     let status = process.terminationStatus()
     let succeeded = status == 0
+    let semantic = result.item.metadata.semantic
     statusPanel?.finish(
-      succeeded
-        ? "Applied \(item.displayName)."
-        : "Theme activation failed (exit \(status)). Run 'macarchy theme status' for details.",
-      text: (succeeded ? item.metadata.semantic.accent : item.metadata.semantic.error).nsColor,
+      succeeded ? result.success : result.failure(status),
+      text: (succeeded ? semantic.accent : semantic.error).nsColor,
       delay: succeeded
         ? ThemeBrowserStatusPanel.successDelay : ThemeBrowserStatusPanel.failureDelay
     ) { [weak self] in

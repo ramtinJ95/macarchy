@@ -263,6 +263,7 @@ The browser opens on the display with the pointer, also over full-screen apps, a
 covers every display with the selected theme's background, blurred. Type to filter;
 the first match is selected. Escape clears the filter, then closes the browser.
 Return applies the selection, and a small panel reports the result and closes.
+Command-Z undoes the last theme or background change, like `macarchy theme undo`.
 
 Macarchy ships **Catppuccin Mocha, Tokyo Night, and Kanagawa Wave**. Theme changes
 update supported running applications where possible. Some changes take effect

@@ -262,6 +262,16 @@ extension Theme {
     mutating func run() async throws {
       let stateRoot = state.stateRootURL
       let repository = roots.repository(userRoot: StateLayout(root: stateRoot).userThemes)
+      if ThemeBrowserUndoRequest.isPresent(in: ProcessInfo.processInfo.environment) {
+        let execution = try await ThemeUndoCommandRunner.live.execute(
+          repository: repository,
+          stateRoot: stateRoot,
+          consumerPaths: state.consumerPaths,
+          dryRun: false
+        )
+        try emitExecution(execution.command)
+        return
+      }
       if let request = ThemeBrowserApplyRequest(
         environment: ProcessInfo.processInfo.environment
       ) {
@@ -306,7 +316,8 @@ extension Theme {
             try await ThemePackageLock(root: stateRoot).withLock {
               try ThemeBrowserCommandLoader.live.load(repository: repository, stateRoot: stateRoot)
             }
-          }
+          },
+          launchUndo: { try launcher.launchUndo() }
         ) { selection in
           try launcher.launch(selection: selection)
         }
