@@ -22,6 +22,8 @@ struct ActionMenuAction: CaseIterable, Equatable, Sendable {
   let title: String
   let searchText: String
   let command: Command
+  /// Set for a theme row, which `ThemeSearch` matches instead of `searchText`.
+  var theme: ThemeMenuEntry? = nil
 
   static var allCases: [Self] {
     ProfileEditAction.allCases.map(Self.profile)
@@ -62,6 +64,16 @@ struct ActionMenuAction: CaseIterable, Equatable, Sendable {
     category: "Appearance", title: "Undo last theme change",
     searchText: "appearance undo revert previous theme background",
     command: .alertingViewer(MacarchyInvocation.themeUndo))
+
+  /// Activates an installed theme; favorites are starred.
+  static func themeRow(_ entry: ThemeMenuEntry) -> Self {
+    Self(
+      category: "Appearance",
+      title: entry.isFavorite ? "★ \(entry.displayName)" : entry.displayName,
+      searchText: "",
+      command: .alertingViewer(MacarchyInvocation.themeSet(entry.id)),
+      theme: entry)
+  }
 
   static let keybindings = Self(
     category: "Appearance", title: "Keybindings",
@@ -140,9 +152,47 @@ struct ActionMenuAction: CaseIterable, Equatable, Sendable {
   }
 }
 
+/// An installed theme as a menu row.
+struct ThemeMenuEntry: Equatable, Sendable {
+  let id: String
+  let displayName: String
+  let appearance: ThemeAppearance
+  let isFavorite: Bool
+
+  /// Installed themes with favorites first, or an explanation when they cannot be listed. The
+  /// favorites record is only read here; listing or changing favorites prunes it. An unreadable
+  /// record deliberately just leaves no theme starred, because the menu has no room for the
+  /// notice that `macarchy theme favorite list` and the theme browser show.
+  static func load(stateRoot: URL, builtInThemes: URL) -> Result<[Self], any Error> {
+    Result {
+      let metadata = try ThemeRepository(
+        builtInRoot: builtInThemes, userRoot: StateLayout(root: stateRoot).userThemes
+      ).metadata()
+      let favorites = Set((try? ThemeFavoritesStore(root: stateRoot).load()) ?? [])
+      let entries = metadata.map { theme in
+        Self(
+          id: theme.id, displayName: theme.displayName, appearance: theme.appearance,
+          isFavorite: favorites.contains(theme.id))
+      }
+      return favoritesFirst(entries, favorites: favorites, id: \.id)
+    }
+  }
+}
+
 struct ActionMenuState {
-  private(set) var actions = ActionMenuAction.allCases
+  private(set) var actions: [ActionMenuAction]
   private(set) var selection: Int? = 0
+  /// Theme rows, favorites first.
+  private let themes: [ActionMenuAction]
+  private let themeNotice: String?
+
+  /// `themes` come favorites first. Without a query only favorites show, so the menu stays a
+  /// short list of actions; a query searches every theme.
+  init(themes: [ThemeMenuEntry] = [], themeNotice: String? = nil) {
+    self.themes = themes.map(ActionMenuAction.themeRow)
+    self.themeNotice = themeNotice
+    actions = Self.rows(query: "", themes: self.themes)
+  }
 
   private static let categories: String = {
     var seen = Set<String>()
@@ -155,15 +205,32 @@ struct ActionMenuState {
   }
 
   var notice: String {
-    actions.isEmpty ? "No matching actions" : Self.categories
+    actions.isEmpty ? "No matching actions" : themeNotice ?? Self.categories
   }
 
   mutating func search(_ query: String) {
+    actions = Self.rows(query: query, themes: themes)
+    selection = actions.isEmpty ? nil : 0
+  }
+
+  /// The matching actions in menu order, with matching theme rows after the Appearance actions.
+  private static func rows(query: String, themes: [ActionMenuAction]) -> [ActionMenuAction] {
     let terms = query.lowercased().split(whereSeparator: \.isWhitespace)
-    actions = ActionMenuAction.allCases.filter { action in
+    let actions = ActionMenuAction.allCases.filter { action in
       terms.allSatisfy { action.searchText.contains($0) }
     }
-    selection = actions.isEmpty ? nil : 0
+    let search = ThemeSearch(query)
+    let themeRows = themes.filter { row in
+      guard let theme = row.theme else { return false }
+      return search.isEmpty
+        ? theme.isFavorite
+        : search.matches(id: theme.id, displayName: theme.displayName, appearance: theme.appearance)
+    }
+    let order = ActionMenuAction.allCases
+    let lastAppearance = order.lastIndex { $0.category == "Appearance" } ?? -1
+    let insertion =
+      actions.firstIndex { (order.firstIndex(of: $0) ?? 0) > lastAppearance } ?? actions.count
+    return Array(actions[..<insertion]) + themeRows + Array(actions[insertion...])
   }
 
   mutating func move(by delta: Int) {
@@ -187,7 +254,12 @@ struct ActionMenu: AsyncParsableCommand {
     let runtime = RuntimeEnvironment.live
     let root = StateLayout.defaultRoot(in: FileManager.default.homeDirectoryForCurrentUser)
     let theme = try loadPopupTheme(stateRoot: root, bundledThemesRoot: runtime.builtInThemesURL)
-    let controller = try ActionMenuWindowController(theme: theme)
+    let themes = ThemeMenuEntry.load(stateRoot: root, builtInThemes: runtime.builtInThemesURL)
+    let controller = try ActionMenuWindowController(
+      theme: theme,
+      state: ActionMenuState(
+        themes: (try? themes.get()) ?? [],
+        themeNotice: Self.themeNotice(themes)))
     let profileArguments = profiles.menuArguments
     try Self.runSession(
       showMenu: { try controller.run() },
@@ -204,6 +276,11 @@ struct ActionMenu: AsyncParsableCommand {
       showFailure: { action, error in
         showNativeAlert(title: "Could not open \(action.title)", message: String(describing: error))
       })
+  }
+
+  static func themeNotice(_ themes: Result<[ThemeMenuEntry], any Error>) -> String? {
+    guard case .failure(let error) = themes else { return nil }
+    return "Themes are not listed: \(error)"
   }
 
   @MainActor
@@ -311,16 +388,17 @@ final class ActionMenuWindowController: NSWindowController, NSApplicationDelegat
 {
   static let windowTitle = "Macarchy Actions"
   private let theme: NormalizedTheme
-  private var state = ActionMenuState()
+  private var state: ActionMenuState
   private var dispatched: ActionMenuAction?
   private let search = NSSearchField()
   private let table = ActionMenuTable()
-  private let notice = NSTextField(labelWithString: ActionMenuState().notice)
+  private let notice = NSTextField(labelWithString: "")
   private let hint = NSTextField(labelWithString: "")
   private let fieldEditor = ActionMenuFieldEditor()
 
-  init(theme: NormalizedTheme) throws {
+  init(theme: NormalizedTheme, state: ActionMenuState = ActionMenuState()) throws {
     self.theme = theme
+    self.state = state
     guard let screen = popupActiveScreen() else { throw ActionMenuError.noActiveDisplay }
     let visible = screen.visibleFrame
     let width = min(560, visible.width - 48)
@@ -339,6 +417,7 @@ final class ActionMenuWindowController: NSWindowController, NSApplicationDelegat
     window.appearance = NSAppearance(named: theme.appearance == .dark ? .darkAqua : .aqua)
     super.init(window: window)
     window.delegate = self
+    notice.stringValue = state.notice
     configure(window)
     PopupFocusBorder(accent: theme.semantic.accent.nsColor, width: 3).attach(to: window)
   }
