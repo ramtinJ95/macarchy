@@ -35,16 +35,33 @@ package func withChildProcessStopSignals<T>(
       Darwin.signal(number, handler)
     }
     if reraise, let number = received.withLock({ $0 }) {
-      Darwin.signal(number, SIG_DFL)
-      // raise is thread-directed: a worker can have this signal blocked even though
-      // the process-directed original reached DispatchSource. Unblock this thread
-      // before re-raising so returning cannot swallow the termination request.
-      var unblocked: sigset_t = 0
-      sigemptyset(&unblocked)
-      sigaddset(&unblocked, number)
-      pthread_sigmask(SIG_UNBLOCK, &unblocked, nil)
-      Darwin.raise(number)
+      reraiseDefaultStopSignal(number)
     }
   }
   return try body { received.withLock { $0 } }
+}
+
+/// Darwin's thread-directed raise can return successfully on a Swift worker without
+/// terminating, even with SIG_DFL and an unblocked signal (guest regression evidence).
+/// Re-send to the process and never return to application work after a stop request.
+private func reraiseDefaultStopSignal(_ number: Int32) -> Never {
+  var action = sigaction()
+  action.__sigaction_u.__sa_handler = SIG_DFL
+  sigemptyset(&action.sa_mask)
+  guard sigaction(number, &action, nil) == 0 else {
+    fatalError("Cannot restore stop signal \(number) (errno \(errno))")
+  }
+  var waitMask: sigset_t = 0
+  let maskCode = pthread_sigmask(SIG_BLOCK, nil, &waitMask)
+  guard maskCode == 0 else {
+    fatalError("Cannot inspect stop signal mask (errno \(maskCode))")
+  }
+  sigdelset(&waitMask, number)
+  guard kill(getpid(), number) == 0 else {
+    fatalError("Cannot re-send stop signal \(number) (errno \(errno))")
+  }
+  // Delivery can select another thread or remain pending if all threads block it.
+  // Atomically unblock this signal while waiting. Never turn interruption into a
+  // normal return/exit, even if an unrelated handled signal wakes sigsuspend.
+  while true { sigsuspend(&waitMask) }
 }
