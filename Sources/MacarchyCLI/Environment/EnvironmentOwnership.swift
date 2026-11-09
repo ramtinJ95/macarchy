@@ -279,6 +279,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
   let herdr: EnvironmentHerdrOwnership?
   let pi: EnvironmentPiOwnership?
   let spicetify: EnvironmentSpicetifyOwnership?
+  let ghostty: EnvironmentGhosttyOwnership?
   let tuicr: EnvironmentTuicrOwnership?
   let codexEnabled: Bool
   let herdrEnabled: Bool
@@ -302,6 +303,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     herdr: EnvironmentHerdrOwnership? = nil,
     pi: EnvironmentPiOwnership? = nil,
     spicetify: EnvironmentSpicetifyOwnership? = nil,
+    ghostty: EnvironmentGhosttyOwnership? = nil,
     tuicr: EnvironmentTuicrOwnership? = nil,
     codexEnabled: Bool = false,
     herdrEnabled: Bool = false,
@@ -327,6 +329,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     self.herdr = herdr
     self.pi = pi
     self.spicetify = spicetify
+    self.ghostty = ghostty
     self.tuicr = tuicr
     self.codexEnabled = codexEnabled
     self.herdrEnabled = herdrEnabled
@@ -356,7 +359,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       createdDirectories: base?.createdDirectories ?? [],
       originalThemeBridges: base?.originalThemeBridges ?? [],
       btop: base?.btop, borders: base?.borders, codex: base?.codex, herdr: herdr, pi: base?.pi,
-      spicetify: base?.spicetify, tuicr: base?.tuicr,
+      spicetify: base?.spicetify, ghostty: base?.ghostty, tuicr: base?.tuicr,
       codexEnabled: base?.codexEnabled ?? false, herdrEnabled: base?.herdrEnabled ?? false,
       piEnabled: base?.piEnabled ?? false, slackEnabled: base?.slackEnabled ?? false,
       spicetifyEnabled: base?.spicetifyEnabled ?? false,
@@ -378,6 +381,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     case herdr
     case pi
     case spicetify
+    case ghostty
     case tuicr
     case codexEnabled = "codex_enabled"
     case herdrEnabled = "herdr_enabled"
@@ -407,6 +411,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     pi = try container.decodeIfPresent(EnvironmentPiOwnership.self, forKey: .pi)
     spicetify = try container.decodeIfPresent(
       EnvironmentSpicetifyOwnership.self, forKey: .spicetify)
+    ghostty = try container.decodeIfPresent(EnvironmentGhosttyOwnership.self, forKey: .ghostty)
     tuicr = try container.decodeIfPresent(EnvironmentTuicrOwnership.self, forKey: .tuicr)
     codexEnabled = try container.decodeIfPresent(Bool.self, forKey: .codexEnabled) ?? false
     herdrEnabled = try container.decodeIfPresent(Bool.self, forKey: .herdrEnabled) ?? false
@@ -459,6 +464,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       herdr?.hasValidShape ?? true,
       pi?.hasValidShape ?? true,
       spicetify?.hasValidShape ?? true,
+      ghostty?.hasValidShape ?? true,
       tuicr?.hasValidShape ?? true,
       hasValidThemeAdapterInventory
     else { return false }

@@ -343,7 +343,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       actions.append(tool.planAction)
     }
     // Plan JSON lists preset actions in this order.
-    for preset in [EnvironmentPreset.tuicr, .codex, .herdr, .pi, .spicetify, .slack]
+    for preset in [EnvironmentPreset.ghostty, .tuicr, .codex, .herdr, .pi, .spicetify, .slack]
     where preset.isEnabled(in: profile.presets) {
       actions.append(preset.planAction)
     }

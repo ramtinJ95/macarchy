@@ -74,6 +74,7 @@ enum EnvironmentDailyTool: String, CaseIterable, Sendable {
 
 /// An application preset, in profile-key order.
 enum EnvironmentPreset: String, CaseIterable, Sendable {
+  case ghostty
   case codex
   case herdr
   case pi
@@ -88,6 +89,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .pi: presets.pi
     case .slack: presets.slack
     case .spicetify: presets.spicetify
+    case .ghostty: presets.ghostty
     case .tuicr: presets.tuicr
     }
   }
@@ -99,6 +101,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .pi: ownership.piEnabled
     case .slack: ownership.slackEnabled
     case .spicetify: ownership.spicetifyEnabled
+    case .ghostty: ownership.ghostty != nil
     case .tuicr: ownership.tuicrEnabled
     }
   }
@@ -111,6 +114,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .pi: PiAdapter.id
     case .slack: nil
     case .spicetify: SpicetifyAdapter.id
+    case .ghostty: GhosttyAdapter.id
     case .tuicr: TuicrAdapter.id
     }
   }
@@ -144,6 +148,10 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
         message:
           "Own only ordinary current_theme/color_scheme selectors or accept a complete exact Stow tuple, create only an absent color.ini link, and run an awaited --no-restart refresh."
       )
+    case .ghostty:
+      PlanAction(
+        id: "configure_ghostty",
+        message: "Append one owned Ghostty config-file include; preserve all user settings.")
     case .tuicr:
       PlanAction(
         id: "configure_tuicr",
@@ -157,7 +165,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     switch self {
     case .herdr:
       UnifiedSetupService(id: "herdr", ownership: "external", lifecycle: "reload_if_running")
-    case .codex, .pi, .slack, .spicetify, .tuicr: nil
+    case .ghostty, .codex, .pi, .slack, .spicetify, .tuicr: nil
     }
   }
 
@@ -170,7 +178,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
         kind: "application_ui",
         instruction: "Import the generated four-color theme in each Slack workspace."
       )
-    case .codex, .herdr, .pi, .spicetify, .tuicr: nil
+    case .ghostty, .codex, .herdr, .pi, .spicetify, .tuicr: nil
     }
   }
 }
@@ -280,6 +288,7 @@ enum EnvironmentLinkedPreset: CaseIterable, Sendable {
 /// A configuration file a daily tool or preset edits by key through a journaled replacement,
 /// in the order the lifecycle validates, revalidates, transitions and preflights them.
 enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
+  case ghostty
   case btop
   case codex
   case herdr
@@ -290,7 +299,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
   /// The linked preset whose enablement and external tuple also govern the file.
   var linkedPreset: EnvironmentLinkedPreset? {
     switch self {
-    case .btop, .herdr: nil
+    case .ghostty, .btop, .herdr: nil
     case .codex: .codex
     case .pi: .pi
     case .spicetify: .spicetify
@@ -306,6 +315,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .herdr: "Herdr"
     case .pi: "Pi"
     case .spicetify: "Spicetify"
+    case .ghostty: "Ghostty"
     case .tuicr: "tuicr"
     }
   }
@@ -318,6 +328,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .herdr: ConsumerHomePath.herdrConfiguration
     case .pi: ConsumerHomePath.piSettings
     case .spicetify: ConsumerHomePath.spicetifyConfiguration
+    case .ghostty: preconditionFailure("Ghostty configuration paths require the selected home")
     case .tuicr: ConsumerHomePath.tuicrConfiguration
     }
   }
@@ -330,6 +341,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .herdr: "herdr_configuration"
     case .pi: EnvironmentEntryID.piConfiguration.rawValue
     case .spicetify: "spicetify_configuration"
+    case .ghostty: "ghostty_configuration"
     case .tuicr: EnvironmentEntryID.tuicrConfiguration.rawValue
     }
   }
@@ -345,6 +357,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .herdr: "Herdr configuration"
     case .pi: "Pi settings"
     case .spicetify: "Spicetify external tuple"
+    case .ghostty: "Ghostty configuration"
     case .tuicr: "tuicr configuration"
     }
   }
@@ -363,11 +376,21 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .herdr: ownership?.herdr?.path
     case .pi: ownership?.pi?.path
     case .spicetify: ownership?.spicetify?.path
+    case .ghostty: ownership?.ghostty?.path
     case .tuicr: ownership?.tuicr?.path
     }
   }
 
   func isOwned(by ownership: EnvironmentOwnership?) -> Bool { ownedPath(in: ownership) != nil }
+
+  func configurationURL(home: URL, ownership: EnvironmentOwnership? = nil) throws -> URL {
+    if self == .ghostty {
+      if let path = ownership?.ghostty?.path { return URL(filePath: path) }
+      return try GhosttyConfiguration.selectedFile(
+        in: ThemeConsumerPaths.ghosttyConfigurationFiles(home: home))
+    }
+    return home.appending(path: configurationPath)
+  }
 }
 
 /// What the inspection of a linked preset's selector file reports. Each preset keeps its wording.
@@ -429,7 +452,7 @@ extension EnvironmentLinkedPreset {
 /// How inspection reads, judges and adopts a Codex, Pi or tuicr selector file Macarchy does not
 /// own yet. Spicetify adopts only an ordinary file and never installs one, so it keeps its own
 /// rule in `inspectSpicetify`.
-struct EnvironmentSelectorDocument<Ownership: EnvironmentPresetFileOwnership> {
+struct EnvironmentSelectorDocument<Ownership: EnvironmentStaticPresetFileOwnership> {
   /// Text selectors must decode as UTF-8 before their document rules apply.
   let isText: Bool
   let linksRequired: String

@@ -153,7 +153,7 @@ struct EnvironmentPiDocument {
 
 typealias EnvironmentPiFileTransaction = EnvironmentPresetFileTransaction<EnvironmentPiOwnership>
 
-extension EnvironmentPiOwnership: EnvironmentPresetFileOwnership {
+extension EnvironmentPiOwnership: EnvironmentStaticPresetFileOwnership {
   static let filesystem = EnvironmentPresetFilesystem(
     configurationLabel: "Pi settings",
     residueLabel: "Pi transaction residue",

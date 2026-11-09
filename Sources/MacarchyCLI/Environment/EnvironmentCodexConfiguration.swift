@@ -257,7 +257,7 @@ typealias EnvironmentCodexFileTransaction = EnvironmentPresetFileTransaction<
   EnvironmentCodexOwnership
 >
 
-extension EnvironmentCodexOwnership: EnvironmentPresetFileOwnership {
+extension EnvironmentCodexOwnership: EnvironmentStaticPresetFileOwnership {
   static let filesystem = EnvironmentPresetFilesystem(
     configurationLabel: "Codex configuration",
     residueLabel: "Codex transaction residue",

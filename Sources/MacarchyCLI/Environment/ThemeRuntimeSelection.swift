@@ -245,6 +245,8 @@ enum ThemeRuntimeSelection {
         provider, homeDirectory: homeDirectory, stateRoot: stateRoot)
     }
     var paths = consumerPaths
+    paths.ghosttyOwnedConfigurationURL = ownership.ghostty.map { URL(filePath: $0.path) }
+    paths.ghosttyOwnedLineIndex = ownership.ghostty?.lineIndex
     paths.starshipBehaviorURL = EnvironmentNativeFileMigration.starshipBehaviorURL(
       homeDirectory: homeDirectory, stateRoot: stateRoot, ownership: ownership)
     return paths

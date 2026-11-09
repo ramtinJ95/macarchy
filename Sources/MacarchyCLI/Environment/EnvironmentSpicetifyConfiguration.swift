@@ -71,7 +71,7 @@ typealias EnvironmentSpicetifyFileTransaction = EnvironmentPresetFileTransaction
   EnvironmentSpicetifyOwnership
 >
 
-extension EnvironmentSpicetifyOwnership: EnvironmentPresetFileOwnership {
+extension EnvironmentSpicetifyOwnership: EnvironmentStaticPresetFileOwnership {
   static let filesystem = EnvironmentPresetFilesystem(
     configurationLabel: "Spicetify configuration",
     residueLabel: "Spicetify transaction residue",

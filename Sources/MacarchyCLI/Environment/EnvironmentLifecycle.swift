@@ -351,8 +351,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
       }
     }
     for file in EnvironmentKeyOwnedFile.allCases {
+      guard let expected = inspection.keyOwnedExternalEvidence[file] else { continue }
       try revalidate(
-        inspection.keyOwnedExternalEvidence[file], at: file.configurationPath,
+        expected,
+        at: try file.configurationURL(home: homeDirectory, ownership: inspection.ownership),
         file.revalidationLabel
       ) { evidence in
         guard file.revalidatesExternalTuple, let linked = file.linkedPreset else { return true }
@@ -420,7 +422,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           (previous?.createdDirectories ?? []).filter { directory in
             inspection.desiredEntries.contains {
               $0.url.path.hasPrefix(directory + "/")
-            }
+            } || inspection.proposedGhosttyOwnership?.path.hasPrefix(directory + "/") == true
           }
         ).union(inspection.createdDirectories)
       ),
@@ -431,6 +433,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       herdr: inspection.proposedHerdrOwnership,
       pi: inspection.proposedPiOwnership,
       spicetify: inspection.proposedSpicetifyOwnership,
+      ghostty: inspection.proposedGhosttyOwnership,
       tuicr: inspection.proposedTuicrOwnership,
       codexEnabled: composition.profile.presets.codex,
       herdrEnabled: composition.profile.presets.herdr,
@@ -452,6 +455,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       || previous?.herdr != proposed.herdr
       || previous?.pi != proposed.pi
       || previous?.spicetify != proposed.spicetify
+      || previous?.ghostty != proposed.ghostty
       || previous?.tuicr != proposed.tuicr
       || previous?.codexEnabled != proposed.codexEnabled
       || previous?.herdrEnabled != proposed.herdrEnabled
@@ -515,12 +519,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
   /// unchanged since planning.
   private func revalidate(
     _ expected: EnvironmentEntryEvidence?,
-    at relativePath: String,
+    at url: URL,
     _ label: String,
     tupleIsExact: (EnvironmentEntryEvidence) throws -> Bool
   ) throws {
     guard let expected else { return }
-    let url = homeDirectory.appending(path: relativePath)
     let tupleMatches = try tupleIsExact(expected)
     guard try inspector.capture(url, directoryLink: nil) == expected, tupleMatches else {
       throw EnvironmentLifecycleError.blocked(
@@ -842,6 +845,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
     case .spicetify:
       try EnvironmentSpicetifyFileTransaction(homeDirectory: homeDirectory)
         .transition(from: old, to: new, replacementName: replacementName)
+    case .ghostty:
+      try EnvironmentGhosttyFileTransaction(homeDirectory: homeDirectory)
+        .transition(from: old, to: new, replacementName: replacementName)
     case .tuicr:
       try EnvironmentTuicrFileTransaction(homeDirectory: homeDirectory)
         .transition(from: old, to: new, replacementName: replacementName)
@@ -879,7 +885,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
 
   private func validate(_ ownership: EnvironmentOwnership?) throws {
     guard let ownership else { return }
-    guard ownership.hasValidShape else {
+    guard ownership.hasValidShape,
+      ownership.ghostty == nil
+        || ownership.ghostty?.directive == GhosttyConfiguration.includeDirective(root: stateRoot)
+    else {
       throw EnvironmentLifecycleError.blocked("environment ownership has an invalid structure")
     }
     let allowed = Dictionary(
@@ -920,7 +929,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
     for file in EnvironmentKeyOwnedFile.allCases {
       if let path = file.ownedPath(in: ownership),
-        path != homeDirectory.appending(path: file.configurationPath).path
+        !validOwnedPath(path, file: file)
       {
         throw EnvironmentLifecycleError.blocked(
           "ownership contains an unexpected \(file.label) path")
@@ -940,7 +949,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         + [
           homeDirectory.appending(path: ".config").path,
           homeDirectory.appending(path: ConsumerHomePath.herdrDirectory).path,
-        ]
+        ] + ghosttyParentDirectories()
     )
     guard Set(ownership.createdDirectories).isSubset(of: allowedDirectories) else {
       throw EnvironmentLifecycleError.blocked("ownership contains an unexpected created directory")
@@ -952,6 +961,27 @@ struct EnvironmentTransactionCoordinator: Sendable {
       )
     else {
       throw EnvironmentLifecycleError.blocked("ownership contains an unexpected theme bridge")
+    }
+  }
+
+  private func validOwnedPath(_ path: String, file: EnvironmentKeyOwnedFile) -> Bool {
+    if file == .ghostty {
+      return ThemeConsumerPaths.ghosttyConfigurationFiles(home: homeDirectory).contains {
+        $0.path == path
+      }
+    }
+    return path == homeDirectory.appending(path: file.configurationPath).path
+  }
+
+  private func ghosttyParentDirectories() -> [String] {
+    ThemeConsumerPaths.ghosttyConfigurationFiles(home: homeDirectory).flatMap { url in
+      var parent = url.deletingLastPathComponent()
+      var paths: [String] = []
+      while parent.path.hasPrefix(homeDirectory.path + "/") {
+        paths.append(parent.path)
+        parent.deleteLastPathComponent()
+      }
+      return paths
     }
   }
 
@@ -1019,6 +1049,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
       try EnvironmentSpicetifyFileTransaction(homeDirectory: homeDirectory).preflight(spicetify)
     } else {
       try preflightExternalTuple(.spicetify, in: ownership)
+    }
+    if let ghostty = ownership.ghostty {
+      try EnvironmentGhosttyFileTransaction(homeDirectory: homeDirectory).preflight(ghostty)
     }
     if let tuicr = ownership.tuicr {
       try EnvironmentTuicrFileTransaction(homeDirectory: homeDirectory).preflight(tuicr)
