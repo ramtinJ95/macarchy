@@ -135,8 +135,7 @@ extension AdapterContractTests {
     root: URL,
     kittyConfigurationURL: URL? = nil,
     sketchyBarConfigurationURL: URL? = nil,
-    adapterIDs: Set<String> = Set(ThemeActivationCoordinator.adapterRequirements.keys)
-      .subtracting([BordersAdapter.id, BordersAdapter.leanID, UserScriptsAdapter.id])
+    adapterIDs: Set<String> = ConsumerCatalog.shared.defaultEnabledAdapterIDs
   ) throws -> ThemeConsumerPaths {
     for adapterID in adapterIDs.sorted() {
       switch adapterID {

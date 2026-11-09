@@ -340,6 +340,16 @@ package struct ThemeActivationCoordinator: Sendable {
             controlIsAvailable: { controlIsAvailable(StarshipAdapter.liveExecutableURL) },
             processRunner: processRunner
           ))
+      case .ghostty:
+        return RuntimeConsumer(
+          GhosttyAdapter(
+            root: root, home: consumerPaths.piDerivedHomeDirectoryURL,
+            configurationFiles: consumerPaths.ghosttyConfigurationFiles,
+            ownedConfigurationURL: consumerPaths.ghosttyOwnedConfigurationURL,
+            ownedLineIndex: consumerPaths.ghosttyOwnedLineIndex,
+            executableURL: GhosttyAdapter.liveExecutableURL,
+            controlIsAvailable: { controlIsAvailable(GhosttyAdapter.liveExecutableURL) },
+            processRunner: processRunner))
       case .tuicr:
         return RuntimeConsumer(
           TuicrAdapter(
@@ -934,6 +944,7 @@ extension KittyAdapter: ContextFreeThemeAdapter {}
 extension SpicetifyAdapter: ContextFreeThemeAdapter {}
 extension StarshipAdapter: ContextFreeThemeAdapter {}
 extension TuicrAdapter: ContextFreeThemeAdapter {}
+extension GhosttyAdapter: ContextFreeThemeAdapter {}
 extension YaziAdapter: ContextFreeThemeAdapter {}
 
 /// One runtime consumer's adapter, built once per coordinator.

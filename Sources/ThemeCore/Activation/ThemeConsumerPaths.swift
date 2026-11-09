@@ -2,6 +2,24 @@ import Foundation
 
 /// Every path is stored standardized, whether set by the initializer or assigned later.
 package struct ThemeConsumerPaths: Sendable {
+  package var ghosttyOwnedConfigurationURL: URL?
+  package var ghosttyOwnedLineIndex: Int?
+  package var ghosttyConfigurationFiles: [URL] {
+    Self.ghosttyConfigurationFiles(home: piDerivedHomeDirectoryURL)
+  }
+
+  /// Like the other consumer paths, resolve against the selected home, not Foundation's
+  /// process-global home. A GUI app can see a different launchd XDG environment.
+  package static func ghosttyConfigurationFiles(
+    home: URL, environment: [String: String] = ProcessInfo.processInfo.environment
+  ) -> [URL] {
+    let xdg =
+      environment["XDG_CONFIG_HOME"].flatMap { value in
+        value.hasPrefix("/") ? URL(filePath: value).standardizedFileURL : nil
+      } ?? home.appending(path: ".config")
+    return GhosttyConfiguration.files(home: home, xdgConfigurationHome: xdg)
+  }
+
   package var kittyConfigurationURL: URL {
     didSet { kittyConfigurationURL = kittyConfigurationURL.standardizedFileURL }
   }

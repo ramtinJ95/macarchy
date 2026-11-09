@@ -16,6 +16,7 @@ package struct ConsumerID: Hashable, RawRepresentable, Sendable {
   package static let leanFocus = ConsumerID(rawValue: BordersAdapter.leanID)
   package static let codex = ConsumerID(rawValue: CodexAdapter.id)
   package static let eza = ConsumerID(rawValue: EzaAdapter.id)
+  package static let ghostty = ConsumerID(rawValue: GhosttyAdapter.id)
   package static let herdr = ConsumerID(rawValue: HerdrAdapter.id)
   package static let kitty = ConsumerID(rawValue: KittyAdapter.id)
   package static let neovim = ConsumerID(rawValue: NeovimAdapter.id)
@@ -39,6 +40,7 @@ package enum RuntimeAdapterKind: CaseIterable, Hashable, Sendable {
   case leanFocus
   case codex
   case eza
+  case ghostty
   case herdr
   case kitty
   case neovim
@@ -604,6 +606,17 @@ package struct ConsumerCatalog: Sendable {
       },
       dependencies: [.init(id: StarshipAdapter.id, role: .requiredAdapter)],
       setupManaged: true
+    ),
+    ConsumerCatalogEntry(
+      id: .ghostty,
+      mode: .runtime(.ghostty, requirement: .required, enabledByDefault: false),
+      renderer: .text(
+        id: GhosttyAdapter.id, version: GhosttyAdapter.rendererVersion,
+        path: GhosttyAdapter.outputPath,
+        requirement: .requiredWhenRendererVersion(
+          renderer: .init(id: GhosttyAdapter.id), minimumVersion: 1)
+      ) { package, _ in GhosttyAdapter.render(package: package) },
+      dependencies: [.init(id: GhosttyAdapter.id, role: .requiredAdapter)]
     ),
     ConsumerCatalogEntry(
       id: .tuicr,
