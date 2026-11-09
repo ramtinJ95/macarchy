@@ -200,8 +200,14 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
 
   private var content: ThemeBrowserContent { browserState.content }
   private let galleryLoader: ThemeBrowserGalleryLoader
+  /// Starts the apply process for a selection; with a reviewed digest it applies only that plan.
   private let launchSelection:
-    (ThemeBrowserSelection) throws -> ThemeBrowserApplyProcessLauncher.RunningProcess
+    (ThemeBrowserSelection, String?) throws -> ThemeBrowserApplyProcessLauncher.RunningProcess
+  /// Plans a selection without writing anything, as `theme set --dry-run` does.
+  private let reviewSelection:
+    @Sendable (ThemeBrowserSelection) async throws -> ThemeActivationReview
+  /// Opens the portable profile, where consumers are turned on or off.
+  private let editProfile: () throws -> Void
   private let launchUndo: () throws -> ThemeBrowserApplyProcessLauncher.RunningProcess
   private let deleteSelection:
     @Sendable (ThemePackageDeletionTarget) async -> ThemeBrowserDeletionOutcome
@@ -248,8 +254,13 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private var isSavingFavorite = false
   private var favoriteResult: ThemeBrowserAsyncResult<SaveOutcome>?
   private var favoriteTimer: Timer?
+  /// Planning a selection or showing its Review sheet.
+  private var isReviewing = false
+  private var reviewResult: ThemeBrowserAsyncResult<Result<ThemeActivationReview, any Error>>?
+  private var reviewTimer: Timer?
+  private var reviewCompletion: ((ThemeActivationReview) -> Void)?
   private var isBusy: Bool {
-    isApplying || isDeleting || isSavingScreenSaver || isSavingFavorite
+    isApplying || isDeleting || isSavingScreenSaver || isSavingFavorite || isReviewing
   }
   private var deletionResult: ThemeBrowserAsyncResult<ThemeBrowserDeletionOutcome>?
   private var deletionTimer: Timer?
@@ -281,12 +292,13 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private let previousBackgroundButton = NSButton(title: "Previous", target: nil, action: nil)
   private let nextBackgroundButton = NSButton(title: "Next", target: nil, action: nil)
   private let applyButton = NSButton(title: "Apply", target: nil, action: nil)
+  private let reviewButton = NSButton(title: "Review…", target: nil, action: nil)
   private let deleteButton = NSButton(title: "Delete Theme", target: nil, action: nil)
   private let favoriteButton = NSButton(title: "Add Favorite", target: nil, action: nil)
   private let statusLabel = NSTextField(wrappingLabelWithString: "")
   private let keyboardHelp = NSTextField(
     labelWithString:
-      "↑↓ theme   ←→ wallpaper   ⇧←→ preview   ⌘D favorite   ⌘Z undo   ↩ apply   esc close"
+      "↑↓ theme   ←→ wallpaper   ⇧←→ preview   ⌘D favorite   ⌘R review   ⌘Z undo   ↩ apply   esc close"
   )
 
   init(
@@ -298,8 +310,12 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       @escaping @Sendable (ThemePackageDeletionTarget) async -> ThemeBrowserDeletionOutcome,
     reloadContent: @escaping @Sendable () async throws -> ThemeBrowserContent,
     launchUndo: @escaping () throws -> ThemeBrowserApplyProcessLauncher.RunningProcess,
+    reviewSelection:
+      @escaping @Sendable (ThemeBrowserSelection) async throws -> ThemeActivationReview,
+    editProfile: @escaping () throws -> Void,
     launchSelection:
-      @escaping (ThemeBrowserSelection) throws -> ThemeBrowserApplyProcessLauncher.RunningProcess
+      @escaping (ThemeBrowserSelection, String?) throws
+      -> ThemeBrowserApplyProcessLauncher.RunningProcess
   ) throws {
     self.galleryLoader = galleryLoader
     self.deleteSelection = deleteSelection
@@ -307,6 +323,8 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     self.saveScreenSaverSelection = saveScreenSaverSelection
     self.saveFavorite = saveFavorite
     self.launchSelection = launchSelection
+    self.reviewSelection = reviewSelection
+    self.editProfile = editProfile
     self.launchUndo = launchUndo
     browserState = ThemeBrowserState(content: content)
     backgroundImageCache.countLimit = 24
@@ -409,7 +427,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   }
 
   func windowShouldClose(_ sender: NSWindow) -> Bool {
-    !isDeleting && !isSavingScreenSaver && !isSavingFavorite
+    !isDeleting && !isSavingScreenSaver && !isSavingFavorite && !isReviewing
   }
 
   /// Closing the picker ends the browser. The picker is a panel, which AppKit does not count for
@@ -430,6 +448,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     deletionTimer?.invalidate()
     screenSaverTimer?.invalidate()
     favoriteTimer?.invalidate()
+    reviewTimer?.invalidate()
   }
 
   func numberOfRows(in tableView: NSTableView) -> Int {
@@ -676,13 +695,154 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     guard let item = selectedItem else { return }
     let selection = browserState.selection
     runActivation(
-      { try self.launchSelection(selection) },
+      { try self.launchSelection(selection, nil) },
       progress: "Applying \(item.displayName)…",
       result: PendingResult(
         item: item, success: "Applied \(item.displayName).",
         failure: {
           "Theme activation failed (exit \($0)). Run 'macarchy theme status' for details."
         }))
+  }
+
+  @objc private func reviewSelectedTheme(_ sender: Any?) {
+    guard !isBusy, let item = selectedItem else { return }
+    let selection = browserState.selection
+    planSelection(selection, progress: "Reviewing \(item.displayName)…") { [weak self] review in
+      self?.presentReview(
+        ThemeBrowserReview(review: review, displayName: item.displayName), item: item,
+        selection: selection)
+    }
+  }
+
+  /// Plans `selection` off the main thread and hands the plan to `completion`; a planning
+  /// failure ends the review in the status line.
+  private func planSelection(
+    _ selection: ThemeBrowserSelection, progress: String,
+    completion: @escaping (ThemeActivationReview) -> Void
+  ) {
+    isReviewing = true
+    setControlsEnabled(false)
+    statusLabel.stringValue = progress
+    statusLabel.toolTip = nil
+    let result = ThemeBrowserAsyncResult<Result<ThemeActivationReview, any Error>>()
+    reviewResult = result
+    reviewCompletion = completion
+    let review = reviewSelection
+    Task.detached(priority: .userInitiated) {
+      do {
+        result.complete(.success(try await review(selection)))
+      } catch {
+        result.complete(.failure(error))
+      }
+    }
+    reviewTimer = poll(every: 0.05, #selector(checkReviewResult(_:)))
+  }
+
+  @objc private func checkReviewResult(_ timer: Timer) {
+    guard let outcome = reviewResult?.value() else { return }
+    timer.invalidate()
+    reviewTimer = nil
+    reviewResult = nil
+    let completion = reviewCompletion
+    reviewCompletion = nil
+    switch outcome {
+    case .success(let review):
+      completion?(review)
+    case .failure(let error):
+      finishReview("Could not review the theme: \(error)", failed: true)
+    }
+  }
+
+  private func presentReview(
+    _ shown: ThemeBrowserReview, item: ThemeBrowserItem, selection: ThemeBrowserSelection
+  ) {
+    guard let window else { return }
+    let alert = NSAlert()
+    alert.messageText = shown.title
+    alert.informativeText = shown.summary
+    alert.accessoryView = Self.reviewPlanView(shown.planText)
+    let choices = shown.choices
+    for choice in choices { alert.addButton(withTitle: choice.title) }
+    alert.beginSheetModal(for: window) { [weak self] response in
+      guard let self else { return }
+      let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+      switch choices.indices.contains(index) ? choices[index] : .cancel {
+      case .apply:
+        self.applyReviewed(shown, item: item, selection: selection)
+      case .editProfile:
+        self.openProfile()
+      case .cancel:
+        self.finishReview("Review closed. Nothing was applied.", failed: false)
+      }
+    }
+  }
+
+  /// The plan, one consumer per line, scrollable when it is longer than the sheet.
+  private static func reviewPlanView(_ text: String) -> NSView {
+    let scrollView = NSScrollView(frame: CGRect(x: 0, y: 0, width: 560, height: 240))
+    scrollView.hasVerticalScroller = true
+    scrollView.borderType = .bezelBorder
+    let textView = NSTextView(frame: scrollView.contentView.bounds)
+    textView.isEditable = false
+    textView.isSelectable = true
+    textView.isVerticallyResizable = true
+    textView.autoresizingMask = [.width]
+    textView.textContainer?.widthTracksTextView = true
+    textView.textContainerInset = CGSize(width: 6, height: 6)
+    textView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+    textView.string = text
+    scrollView.documentView = textView
+    return scrollView
+  }
+
+  /// Plans the selection again and applies only while it is still the reviewed plan.
+  private func applyReviewed(
+    _ shown: ThemeBrowserReview, item: ThemeBrowserItem, selection: ThemeBrowserSelection
+  ) {
+    planSelection(selection, progress: "Checking the reviewed plan…") { [weak self] current in
+      guard let self else { return }
+      if let refusal = shown.refusal(current: current) {
+        self.finishReview(refusal, failed: true)
+        return
+      }
+      self.isReviewing = false
+      let digest = shown.review.digest
+      self.runActivation(
+        { try self.launchSelection(selection, digest) },
+        progress: "Applying \(item.displayName) as reviewed…",
+        result: PendingResult(
+          item: item, success: "Applied \(item.displayName) as reviewed.",
+          failure: {
+            "Reviewed theme activation failed (exit \($0)). "
+              + "Run 'macarchy theme status' for details."
+          }))
+    }
+  }
+
+  /// Opens the profile editor and closes the browser, which would otherwise cover it.
+  private func openProfile() {
+    do {
+      try editProfile()
+    } catch {
+      finishReview("Could not open the profile: \(error)", failed: true)
+      return
+    }
+    isReviewing = false
+    window?.close()
+  }
+
+  /// Ends a review that applied nothing and gives the picker its controls back.
+  private func finishReview(_ message: String, failed: Bool) {
+    isReviewing = false
+    statusLabel.stringValue = message
+    statusLabel.toolTip = message
+    statusLabel.textColor =
+      failed
+      ? selectedItem?.metadata.semantic.error.nsColor
+      : selectedItem?.metadata.semantic.text.nsColor
+    setControlsEnabled(true)
+    window?.makeKeyAndOrderFront(nil)
+    window?.makeFirstResponder(searchField)
   }
 
   private func undoLastChange() {
@@ -965,6 +1125,11 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     configureButton(favoriteButton, action: #selector(toggleSelectedFavorite(_:)))
     favoriteButton.keyEquivalent = "d"
     favoriteButton.keyEquivalentModifierMask = .command
+    configureButton(reviewButton, action: #selector(reviewSelectedTheme(_:)))
+    reviewButton.keyEquivalent = "r"
+    reviewButton.keyEquivalentModifierMask = .command
+    reviewButton.toolTip =
+      "See what applying this theme changes in each consumer, then apply exactly that plan."
     statusLabel.font = .systemFont(ofSize: 11)
     statusLabel.maximumNumberOfLines = 2
 
@@ -974,7 +1139,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     let bottomSpacer = NSView()
     bottomSpacer.setContentHuggingPriority(.init(1), for: .horizontal)
     let bottomBar = NSStackView(views: [
-      keyboardHelp, bottomSpacer, favoriteButton, deleteButton, applyButton,
+      keyboardHelp, bottomSpacer, favoriteButton, deleteButton, reviewButton, applyButton,
     ])
     bottomBar.orientation = .horizontal
     bottomBar.alignment = .centerY
@@ -1354,6 +1519,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     applyButton.isEnabled = enabled
     deleteButton.isEnabled = enabled && browserState.deletionAvailability.target != nil
     favoriteButton.isEnabled = enabled && selectedItem != nil
+    reviewButton.isEnabled = enabled && selectedItem != nil
     if let item = selectedItem {
       backgroundPicker.isEnabled = enabled && !item.backgrounds.isEmpty
       previousBackgroundButton.isEnabled = enabled && item.backgrounds.count > 1

@@ -65,8 +65,11 @@ struct ThemeBrowserSelection: Equatable, Sendable {
 struct ThemeBrowserApplyRequest: Sendable {
   static let themeEnvironmentKey = "MACARCHY_THEME_BROWSER_APPLY_THEME"
   static let backgroundEnvironmentKey = "MACARCHY_THEME_BROWSER_APPLY_BACKGROUND"
+  static let reviewedDigestEnvironmentKey = "MACARCHY_THEME_BROWSER_APPLY_REVIEWED"
 
   let selection: ThemeBrowserSelection
+  /// Set when applying from Review: the activation applies only this reviewed plan.
+  let reviewedDigest: String?
 
   init?(environment: [String: String]) {
     guard let themeID = environment[Self.themeEnvironmentKey], !themeID.isEmpty else {
@@ -76,20 +79,19 @@ struct ThemeBrowserApplyRequest: Sendable {
       themeID: themeID,
       backgroundID: environment[Self.backgroundEnvironmentKey]
     )
+    reviewedDigest = environment[Self.reviewedDigestEnvironmentKey]
   }
 
-  init(selection: ThemeBrowserSelection) {
+  init(selection: ThemeBrowserSelection, reviewedDigest: String? = nil) {
     self.selection = selection
+    self.reviewedDigest = reviewedDigest
   }
 
   func environment(addingTo base: [String: String]) -> [String: String] {
     var environment = base
     environment[Self.themeEnvironmentKey] = selection.themeID
-    if let backgroundID = selection.backgroundID {
-      environment[Self.backgroundEnvironmentKey] = backgroundID
-    } else {
-      environment.removeValue(forKey: Self.backgroundEnvironmentKey)
-    }
+    environment[Self.backgroundEnvironmentKey] = selection.backgroundID
+    environment[Self.reviewedDigestEnvironmentKey] = reviewedDigest
     return environment
   }
 }
@@ -132,12 +134,13 @@ struct ThemeBrowserApplyProcessLauncher: Sendable {
 
   func launch(
     selection: ThemeBrowserSelection,
+    reviewedDigest: String? = nil,
     executableURL: URL? = Bundle.main.executableURL,
     arguments: [String] = Array(CommandLine.arguments.dropFirst()),
     environment: [String: String] = ProcessInfo.processInfo.environment
   ) throws -> RunningProcess {
     guard let executableURL else { throw ThemeBrowserApplyLaunchError.missingExecutable }
-    let request = ThemeBrowserApplyRequest(selection: selection)
+    let request = ThemeBrowserApplyRequest(selection: selection, reviewedDigest: reviewedDigest)
     return try spawn(executableURL, arguments, request.environment(addingTo: environment))
   }
 
@@ -385,8 +388,9 @@ struct ThemeBrowserApplyRunner: Sendable {
   let setActiveBackground:
     @Sendable (ThemeRepository, String, URL, ThemeConsumerPaths) async throws
       -> CommandExecution
+  /// Activates the theme with the background; with a reviewed digest, only that reviewed plan.
   let setThemeAndBackground:
-    @Sendable (ThemeRepository, String, String?, URL, ThemeConsumerPaths) async throws
+    @Sendable (ThemeRepository, String, String?, URL, ThemeConsumerPaths, String?) async throws
       -> CommandExecution
 
   static let live = ThemeBrowserApplyRunner(
@@ -400,7 +404,7 @@ struct ThemeBrowserApplyRunner: Sendable {
         dryRun: false
       )
     },
-    setThemeAndBackground: { repository, themeID, backgroundID, root, consumerPaths in
+    setThemeAndBackground: { repository, themeID, backgroundID, root, consumerPaths, reviewed in
       try await ThemeActivationService.live.execute(
         repository: repository,
         themeID: themeID,
@@ -408,7 +412,8 @@ struct ThemeBrowserApplyRunner: Sendable {
         consumerPaths: consumerPaths,
         dryRun: false,
         json: false,
-        requestedBackgroundID: backgroundID
+        requestedBackgroundID: backgroundID,
+        reviewedDigest: reviewed
       )
     }
   )
@@ -418,9 +423,11 @@ struct ThemeBrowserApplyRunner: Sendable {
     themeID: String,
     backgroundID: String?,
     stateRoot: URL,
-    consumerPaths: ThemeConsumerPaths
+    consumerPaths: ThemeConsumerPaths,
+    reviewedDigest: String? = nil
   ) async throws -> CommandExecution {
-    if try activeThemeID(stateRoot) == themeID, let backgroundID {
+    // A reviewed plan is a full activation, so it always takes that path.
+    if reviewedDigest == nil, try activeThemeID(stateRoot) == themeID, let backgroundID {
       return try await setActiveBackground(
         repository,
         backgroundID,
@@ -433,7 +440,8 @@ struct ThemeBrowserApplyRunner: Sendable {
       themeID,
       backgroundID,
       stateRoot,
-      consumerPaths
+      consumerPaths,
+      reviewedDigest
     )
   }
 }

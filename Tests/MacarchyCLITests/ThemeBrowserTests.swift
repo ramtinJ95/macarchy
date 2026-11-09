@@ -245,7 +245,7 @@ struct ThemeBrowserTests {
         calls.withLock { $0.append("background:\(backgroundID)") }
         return ("background", true)
       },
-      setThemeAndBackground: { _, themeID, backgroundID, _, _ in
+      setThemeAndBackground: { _, themeID, backgroundID, _, _, _ in
         calls.withLock { $0.append("theme:\(themeID):\(backgroundID ?? "none")") }
         return ("theme", true)
       }
