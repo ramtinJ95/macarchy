@@ -17,7 +17,8 @@ enum PopupSearch {
     return terms.allSatisfy(searchable.contains)
   }
 
-  private static func fold(_ text: String) -> String {
+  /// `text` without case or diacritics, so "Rosé" and "rose" compare equal.
+  static func fold(_ text: String) -> String {
     text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: locale)
   }
 }

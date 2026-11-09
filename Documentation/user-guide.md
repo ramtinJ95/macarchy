@@ -93,6 +93,8 @@ macarchy theme set kanagawa-wave
 macarchy theme next
 macarchy theme background next
 macarchy theme undo                   # Return to the previous theme or background
+macarchy theme favorite add tokyo-night # Listed first in every theme list
+macarchy theme list --search "tok ni"   # Every word starts a word of a theme
 macarchy keybindings show --effective # Search the managed shortcut list
 macarchy setup status
 macarchy setup doctor
@@ -100,6 +102,11 @@ macarchy setup doctor
 
 `macarchy theme undo` steps back through the last 50 theme and background changes;
 there is no redo.
+
+`macarchy theme favorite add|remove|list` keeps your favorite themes at the top of
+`macarchy theme list`. A search matches a theme when every word you type starts a
+word of its name, identifier or appearance, ignoring case and accents, so
+`tok ni` finds Tokyo Night.
 
 The default shortcuts include **Control–Option–Space** for the action menu,
 **Command–Shift–T** for the theme browser and **Command–K** for the keybinding

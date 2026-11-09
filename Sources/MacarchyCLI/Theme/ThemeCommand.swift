@@ -7,8 +7,8 @@ struct Theme: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "Inspect or select themes.",
     subcommands: [
-      List.self, Set.self, Install.self, Next.self, Undo.self, Status.self, Get.self,
-      Background.self, Browse.self, Screensaver.self,
+      List.self, Set.self, Install.self, Next.self, Undo.self, Favorite.self, Status.self,
+      Get.self, Background.self, Browse.self, Screensaver.self,
     ]
   )
 }
@@ -74,14 +74,28 @@ extension Theme {
   }
 
   struct List: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "List valid available themes.")
+    static let configuration = CommandConfiguration(
+      abstract: "List valid installed themes, favorites first.")
 
     @OptionGroup var roots: ThemeRootOptions
 
+    @Option(help: "Canonical Macarchy state directory.")
+    var stateRoot = StateLayout.defaultRootPath
+
+    @Option(
+      help:
+        "Only themes where every word starts a word of the theme's name, identifier or appearance."
+    )
+    var search: String?
+
     mutating func run() throws {
-      for package in try roots.repository().packages() {
-        print("\(package.id)\t\(package.appearance.rawValue)\t\(package.displayName)")
-      }
+      let root = URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
+      emit(
+        ThemeFavorites.live.list(
+          try roots.repository().packages(),
+          search: ThemeSearch(search ?? ""),
+          stateRoot: root
+        ))
       UpdateNoticeRunner.live.run(
         stateRoot: StateLayout.defaultRoot(
           in: FileManager.default.homeDirectoryForCurrentUser, directoryHint: .isDirectory)
