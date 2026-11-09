@@ -108,8 +108,12 @@ teardown both remove owned lean successfully, then return exit 1/blocked when
 the existing default-consumer reconciliation runs. The journey accepts only
 the exact expected consumer failures and positive lean removal result; it
 separately requires no helper, job, plist, runtime receipt, ownership or journal.
-This is **not full teardown convergence**. The provider-independent behavior
-predates this slice: base `a947ef7`, `EnvironmentApply.swift:261–306` (now
+This is **not full standalone environment teardown convergence**. Unified
+setup teardown now deliberately omits this default reconciliation when its
+journal will retire a setup-owned canonical theme; external canonical themes and
+standalone environment teardown keep the behavior below. The existing lean journey
+still calls standalone environment teardown, not the aggregate teardown gate.
+The provider-independent behavior predates this slice: base `a947ef7`, `EnvironmentApply.swift:261–306` (now
 `:264–309`), restores the default adapter set whenever environment ownership is absent.
 
 Since `be7df829`, standalone `environment apply`/`teardown` refuse while a unified
