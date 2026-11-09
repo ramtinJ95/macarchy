@@ -19,6 +19,10 @@ package struct ConsumerID: Hashable, RawRepresentable, Sendable {
   package static let eza = ConsumerID(rawValue: EzaAdapter.id)
   package static let alacritty = ConsumerID(rawValue: AlacrittyAdapter.id)
   package static let ghostty = ConsumerID(rawValue: GhosttyAdapter.id)
+  package static let vscode = ConsumerID(rawValue: "vscode")
+  package static let cursor = ConsumerID(rawValue: "cursor")
+  package static let vscodium = ConsumerID(rawValue: "vscodium")
+  package static let windsurf = ConsumerID(rawValue: "windsurf")
   package static let zed = ConsumerID(rawValue: ZedAdapter.id)
   package static let herdr = ConsumerID(rawValue: HerdrAdapter.id)
   package static let kitty = ConsumerID(rawValue: KittyAdapter.id)
@@ -46,6 +50,10 @@ package enum RuntimeAdapterKind: CaseIterable, Hashable, Sendable {
   case eza
   case alacritty
   case ghostty
+  case vscode
+  case cursor
+  case vscodium
+  case windsurf
   case zed
   case herdr
   case kitty
@@ -612,6 +620,31 @@ package struct ConsumerCatalog: Sendable {
       },
       dependencies: [.init(id: StarshipAdapter.id, role: .requiredAdapter)],
       setupManaged: true
+    ),
+    ConsumerCatalogEntry(
+      id: .vscode, mode: .runtime(.vscode, requirement: .required, enabledByDefault: false),
+      renderer: .init(
+        id: "vscode", version: 1,
+        artifacts: VSCodeTheme.paths.map {
+          .init(
+            path: $0,
+            requirement: .requiredWhenRendererVersion(
+              renderer: .init(id: "vscode"), minimumVersion: 1))
+        }
+      ) { package, _, _ in try VSCodeTheme.render(package: package).outputs },
+      dependencies: [.init(id: "vscode", role: .requiredAdapter)]
+    ),
+    ConsumerCatalogEntry(
+      id: .cursor, mode: .runtime(.cursor, requirement: .required, enabledByDefault: false),
+      dependencies: [.init(id: "cursor", role: .requiredAdapter)]
+    ),
+    ConsumerCatalogEntry(
+      id: .vscodium, mode: .runtime(.vscodium, requirement: .required, enabledByDefault: false),
+      dependencies: [.init(id: "vscodium", role: .requiredAdapter)]
+    ),
+    ConsumerCatalogEntry(
+      id: .windsurf, mode: .runtime(.windsurf, requirement: .required, enabledByDefault: false),
+      dependencies: [.init(id: "windsurf", role: .requiredAdapter)]
     ),
     ConsumerCatalogEntry(
       id: .zed,

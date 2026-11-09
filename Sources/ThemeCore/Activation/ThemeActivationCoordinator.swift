@@ -343,6 +343,12 @@ package struct ThemeActivationCoordinator: Sendable {
             controlIsAvailable: { controlIsAvailable(StarshipAdapter.liveExecutableURL) },
             processRunner: processRunner
           ))
+      case .vscode, .cursor, .vscodium, .windsurf:
+        return RuntimeConsumer(
+          VSCodeAdapter(
+            editor: VSCodeEditor(rawValue: kind.adapterID)!, root: root,
+            home: consumerPaths.piDerivedHomeDirectoryURL, runner: processRunner,
+            validateOwnership: consumerPaths.vscodeValidateOwnership))
       case .zed:
         return RuntimeConsumer(
           ZedAdapter(
@@ -974,6 +980,7 @@ extension AlacrittyAdapter: ContextFreeThemeAdapter {}
 
 extension GhosttyAdapter: ContextFreeThemeAdapter {}
 extension ZedAdapter: ContextFreeThemeAdapter {}
+extension VSCodeAdapter: ContextFreeThemeAdapter {}
 extension YaziAdapter: ContextFreeThemeAdapter {}
 
 /// One runtime consumer's adapter, built once per coordinator.

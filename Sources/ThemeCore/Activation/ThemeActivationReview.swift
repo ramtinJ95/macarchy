@@ -45,6 +45,8 @@ extension RuntimeAdapterKind {
       "Alacritty colors (automatic reload when enabled; first connection may require next launch)"
     case .ghostty: "Ghostty colors (live since 1.2.0; older versions reload manually)"
     case .zed: "Zed theme member and family (live)"
+    case .vscode, .cursor, .vscodium, .windsurf:
+      "Macarchy theme extension and default-profile color-theme settings"
     case .herdr: "Herdr theme"
     case .kitty: "Kitty colors"
     case .neovim: "Neovim colorscheme"
@@ -60,7 +62,8 @@ extension RuntimeAdapterKind {
 
   /// Generated files this consumer reads that another consumer's renderer writes.
   package var sharedArtifacts: [String] {
-    self == .codex ? [TextMateThemeArtifact.outputPath] : []
+    if [.cursor, .vscodium, .windsurf].contains(self) { return VSCodeTheme.paths }
+    return self == .codex ? [TextMateThemeArtifact.outputPath] : []
   }
 
   /// When the change shows, as the adapter's reconciliation usually delivers it; an adapter
@@ -77,6 +80,7 @@ extension RuntimeAdapterKind {
     case .codex, .tuicr: .freshSession
     case .spicetify: .appRestart
     case .starship: .nextPrompt
+    case .vscode, .cursor, .vscodium, .windsurf: .nextLaunch
     }
   }
 }

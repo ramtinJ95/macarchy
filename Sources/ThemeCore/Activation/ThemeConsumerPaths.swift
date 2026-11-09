@@ -2,6 +2,9 @@ import Foundation
 
 /// Every path is stored standardized, whether set by the initializer or assigned later.
 package struct ThemeConsumerPaths: Sendable {
+  package var vscodeValidateOwnership: @Sendable (VSCodeEditor, URL) throws -> Void = { _, _ in
+    throw VSCodeAdapter.Failure.drift
+  }
   package var zedValidateOwnership: @Sendable (URL) throws -> Void = { _ in
     throw ZedAdapter.Failure.drift
   }
