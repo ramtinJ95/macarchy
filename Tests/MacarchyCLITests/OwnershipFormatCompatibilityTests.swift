@@ -376,6 +376,12 @@ struct OwnershipFormatCompatibilityTests {
       "setup/transaction-teardown.json", at: "state/setup/transaction.json",
       in: fixture, read: store.read, write: store.write)
     #expect(teardown.stages == [.environment, .desktop])
+    #expect(teardown.userScripts == nil)
+    let (scripts, _) = try expectRoundTrip(
+      "setup/transaction-teardown-user-scripts.json", at: "state/setup/transaction.json",
+      in: fixture, read: store.read, write: store.write)
+    #expect(scripts.userScripts?.count == 1)
+    #expect(scripts.replacing(stages: [.theme]).userScripts == scripts.userScripts)
 
     try fixture.install(
       "setup/transaction-apply.json", at: "state/setup/transaction.json",
@@ -422,6 +428,12 @@ struct OwnershipFormatCompatibilityTests {
     let (first, url) = try expectRoundTrip(
       "environment/ownership-schema1.json", at: "environment/ownership.json",
       in: fixture, read: read, write: write)
+    #expect(first.userScripts == nil)
+    let (scripts, _) = try expectRoundTrip(
+      "environment/ownership-user-scripts.json", at: "environment/ownership.json",
+      in: fixture, read: read, write: write)
+    #expect(scripts.userScripts?.count == 1)
+    #expect(scripts.enabledThemeAdapterIDs?.contains(UserScriptsAdapter.id) == true)
     #expect(first.schemaVersion == 1)
     #expect(first.records.map(\.id) == [.batTheme, .kitty])
     #expect(try writesEscapedSlashes(url))

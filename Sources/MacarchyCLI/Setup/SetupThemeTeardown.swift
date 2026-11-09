@@ -58,8 +58,20 @@ struct SetupThemeTeardown: Sendable {
         "Kept the macOS \(currentAppearance.rawValue) appearance, which was changed after setup.")
     }
     let wallpaper = wallpaper(stateRoot)
+    let scripts: [String]
+    do {
+      scripts =
+        try UnifiedSetupTransactionStore(stateRoot: stateRoot).read()?.userScripts
+        ?? EnvironmentStateStore(stateRoot: stateRoot).readOwnership()?.userScripts ?? []
+    } catch {
+      scripts = []
+      notes.append("Could not read applied user scripts: \(error)")
+    }
 
     if dryRun {
+      if !scripts.isEmpty {
+        notes.append("Would run \(scripts.count) user scripts with the teardown event.")
+      }
       let summary =
         restoresAppearance
         ? "Would restore macOS appearance and remove the setup-owned canonical theme."
@@ -95,6 +107,16 @@ struct SetupThemeTeardown: Sendable {
         )
       }
       mutated = appearanceChanged
+    }
+    if !scripts.isEmpty {
+      do {
+        let report = try UserScriptsAdapter(
+          root: stateRoot, mode: UserScriptsMode(scripts: scripts.map { URL(filePath: $0) })
+        ).run(event: .teardown)
+        notes.append(report.message)
+      } catch {
+        notes.append("User scripts failed: \(error)")
+      }
     }
     // Wallpaper is restored under the activation lock right before the theme is retired, so no
     // reconciliation can put Macarchy's wallpaper back in between. Its record is removed only

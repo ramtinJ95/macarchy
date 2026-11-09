@@ -6,6 +6,57 @@ import Testing
 @testable import ThemeCore
 
 struct SetupThemeTeardownTests {
+  @Test(arguments: [false, true])
+  func scriptsReceiveTeardownBeforeRetirementAndFailuresDoNotBlock(journaled: Bool) async throws {
+    let fixture = try ApplyFixture()
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
+    let directory = fixture.state.appending(path: "scripts")
+    try FileManager.default.createDirectory(
+      at: directory, withIntermediateDirectories: false,
+      attributes: [.posixPermissions: 0o700])
+    let script = directory.appending(path: "record")
+    let recorded = directory.appending(path: "events")
+    try
+      "#!/bin/sh\ntest -f \"$MACARCHY_THEME_FILE\" || exit 9\necho $MACARCHY_EVENT >> \"$(dirname \"$0\")/events\"\n"
+      .write(to: script, atomically: false, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+    let shared = directory.appending(path: "shared")
+    try "#!/bin/sh\nexit 0\n".write(to: shared, atomically: false, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o775], ofItemAtPath: shared.path)
+    let scripts = [script.path, shared.path]
+    if journaled {
+      try UnifiedSetupTransactionStore(stateRoot: fixture.state).write(
+        UnifiedSetupTransaction(
+          operation: .teardown, stages: [.theme], desiredAppearance: .dark,
+          contextDigest: "sha256:" + String(repeating: "a", count: 64), userScripts: scripts))
+    } else {
+      try EnvironmentStateStore(stateRoot: fixture.state).writeOwnership(
+        EnvironmentOwnership(
+          generationID: "e-00000000-0000-0000-0000-000000000000", records: [],
+          createdDirectories: [], originalThemeBridges: [], userScripts: scripts,
+          enabledThemeAdapterIDs: [UserScriptsAdapter.id]))
+    }
+    let appearance = FakeAppearance(.light)
+    let wallpaper = FakeWallpaper(showing: URL(filePath: "/user/chosen.png"))
+    let teardown = SetupThemeTeardown(
+      appearance: { _ in appearance.control },
+      wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) })
+    let preview = try await teardown.run(
+      stateRoot: fixture.state, ownership: ownership,
+      desiredAppearance: .dark, dryRun: true)
+    #expect(preview.message.contains("Would run 2 user scripts"))
+    #expect(!FileManager.default.fileExists(atPath: recorded.path))
+    let result = try await teardown.run(
+      stateRoot: fixture.state, ownership: ownership,
+      desiredAppearance: .dark, dryRun: false)
+    #expect(result.succeeded)
+    #expect(result.message.contains("record succeeded"))
+    #expect(result.message.contains("shared refused"))
+    #expect(try String(contentsOf: recorded, encoding: .utf8) == "teardown\n")
+  }
+
   @Test func restoresTheOriginalAppearanceAndWallpaperBeforeRemovingTheTheme() async throws {
     let fixture = try ApplyFixture()
     let manifest = try fixture.activateSetupOwnedTheme()

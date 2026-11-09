@@ -42,13 +42,16 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
   let stages: [SetupStage]
   let desiredAppearance: ThemeAppearance
   let contextDigest: String
+  /// Applied paths retained before environment teardown removes its ownership.
+  let userScripts: [String]?
 
   init(
     operation: UnifiedSetupTransactionOperation,
     phase: UnifiedSetupTransactionPhase = .mutating,
     stages: [SetupStage],
     desiredAppearance: ThemeAppearance,
-    contextDigest: String
+    contextDigest: String,
+    userScripts: [String]? = nil
   ) {
     schemaVersion = Self.schemaVersion
     self.operation = operation
@@ -56,6 +59,7 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
     self.stages = stages
     self.desiredAppearance = desiredAppearance
     self.contextDigest = contextDigest
+    self.userScripts = userScripts
   }
 
   func replacing(
@@ -67,12 +71,16 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
       phase: phase ?? self.phase,
       stages: stages ?? self.stages,
       desiredAppearance: desiredAppearance,
-      contextDigest: contextDigest
+      contextDigest: contextDigest,
+      userScripts: userScripts
     )
   }
 
   var hasValidShape: Bool {
     guard
+      (userScripts ?? []).count <= 8,
+      Set(userScripts ?? []).count == (userScripts ?? []).count,
+      (userScripts ?? []).allSatisfy({ NSString(string: $0).isAbsolutePath && !$0.contains("\0") }),
       schemaVersion == Self.schemaVersion,
       isSHA256Digest(contextDigest),
       Set(stages).count == stages.count
@@ -86,6 +94,7 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
     case operation, phase, stages
     case desiredAppearance = "desired_appearance"
     case contextDigest = "context_digest"
+    case userScripts = "user_scripts"
   }
 }
 
@@ -109,7 +118,10 @@ struct UnifiedSetupTransactionStore: Sendable {
       let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
       guard
         let object,
-        Set(object.keys) == Set(UnifiedSetupTransaction.CodingKeys.allCases.map(\.rawValue))
+        Set(object.keys).subtracting(["user_scripts"])
+          == Set(UnifiedSetupTransaction.CodingKeys.allCases.map(\.rawValue)).subtracting([
+            "user_scripts"
+          ])
       else {
         throw UnifiedSetupTransactionError.invalid("contains unknown or missing fields")
       }

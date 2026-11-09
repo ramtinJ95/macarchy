@@ -307,7 +307,9 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       operation: .teardown,
       stages: stages,
       desiredAppearance: model.themePackage.appearance,
-      contextDigest: unifiedSetupContextDigest(context: context, consumerPaths: consumerPaths)
+      contextDigest: unifiedSetupContextDigest(context: context, consumerPaths: consumerPaths),
+      userScripts: try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership()?
+        .userScripts
     )
     do {
       let recovery = try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
