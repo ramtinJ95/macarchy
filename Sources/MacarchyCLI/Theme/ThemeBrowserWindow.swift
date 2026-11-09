@@ -218,7 +218,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private let backgroundImageCache = NSCache<NSString, NSImage>()
   private var applyProcess: ThemeBrowserApplyProcessLauncher.RunningProcess?
   private var applyTimer: Timer?
-  private var applyRefreshResult: ThemeBrowserAsyncResult<Result<ThemeBrowserContent, any Error>>?
+  private var applyingItem: ThemeBrowserItem?
   private var isApplying = false
   private var isDeleting = false
   private var isSavingScreenSaver = false
@@ -648,75 +648,50 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     setControlsEnabled(true)
   }
 
+  /// Starts activation, then hands over to the status panel: the picker and backdrops leave the
+  /// screen, the panel reports the result and closes, and the browser exits with it.
   @objc private func applySelectedTheme(_ sender: Any?) {
     guard !isBusy, let item = selectedItem else { return }
     isApplying = true
     setControlsEnabled(false)
-    statusLabel.textColor = item.metadata.semantic.accent.nsColor
-    statusLabel.stringValue = "Applying \(item.displayName)…"
-    statusLabel.toolTip = nil
     do {
       applyProcess = try launchSelection(browserState.selection)
-      applyTimer = poll(every: 0.1, #selector(checkApplyProcess(_:)))
     } catch {
       isApplying = false
       setControlsEnabled(true)
       statusLabel.textColor = item.metadata.semantic.error.nsColor
       statusLabel.stringValue = "Could not start theme activation: \(error)"
       statusLabel.toolTip = String(describing: error)
+      return
     }
+    applyingItem = item
+    window?.orderOut(nil)
+    backdrops.close()
+    let panel = ThemeBrowserStatusPanel(display: layout.pickerDisplay)
+    panel.show(
+      "Applying \(item.displayName)…", text: item.metadata.semantic.text.nsColor,
+      background: item.metadata.semantic.surface.nsColor)
+    statusPanel = panel
+    applyTimer = poll(every: 0.1, #selector(checkApplyProcess(_:)))
   }
 
   @objc private func checkApplyProcess(_ timer: Timer) {
-    guard applyProcess?.isRunning() != true else { return }
-    if let outcome = applyRefreshResult?.value() {
-      finishApply(timer: timer, status: applyProcess?.terminationStatus(), refreshed: outcome)
-    } else if applyRefreshResult == nil {
-      let result = ThemeBrowserAsyncResult<Result<ThemeBrowserContent, any Error>>()
-      applyRefreshResult = result
-      let reload = reloadContent
-      Task.detached(priority: .userInitiated) {
-        do {
-          result.complete(.success(try await reload()))
-        } catch {
-          result.complete(.failure(error))
-        }
-      }
-    }
-  }
-
-  private func finishApply(
-    timer: Timer, status: Int32?, refreshed: Result<ThemeBrowserContent, any Error>
-  ) {
+    guard let process = applyProcess, !process.isRunning(), let item = applyingItem else { return }
     timer.invalidate()
     applyTimer = nil
     applyProcess = nil
-    applyRefreshResult = nil
-    isApplying = false
-    let notices: [String]
-    do {
-      notices = refresh(try refreshed.get())
-    } catch {
-      browserState.markInventoryStale()
-      setControlsEnabled(true)
-      statusLabel.stringValue =
-        "Activation finished\(status.map { " (exit \($0))" } ?? ""); library refresh failed. Reopen the picker."
-      statusLabel.toolTip = String(describing: error)
-      return
-    }
-    setControlsEnabled(true)
-    guard let item = selectedItem else { return }
-    if status == 0 {
-      statusLabel.textColor = item.metadata.semantic.accent.nsColor
-      let message = "Applied \(item.displayName). Choose another or press Esc to close."
-      statusLabel.stringValue = ([message] + notices).joined(separator: " ")
-      statusLabel.toolTip = nil
-    } else {
-      statusLabel.textColor = item.metadata.semantic.error.nsColor
-      let message =
-        "Theme activation failed\(status.map { " (exit \($0))" } ?? ""). See the test log for details."
-      statusLabel.stringValue = ([message] + notices).joined(separator: " ")
-      statusLabel.toolTip = "/tmp/macarchy-theme-browser-test.log"
+    let status = process.terminationStatus()
+    let succeeded = status == 0
+    statusPanel?.finish(
+      succeeded
+        ? "Applied \(item.displayName)."
+        : "Theme activation failed (exit \(status)). Run 'macarchy theme status' for details.",
+      text: (succeeded ? item.metadata.semantic.accent : item.metadata.semantic.error).nsColor,
+      delay: succeeded
+        ? ThemeBrowserStatusPanel.successDelay : ThemeBrowserStatusPanel.failureDelay
+    ) { [weak self] in
+      self?.isApplying = false
+      self?.window?.close()
     }
   }
 
