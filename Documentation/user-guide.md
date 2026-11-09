@@ -706,9 +706,14 @@ Declare at most eight distinct scripts. A machine profile’s `run` list replace
 the portable profile’s list. Paths are relative to the profile and must stay
 beside it. Run `macarchy setup apply` after changing the list. Each script runs without a shell, so it needs an
 interpreter line such as `#!/bin/sh`. It must belong to you, be executable, and
-neither it nor its directory may be writable by your group or by others;
-otherwise it is refused. It gets 10 seconds; anything it starts is stopped when
-it ends.
+all resolved ancestor directories must belong to you or root. Neither the script
+nor any ancestor may be group/other-writable or have an ACL granting changes;
+deny-only ACLs (such as the home directory’s deny-delete rule) are fine.
+Otherwise it is refused. It gets 10 seconds. Macarchy stops the script and its
+original process group on timeout, cancellation, or SIGINT/SIGTERM/SIGHUP, and
+stops that group when the script exits. Descendants that deliberately leave the
+group may survive; scripts are trusted user code, not sandboxed. Cancellation
+also prevents later scripts from starting.
 
 Each script receives `MACARCHY_EVENT` (`apply` or `teardown`),
 `MACARCHY_THEME_ID`, `MACARCHY_APPEARANCE`, `MACARCHY_THEME_FILE` (the active

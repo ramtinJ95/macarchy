@@ -90,15 +90,20 @@ package struct UserScriptsAdapter: Sendable {
   /// Runs every script in order for `event` with the active theme. Teardown calls this before
   /// the active theme is retired.
   package func run(event: UserScriptRunner.Event) throws -> UserScriptsReport {
+    try Task.checkCancellation()
     let scripts = try scripts()
     let theme = try ThemeGenerationReader(root: root).activeManifest().normalizedTheme(root: root)
     let environment = UserScriptRunner.environment(
       event: event, theme: theme,
       themeFile: StateLayout(root: root).currentThemeArtifact(ThemeRenderer.themeOutputPath))
-    return UserScriptsReport(
-      entries: scripts.map {
-        .init(script: $0.path, outcome: runner.run($0, environment: environment))
-      })
+    var entries: [UserScriptsReport.Entry] = []
+    for script in scripts {
+      try Task.checkCancellation()
+      let outcome = runner.run(script, environment: environment, isCancelled: { Task.isCancelled })
+      try Task.checkCancellation()
+      entries.append(.init(script: script.path, outcome: outcome))
+    }
+    return UserScriptsReport(entries: entries)
   }
 }
 
