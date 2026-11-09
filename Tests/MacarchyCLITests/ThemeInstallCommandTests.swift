@@ -171,6 +171,9 @@ struct ThemeInstallCommandTests {
     #expect(execution.succeeded)
     let report = try jsonObject(execution.output)
     #expect(report["committed"] as? Bool == true)
+    let legibility = try #require(report["legibility"] as? [String: [String]])
+    #expect(
+      legibility["unreadable"]?.contains("Text #d4a5ff on Selection: 1.00, needs 3.5") == true)
     #expect(report["notice"] as? String == "Theme history was not updated.")
     #expect(
       report["slack_theme"] as? String
