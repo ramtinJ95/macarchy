@@ -114,12 +114,36 @@ struct UserScriptRunnerTests {
         UserScriptRunner().run(script, environment: [:])
           == .refused("it has an access control list that lets others change it"))
       try setACL(nil, on: script)
+      defer { try? setACL(nil, on: script) }
       try setACL("everyone deny delete", on: script)
       #expect(UserScriptRunner().run(script, environment: [:]) == .succeeded)
       try setACL("group:staff allow add_file", on: directory)
       let resolved = try #require(realpathString(directory.path))
       #expect(
         UserScriptRunner().run(script, environment: [:])
+          == .refused(
+            "its directory \(resolved) has an access control list that lets others change it"))
+    }
+  }
+
+  @Test func writableGrandparentsAreRefusedEvenWithAPrivateParent() throws {
+    try withScriptDirectory { grandparent in
+      let parent = grandparent.appending(path: "private")
+      try FileManager.default.createDirectory(
+        at: parent, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+      let script = try makeScript("#!/bin/sh\nexit 0\n", in: parent)
+      let runner = UserScriptRunner()
+      // The ordinary path includes root-owned / and /Users, and the home deny-delete ACL.
+      #expect(runner.run(script, environment: [:]) == .succeeded)
+      chmod(grandparent.path, 0o777)
+      let resolved = try #require(realpathString(grandparent.path))
+      #expect(
+        runner.run(script, environment: [:])
+          == .refused("its directory \(resolved) is writable by its group or by others"))
+      chmod(grandparent.path, 0o700)
+      try setACL("group:staff allow add_subdirectory", on: grandparent)
+      #expect(
+        runner.run(script, environment: [:])
           == .refused(
             "its directory \(resolved) has an access control list that lets others change it"))
     }
@@ -167,9 +191,8 @@ extension AdapterContractTests {
     let root = try temporaryDirectory()
     defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
-    let scripts = root.appending(path: "scripts", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: scripts, withIntermediateDirectories: false)
-    chmod(scripts.path, 0o700)
+    let scripts = try makeTrustedScriptDirectory()
+    defer { removeTemporaryRoot(scripts) }
     let script = try makeScript(
       "#!/bin/sh\nprintf '%s %s %s' \"$MACARCHY_EVENT\" \"$MACARCHY_THEME_ID\" "
         + "\"$MACARCHY_ANSI_15\" > \"$(dirname \"$0\")/received\"\n",
@@ -220,10 +243,9 @@ extension AdapterContractTests {
 }
 
 private func withScriptDirectory(_ body: (URL) throws -> Void) throws {
-  try withTemporaryRoot(named: "macarchy-user-scripts") { root in
-    chmod(root.path, 0o700)
-    try body(root)
-  }
+  let root = try makeTrustedScriptDirectory()
+  defer { removeTemporaryRoot(root) }
+  try body(root)
 }
 
 @discardableResult
