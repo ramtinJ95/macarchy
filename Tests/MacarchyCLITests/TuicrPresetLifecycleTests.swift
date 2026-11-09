@@ -49,7 +49,7 @@ struct TuicrPresetLifecycleTests {
           "vscode", "cursor", "vscodium", "windsurf",
           ZedAdapter.id, AlacrittyAdapter.id, GhosttyAdapter.id, BordersAdapter.id,
           BordersAdapter.leanID,
-          UserScriptsAdapter.id, MacOSAccentAdapter.id,
+          UserScriptsAdapter.id, MacOSAccentAdapter.id, MacOSIconStyleAdapter.id,
           CodexAdapter.id,
           HerdrAdapter.id, PiAdapter.id,
           SpicetifyAdapter.id, TuicrAdapter.id,
