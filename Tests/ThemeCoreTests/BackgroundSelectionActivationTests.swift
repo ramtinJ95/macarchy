@@ -130,6 +130,62 @@ extension AdapterContractTests {
     )
   }
 
+  @Test(arguments: ["second", "default"])
+  func reviewedBackgroundActivationReconcilesEveryConsumer(requestedBackgroundID: String)
+    async throws
+  {
+    let root = try temporaryDirectory()
+    defer { removeTemporaryRoot(root) }
+    let package = try packageWithSecondBackground(root: root)
+    let requests = BackgroundRequestLog()
+    let wallpaperState = BackgroundWallpaperState(
+      (url: URL(filePath: "/tmp/existing-wallpaper.png"), setCount: 0)
+    )
+    let coordinator = try backgroundCoordinator(
+      root: root,
+      consumerPaths: try backgroundConsumerPaths(root: root),
+      requests: requests,
+      wallpaperControl: trackedWallpaperControl(state: wallpaperState)
+    )
+    let first = try await coordinator.activate(package: package)
+    let priorMessage = "Previously reconciled fixture result"
+    _ = try ReconciliationStatusStore(root: root).persist(
+      manifest: first.manifest,
+      results: first.reconciliation.results.map { result in
+        AdapterResult(
+          adapterID: result.adapterID,
+          requirement: result.requirement,
+          status: result.status,
+          message: priorMessage
+        )
+      }
+    )
+    requests.values.withLock { $0.removeAll() }
+
+    let reviewed = try await coordinator.activate(
+      package: package,
+      expectedActiveGenerationID: first.manifest.generationID,
+      requestedBackgroundID: requestedBackgroundID,
+      reconcileAllConsumers: true
+    )
+
+    #expect(reviewed.manifest.themeDigest == first.manifest.themeDigest)
+    #expect(
+      (reviewed.manifest.generationID == first.manifest.generationID)
+        == (requestedBackgroundID == "default"))
+    #expect(!requests.values.withLock { $0 }.isEmpty)
+    #expect(
+      wallpaperState.value.withLock { $0.setCount }
+        == (requestedBackgroundID == "default" ? 1 : 2))
+    #expect(
+      Set(reviewed.reconciliation.results.map(\.adapterID))
+        == Set(first.reconciliation.results.map(\.adapterID)))
+    for result in reviewed.reconciliation.results {
+      #expect(result.message != priorMessage)
+      #expect(result.carriedForwardFromGenerationID == nil)
+    }
+  }
+
   @Test
   func zeroBackgroundActivationLeavesWallpaperUntouchedAndReportsItDisabled() async throws {
     try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in

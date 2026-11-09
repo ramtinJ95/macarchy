@@ -285,7 +285,7 @@ private struct ThemeInstallFixture {
     )
     let activation = ThemeActivationService(
       review: { package, _, _, _ in try passingReview(package) },
-      activate: { _, _, _, _, _ in
+      activate: { _, _, _, _, _, _ in
         if let activationResult {
           return activationResult
         }

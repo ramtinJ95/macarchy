@@ -1108,11 +1108,12 @@ private struct HerdrFixture {
       review: { package, background, _, _ in
         try makeCoordinator().review(package: package, requestedBackgroundID: background)
       },
-      activate: { package, background, _, _, expected in
+      activate: { package, background, _, _, expected, reconcileAllConsumers in
         try await makeCoordinator().activate(
           package: package,
           expectedActiveGenerationID: expected,
-          requestedBackgroundID: background
+          requestedBackgroundID: background,
+          reconcileAllConsumers: reconcileAllConsumers
         )
       }
     )

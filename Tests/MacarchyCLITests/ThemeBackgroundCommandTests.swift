@@ -36,7 +36,7 @@ struct ThemeBackgroundCommandTests {
       activeManifest: { _ in canonical.withLock { $0 } },
       activation: ThemeActivationService(
         review: { package, _, _, _ in try passingReview(package) },
-        activate: { package, backgroundID, _, _, expectedGenerationID in
+        activate: { package, backgroundID, _, _, expectedGenerationID, _ in
           let backgroundID = try #require(backgroundID)
           let expectedGenerationID = try #require(expectedGenerationID)
           let manifest = try canonical.withLock { current -> GenerationManifest in
@@ -100,7 +100,7 @@ struct ThemeBackgroundCommandTests {
           observedSelection.withLock { $0 = backgroundID }
           return try passingReview(package)
         },
-        activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
+        activate: { _, _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
       )
     )
 
@@ -135,7 +135,7 @@ struct ThemeBackgroundCommandTests {
           observedSelection.withLock { $0 = backgroundID }
           return try passingReview(package)
         },
-        activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
+        activate: { _, _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
       )
     )
 
@@ -156,7 +156,7 @@ struct ThemeBackgroundCommandTests {
       activeManifest: { _ in manifest },
       activation: ThemeActivationService(
         review: { package, _, _, _ in try passingReview(package) },
-        activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
+        activate: { _, _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
       )
     )
   }
