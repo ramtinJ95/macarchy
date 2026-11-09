@@ -6,6 +6,43 @@ import Testing
 @testable import ThemeCore
 
 extension AdapterContractTests {
+  @Test func reviewChecksEveryEnabledConsumerAndListsTheDisabledOnes() throws {
+    let root = try temporaryDirectory()
+    defer { removeTemporaryRoot(root) }
+    let package = try tokyoNightPackage()
+    let coordinator = ThemeActivationCoordinator(
+      root: root,
+      consumerPaths: try Self.consumerPaths(
+        root: root,
+        adapterIDs: [HerdrAdapter.id, KittyAdapter.id, NeovimAdapter.id]
+      ),
+      // Herdr reports a version below the minimum, so its preflight fails.
+      processRunner: ProcessRunner { request in
+        if request.executableURL == HerdrAdapter.liveExecutableURL {
+          return ProcessResult(terminationStatus: 0, output: "herdr 0.0.1")
+        }
+        return ProcessResult(terminationStatus: 0, output: "")
+      },
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root),
+      enabledAdapterIDs: [HerdrAdapter.id, KittyAdapter.id, NeovimAdapter.id]
+    )
+
+    #expect(throws: (any Error).self) { try coordinator.preflight(package: package) }
+    let review = try coordinator.review(package: package)
+
+    #expect(review.consumers.map(\.id) == ["herdr", "kitty", "neovim"])
+    #expect(review.failedConsumerIDs == ["herdr"])
+    #expect(!review.canApply)
+    #expect(review.disabledConsumerIDs.contains("atuin"))
+    #expect(!review.disabledConsumerIDs.contains("kitty"))
+    #expect(review.consumers.first { $0.id == "kitty" }?.repaint == .reload)
+    #expect(review.consumers.first { $0.id == "kitty" }?.artifacts == [KittyAdapter.outputPath])
+    #expect(review.activeGenerationID == nil)
+    // Reviewing writes nothing: there is still no active generation and no generation directory.
+    #expect(!FileManager.default.fileExists(atPath: root.appending(path: "generations").path))
+  }
+
   @Test
   func activationPublishesBeforeAdapterProcessesAndPersistsTheirResults() async throws {
     let root = try temporaryDirectory()

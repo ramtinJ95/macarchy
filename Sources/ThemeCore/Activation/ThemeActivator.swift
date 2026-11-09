@@ -858,6 +858,14 @@ public struct ThemeActivator: Sendable {
     try atomicallyReplaceCurrent(with: temporaryPointer)
   }
 
+  /// The input digest activation would give `package` with `background`, for a reviewed plan.
+  package func reviewInputDigest(
+    package: ThemePackage, background: PreparedThemeBackground
+  ) throws -> String {
+    try generationInputDigest(
+      themeDigest: try generationThemeDigest(package: package), background: background)
+  }
+
   private func generationInputDigest(
     themeDigest: String,
     background: PreparedThemeBackground
