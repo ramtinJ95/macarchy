@@ -108,10 +108,12 @@ package enum ChildProcess {
     return signal == 0 ? (status >> 8) & 0xff : 128 + signal
   }
 
-  /// SIGKILLs `target` (the child, or its negated process group), then blocks until the child
-  /// `pid` is reaped.
+  /// SIGKILLs `target` and the owned child, then blocks until `pid` is reaped. Killing
+  /// the original group alone cannot stop a child that has moved to a different group.
+  /// Descendants that leave that original group may survive; this is not a sandbox.
   package static func killAndReap(_ pid: pid_t, target: pid_t) {
     _ = kill(target, SIGKILL)
+    if target != pid { _ = kill(pid, SIGKILL) }
     var status: Int32 = 0
     while waitpid(pid, &status, 0) == -1, errno == EINTR {}
   }
