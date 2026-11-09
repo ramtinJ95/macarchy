@@ -41,6 +41,12 @@ package enum GhosttyConfiguration {
     return files[0]
   }
 
+  /// Unreleased development installs used the active generation directly. Accept this
+  /// spelling only to recognize drift and authenticate restoration, never for new adoption.
+  package static func legacyIncludeDirective(root: URL) -> String {
+    "config-file = ?\"\(StateLayout(root: root).currentThemeArtifact(GhosttyAdapter.outputPath).path)\""
+  }
+
   package static func includeDirective(root: URL) -> String {
     "config-file = ?\"\(root.appending(path: GhosttyAdapter.bridgePath).path)\""
   }

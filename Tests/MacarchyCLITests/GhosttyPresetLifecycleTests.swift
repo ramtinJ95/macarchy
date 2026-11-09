@@ -339,9 +339,11 @@ struct GhosttyPresetLifecycleTests {
     if disable {
       try presetTestProfile(presets: ["ghostty": false]).write(
         to: f.profile, atomically: true, encoding: .utf8)
-      #expect(try await f.apply().succeeded)
+      let disabled = try await f.apply()
+      #expect(disabled.succeeded, "\(disabled.output)")
     } else {
-      #expect(try await f.harness.teardown(consumerPaths: f.paths).succeeded)
+      let tornDown = try await f.harness.teardown(consumerPaths: f.paths)
+      #expect(tornDown.succeeded, "\(tornDown.output)")
     }
     #expect(try Data(contentsOf: f.configuration) == Data("font-size = 13".utf8))
     try presetTestProfile(presets: ["ghostty": true]).write(

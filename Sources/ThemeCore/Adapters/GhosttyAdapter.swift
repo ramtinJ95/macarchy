@@ -84,8 +84,7 @@ package struct GhosttyAdapter: Sendable {
       throw BoundedRegularFileError.invalidUTF8
     }
     let lines = data.split(separator: 10, omittingEmptySubsequences: false)
-    let legacy =
-      "config-file = ?\"\(StateLayout(root: root).currentThemeArtifact(Self.outputPath).path)\""
+    let legacy = GhosttyConfiguration.legacyIncludeDirective(root: root)
     let legacyMatches = lines.indices.filter { lines[$0] == Data(legacy.utf8) }
     if legacyMatches.count == 1, legacyMatches[0] < lines.count - 1,
       ownedLineIndex == nil || legacyMatches.first == ownedLineIndex
