@@ -103,6 +103,12 @@ macarchy setup doctor
 `macarchy theme undo` steps back through the last 50 theme and background changes;
 there is no redo.
 
+`macarchy theme set <theme> --dry-run` shows what activation would change in every
+enabled consumer, the generated files it reads, when the change shows, and every
+preflight failure, without writing anything. It ends with a digest; `macarchy theme
+set <theme> --reviewed <digest>` applies exactly that plan and refuses if the theme,
+its background, the enabled consumers or the active theme changed since the review.
+
 In the theme browser, Add Favorite or Command-D stars the selected theme. The action
 menu lists starred themes under Appearance and finds any installed theme as you
 type; choosing one applies it.
