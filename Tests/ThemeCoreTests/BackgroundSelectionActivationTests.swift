@@ -88,7 +88,8 @@ extension AdapterContractTests {
       wallpaperControl: trackedWallpaperControl(state: wallpaperState),
       enabledAdapterIDs: Set(ThemeActivationCoordinator.adapterRequirements.keys)
         .subtracting([
-          GhosttyAdapter.id, BordersAdapter.id, BordersAdapter.leanID, UserScriptsAdapter.id, CodexAdapter.id,
+          GhosttyAdapter.id, BordersAdapter.id, BordersAdapter.leanID, UserScriptsAdapter.id,
+          CodexAdapter.id,
           HerdrAdapter.id, PiAdapter.id,
           TuicrAdapter.id,
         ])
@@ -391,7 +392,8 @@ extension AdapterContractTests {
       currentAppearance: { .dark },
       enabledAdapterIDs: enabledAdapterIDs
         ?? Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          GhosttyAdapter.id, BordersAdapter.id, BordersAdapter.leanID, UserScriptsAdapter.id, CodexAdapter.id,
+          GhosttyAdapter.id, BordersAdapter.id, BordersAdapter.leanID, UserScriptsAdapter.id,
+          CodexAdapter.id,
           HerdrAdapter.id, PiAdapter.id,
         ]),
       userScriptsMode: userScriptsMode
