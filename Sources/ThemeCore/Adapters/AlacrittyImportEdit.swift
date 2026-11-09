@@ -205,7 +205,18 @@ package struct AlacrittyImportEdit: Codable, Equatable, Sendable {
     for change in changes.reversed() {
       delta -= change.inserted.count - change.removed.count
       let start = change.offset + delta
-      result.replaceSubrange(start..<(start + change.inserted.count), with: change.removed)
+      let end = start + change.inserted.count
+      var replacement = change.removed
+      // An appended user table must not join an originally unterminated comment/header.
+      // With no later content the original bytes (including no final newline) still win.
+      if end < result.count, change.inserted.last == 10,
+        let preceding = replacement.last ?? result[..<start].last,
+        preceding != 10 && preceding != 13, result[end] != 10 && result[end] != 13
+      {
+        replacement.append(
+          contentsOf: tomlPreferredNewline(in: String(decoding: managed, as: UTF8.self)).utf8)
+      }
+      result.replaceSubrange(start..<end, with: replacement)
     }
     // Later user imports are allowed and reported as overrides. They are not ours
     // to remove; the element's recorded position and punctuation must still match.

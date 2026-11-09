@@ -1,4 +1,5 @@
 import Foundation
+import TOMLDecoder
 import Testing
 
 @testable import ThemeCore
@@ -85,11 +86,17 @@ struct AlacrittyImportEditTests {
         == "[general]\nimport = ['first', 'later']\n")
   }
 
-  @Test func appendedUserTablesSurviveRemovalOfAnIntroducedTable() throws {
-    let source = Data("# keep\n".utf8)
+  @Test(arguments: ["# keep", "# keep\n", "[general]"])
+  func appendedUserTablesSurviveRemovalOfAnIntroducedTable(original: String) throws {
+    let source = Data(original.utf8)
     let edit = try AlacrittyImportEdit.adopting(source, themePath: "/theme")
     let managed = try edit.apply(to: source) + Data("[font]\nsize = 12\n".utf8)
-    #expect(try edit.restore(managed) == source + Data("[font]\nsize = 12\n".utf8))
+    let restored = try edit.restore(managed)
+    #expect(
+      restored == source + Data((original.hasSuffix("\n") ? "" : "\n").utf8)
+        + Data("[font]\nsize = 12\n".utf8))
+    #expect(try TOMLTable(source: restored).table(forKey: "font").integer(forKey: "size") == 12)
+    #expect(try edit.restore(edit.apply(to: source)) == source)
   }
 
 }
