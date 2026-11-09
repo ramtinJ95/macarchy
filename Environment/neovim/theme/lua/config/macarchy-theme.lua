@@ -1,6 +1,9 @@
 local M = {}
 local state = {}
 
+-- How long after VimEnter a colorscheme picked by a plugin is replaced by Macarchy's.
+M.startup_window_ms = 1000
+
 local root = __MACARCHY_STATE_ROOT_LUA__
 local current_path = vim.fn.stdpath("config") .. "/lua/macarchy/current.lua"
 local imported_colorscheme = "macarchy-imported"
@@ -237,6 +240,31 @@ local function apply_current()
   state.theme = theme
 end
 
+-- A plugin can pick another colorscheme after startup, on VeryLazy or a timer, often without a
+-- ColorScheme event. Once the startup window ends, Macarchy's colorscheme is put back if Neovim
+-- started with it and something replaced it. A colorscheme already different at VimEnter comes
+-- from the user's configuration and stays, as does any picked after the window.
+local function guard_startup_colorscheme()
+  vim.api.nvim_create_autocmd("VimEnter", {
+    once = true,
+    callback = function()
+      if not state.theme or vim.g.colors_name ~= runtime_names[state.theme.colorscheme] then
+        return
+      end
+      vim.defer_fn(function()
+        local ok, theme = pcall(read_current)
+        if ok and vim.g.colors_name == runtime_names[theme.colorscheme] then
+          return
+        end
+        -- The canonical theme did not change, so apply_current would otherwise skip it; it also
+        -- reports a canonical theme that cannot be read.
+        state.theme = nil
+        apply_current()
+      end, M.startup_window_ms)
+    end,
+  })
+end
+
 function M.watch()
   if state.watcher then
     return M.current()
@@ -271,6 +299,7 @@ function M.watch()
     error(current)
   end
   state.theme = current
+  guard_startup_colorscheme()
   vim.api.nvim_create_autocmd("VimResume", { callback = apply_current })
   vim.api.nvim_create_autocmd("VimLeavePre", {
     once = true,
