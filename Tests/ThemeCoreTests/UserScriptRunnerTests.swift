@@ -106,6 +106,25 @@ struct UserScriptRunnerTests {
     }
   }
 
+  @Test func writeGrantingACLsAreRefusedButDenyEntriesRemainRunnable() throws {
+    try withScriptDirectory { directory in
+      let script = try makeScript("#!/bin/sh\nexit 0\n", in: directory)
+      try setACL("group:staff allow write", on: script)
+      #expect(
+        UserScriptRunner().run(script, environment: [:])
+          == .refused("it has an access control list that lets others change it"))
+      try setACL(nil, on: script)
+      try setACL("everyone deny delete", on: script)
+      #expect(UserScriptRunner().run(script, environment: [:]) == .succeeded)
+      try setACL("group:staff allow add_file", on: directory)
+      let resolved = try #require(realpathString(directory.path))
+      #expect(
+        UserScriptRunner().run(script, environment: [:])
+          == .refused(
+            "its directory \(resolved) has an access control list that lets others change it"))
+    }
+  }
+
   @Test func untrustedScriptsAreRefusedBeforeTheyRun() throws {
     try withScriptDirectory { directory in
       let groupWritable = try makeScript("#!/bin/sh\nexit 0\n", named: "group", in: directory)
@@ -246,4 +265,13 @@ private func withTemporaryRootReturning<T>(_ body: (URL) throws -> T) throws -> 
   let root = try makeTemporaryDirectory(named: "macarchy-user-script-theme")
   defer { removeTemporaryRoot(root) }
   return try body(root)
+}
+
+private func setACL(_ entry: String?, on url: URL) throws {
+  let process = Process()
+  process.executableURL = URL(filePath: "/bin/chmod")
+  process.arguments = entry.map { ["+a", $0, url.path] } ?? ["-N", url.path]
+  try process.run()
+  process.waitUntilExit()
+  try #require(process.terminationStatus == 0)
 }
