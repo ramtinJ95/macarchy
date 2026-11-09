@@ -21,6 +21,17 @@ private final class ThemeBrowserWindow: NSPanel {
 
   override var canBecomeKey: Bool { true }
 
+  /// Command-Z undoes the last theme change rather than typing in the filter. Key equivalents
+  /// reach the key window before the main menu, whose Undo item would otherwise take it.
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    if modifiers == .command, event.charactersIgnoringModifiers == "z", let undo {
+      undo()
+      return true
+    }
+    return super.performKeyEquivalent(with: event)
+  }
+
   override func cancelOperation(_ sender: Any?) {
     cancel?()
   }
@@ -31,11 +42,6 @@ private final class ThemeBrowserWindow: NSPanel {
       return
     }
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-    // Command-Z undoes the last theme change, not typing in the filter.
-    if modifiers == .command, event.charactersIgnoringModifiers == "z" {
-      undo?()
-      return
-    }
     let direction = event.keyCode == 123 ? -1 : event.keyCode == 124 ? 1 : 0
     if direction != 0, modifiers.contains(.shift),
       modifiers.isDisjoint(with: [.command, .control, .option])
@@ -686,9 +692,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       progress: "Undoing the last theme change…",
       result: PendingResult(
         item: item, success: "Returned to the previous theme.",
-        failure: {
-          "Nothing was undone (exit \($0)). Run 'macarchy theme undo --dry-run' for details."
-        }))
+        failure: { "Theme undo did not complete (exit \($0)). Its alert has the details." }))
   }
 
   /// Starts an apply or undo process, then hands over to the status panel: the picker and
