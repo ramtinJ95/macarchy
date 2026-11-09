@@ -259,6 +259,11 @@ the executable alone does not change an already-generated shortcut configuration
 The browser can move inactive user-installed themes to Trash after confirmation;
 built-in and active themes are protected.
 
+The browser opens on the display with the pointer, also over full-screen apps, and
+covers every display with the selected theme's background, blurred. Type to filter;
+the first match is selected. Escape clears the filter, then closes the browser.
+Return applies the selection, and a small panel reports the result and closes.
+
 Macarchy ships **Catppuccin Mocha, Tokyo Night, and Kanagawa Wave**. Theme changes
 update supported running applications where possible. Some changes take effect
 on the next prompt or launch; Codex and tuicr need a fresh session. Selected
