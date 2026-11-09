@@ -520,7 +520,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           desktop = .noChange("Preserved converged desktop providers.")
         }
 
-        let environment: UnifiedSetupApplyStage
+        var environment: UnifiedSetupApplyStage
         if plannedStages.contains(.environment) {
           try start(.environment)
           do {
@@ -597,11 +597,13 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         if let transaction {
           let committing = transaction.replacing(phase: .committing)
           try store.write(committing)
-          _ = try await transactionTeardown.recover(
+          let finalized = try await transactionTeardown.recover(
             transaction: committing,
             context: context,
             consumerPaths: consumerPaths
           )
+          environment = environment.finalized(by: finalized.environment)
+          mutated = mutated || finalized.mutated
         }
 
         return try result(
@@ -763,6 +765,11 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           outcome: "applied",
           mutated: recovered.result.mutated,
           plan: nil,
+          environment: recovered.result.environment.map {
+            UnifiedSetupApplyStage(
+              succeeded: $0.succeeded, mutated: $0.mutated, message: $0.message,
+              details: nil, finalization: $0)
+          },
           message: "Interrupted unified apply had committed; transaction cleanup completed."
             + warning,
           json: json
@@ -905,6 +912,17 @@ struct UnifiedSetupApplyStage: Encodable, Sendable {
   let mutated: Bool
   let message: String
   let details: SetupStageDetails?
+  var finalization: UnifiedSetupTeardownStage? = nil
+
+  func finalized(by report: UnifiedSetupTeardownStage?) -> Self {
+    guard let report else { return self }
+    return Self(
+      succeeded: succeeded && report.succeeded,
+      mutated: mutated || report.mutated,
+      message: message + " " + report.message,
+      details: details,
+      finalization: report)
+  }
 
   static func noChange(_ message: String) -> Self {
     Self(succeeded: true, mutated: false, message: message, details: nil)

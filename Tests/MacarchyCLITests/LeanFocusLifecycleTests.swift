@@ -75,7 +75,8 @@ struct LeanFocusLifecycleTests {
     #expect(
       try EnvironmentApplyCommandRunner(
         prerequisites: .assumed, theme: nil, verifier: .assumed, bordersRuntime: fixture.runtime
-      ).finishDeferredApply(stateRoot: fixture.root, homeDirectory: fixture.home, commit: false))
+      ).finishDeferredApply(stateRoot: fixture.root, homeDirectory: fixture.home, commit: false)
+        .changed)
     #expect(try fixture.runtime.inspectIncumbent(fixture.home) == before)
     #expect(fixture.state.withLock { $0.actions.isEmpty && $0.running })
     #expect(state.withLock { $0.actions } == ["start", "ack"])
@@ -347,7 +348,8 @@ struct LeanFocusLifecycleTests {
     #expect(
       try EnvironmentApplyCommandRunner(
         prerequisites: .assumed, theme: nil, verifier: .assumed, bordersRuntime: fixture.runtime
-      ).finishDeferredApply(stateRoot: fixture.root, homeDirectory: fixture.home, commit: false))
+      ).finishDeferredApply(stateRoot: fixture.root, homeDirectory: fixture.home, commit: false)
+        .changed)
     #expect(state.withLock { $0.configuration } == nil)
     #expect(try store.readOwnership() == nil)
     #expect(try store.readTransaction() == nil)

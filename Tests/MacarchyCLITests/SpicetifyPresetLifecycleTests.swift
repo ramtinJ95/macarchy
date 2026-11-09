@@ -75,7 +75,8 @@ struct SpicetifyPresetLifecycleTests {
               throw EnvironmentLifecycleError.blocked("stock Spotify cannot refresh")
             }
           ).finishDeferredApply(
-            stateRoot: context.stateRoot, homeDirectory: context.homeDirectory, commit: false)
+            stateRoot: context.stateRoot, homeDirectory: context.homeDirectory, commit: false
+          ).changed
           #expect(try store.readTransaction() == nil)
           return .noChange("Environment configuration restored; Spotify runtime unverified")
         },
