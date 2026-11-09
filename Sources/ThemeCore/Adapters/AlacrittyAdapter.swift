@@ -188,20 +188,13 @@ package struct AlacrittyAdapter: Sendable {
   {
     let desired = try activeConfiguration(root: root)
     let connection = try AlacrittyConnection.read(root: root)
-    try withBridgeParent(root: root) { parent, url in
-      _ = try bridgeIsAbsent(parent: parent, url: url)
-      try PinnedFilesystem.replaceRegularFileAtomically(
-        parentDescriptor: parent,
-        name: url.lastPathComponent, url: url, data: desired, mode: 0o644)
-      if connection == nil {
-        let timestamp = now()
-        guard timestamp > 0 else { throw AlacrittyConnection.Failure.invalid }
-        let state = root.appending(path: connectionPath)
-        _ = try bridgeIsAbsent(parent: parent, url: state)
-        try PinnedFilesystem.replaceRegularFileAtomically(
-          parentDescriptor: parent, name: state.lastPathComponent, url: state,
-          data: JSONEncoder().encode(AlacrittyConnection(adoptedAt: timestamp)), mode: 0o600)
-      }
+    try StableAdapterBridge.publish(desired, root: root, path: bridgePath)
+    if connection == nil {
+      let timestamp = now()
+      guard timestamp > 0 else { throw AlacrittyConnection.Failure.invalid }
+      try StableAdapterBridge.publish(
+        JSONEncoder().encode(AlacrittyConnection(adoptedAt: timestamp)),
+        root: root, path: connectionPath, mode: 0o600)
     }
   }
 
@@ -210,57 +203,6 @@ package struct AlacrittyAdapter: Sendable {
     return try BoundedRegularFile.read(at: manifest.artifactURL(root: root, path: outputPath)).data
   }
 
-  package static func restoreBridge(at url: URL, data: Data?, mode: UInt16?) throws {
-    guard statePaths.contains(where: { url.path.hasSuffix("/" + $0) }) else {
-      throw Failure.unsafe(url.path)
-    }
-    if data == nil {
-      guard
-        let parent = try PinnedFilesystem.openDirectoryIfPresent(
-          at: url.deletingLastPathComponent())
-      else { return }
-      defer { close(parent) }
-      if try bridgeIsAbsent(parent: parent, url: url) { return }
-      guard unlinkat(parent, url.lastPathComponent, 0) == 0 else {
-        throw PinnedFilesystemError(operation: "remove Alacritty bridge", url: url, code: errno)
-      }
-    } else if let data {
-      let root = url.deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent()
-      try withBridgeParent(root: root) { parent, _ in
-        _ = try bridgeIsAbsent(parent: parent, url: url)
-        try PinnedFilesystem.replaceRegularFileAtomically(
-          parentDescriptor: parent,
-          name: url.lastPathComponent, url: url, data: data, mode: mode_t(mode ?? 0o644))
-      }
-    }
-  }
-
-  private static func bridgeIsAbsent(parent: Int32, url: URL) throws -> Bool {
-    var metadata = stat()
-    let result = fstatat(parent, url.lastPathComponent, &metadata, AT_SYMLINK_NOFOLLOW)
-    let absent = result != 0 && errno == ENOENT
-    guard absent || (result == 0 && metadata.st_mode & S_IFMT == S_IFREG && metadata.st_nlink == 1)
-    else {
-      throw Failure.unsafe(url.path)
-    }
-    return absent
-  }
-
-  private static func withBridgeParent<T>(root: URL, body: (Int32, URL) throws -> T) throws -> T {
-    let rootFD = try PinnedFilesystem.openDirectory(at: root)
-    defer { close(rootFD) }
-    let state = root.appending(path: "state")
-    let stateFD = try PinnedFilesystem.openOrCreateChildDirectory(
-      parentDescriptor: rootFD, name: "state", url: state)
-    defer { close(stateFD) }
-    let directory = state.appending(path: "adapters")
-    let parent = try PinnedFilesystem.openOrCreateChildDirectory(
-      parentDescriptor: stateFD, name: "adapters", url: directory)
-    defer { close(parent) }
-    let url = root.appending(path: bridgePath)
-    return try body(parent, url)
-  }
   static func render(package: ThemePackage) -> String {
     let terminal = package.terminal
     var lines = [

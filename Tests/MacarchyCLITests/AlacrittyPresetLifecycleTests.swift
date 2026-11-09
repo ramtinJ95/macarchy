@@ -53,7 +53,7 @@ struct AlacrittyPresetLifecycleTests {
         == AlacrittyAdapter.statePaths.map { fixture.state.appending(path: $0).path })
     #expect(EnvironmentThemeBridgeState.pathsAreValid(empty.entries, stateRoot: fixture.state))
     for path in AlacrittyAdapter.statePaths {
-      try AlacrittyAdapter.restoreBridge(
+      try StableAdapterBridge.restore(
         at: fixture.state.appending(path: path), data: Data("original".utf8), mode: 0o600)
     }
     let saved = try EnvironmentThemeBridgeState.capture(
