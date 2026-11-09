@@ -383,11 +383,15 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
 
   func isOwned(by ownership: EnvironmentOwnership?) -> Bool { ownedPath(in: ownership) != nil }
 
-  func configurationURL(home: URL, ownership: EnvironmentOwnership? = nil) throws -> URL {
+  func configurationURL(
+    home: URL, ownership: EnvironmentOwnership? = nil,
+    proposedGhostty: EnvironmentGhosttyOwnership? = nil
+  ) throws -> URL {
     if self == .ghostty {
-      if let path = ownership?.ghostty?.path { return URL(filePath: path) }
-      return try GhosttyConfiguration.selectedFile(
-        in: ThemeConsumerPaths.ghosttyConfigurationFiles(home: home))
+      guard let path = proposedGhostty?.path ?? ownership?.ghostty?.path else {
+        throw EnvironmentLifecycleError.blocked("Missing planned Ghostty configuration path")
+      }
+      return URL(filePath: path)
     }
     return home.appending(path: configurationPath)
   }

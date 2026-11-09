@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import TestSupport
 import Testing
 
@@ -103,6 +104,65 @@ struct GhosttyPresetLifecycleTests {
     #expect(try String(contentsOf: fixture.configuration, encoding: .utf8) == "font-size = 13\n")
   }
 
+  @Test(arguments: [[1, 2, 3], [1, 3, 0]], [false, true])
+  func adoptionUsesOnlyFilesReadByTheInstalledVersion(version: [Int], extensionsOnly: Bool)
+    async throws
+  {
+    let fixture = try Fixture(original: extensionsOnly ? nil : "font-size = 13\n", version: version)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let files = ThemeConsumerPaths.ghosttyConfigurationFiles(home: fixture.home, environment: [:])
+    for file in [files[1], files[3]] + (extensionsOnly ? [] : [files[2]]) {
+      try FileManager.default.createDirectory(
+        at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try Data("font-size = 14\n".utf8).write(to: file)
+    }
+    let original = files.map { try? Data(contentsOf: $0) }
+    let legacy = version[1] == 2
+    let expected = legacy ? (extensionsOnly ? files[0] : files[2]) : files[3]
+    let plan = try fixture.harness.plan()
+    #expect(plan.succeeded, "\(plan.output)")
+    let entries = try #require(try jsonObject(plan.output)["entries"] as? [[String: Any]])
+    let entry = try #require(entries.first { $0["id"] as? String == "ghostty_configuration" })
+    #expect(entry["path"] as? String == expected.path)
+    #expect((entry["message"] as? String)?.contains("before 1.3.0 ignore:") == legacy)
+    let digest = try jsonObject(plan.output)["adoption_evidence_digest"] as? String
+    let applied = try await fixture.apply(adopt: digest)
+    #expect(applied.succeeded, "\(applied.output)")
+    #expect(
+      try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()?.ghostty?.path
+        == expected.path)
+    #expect(try await fixture.harness.teardown(consumerPaths: fixture.paths).succeeded)
+    for (index, file) in files.enumerated() {
+      #expect((try? Data(contentsOf: file)) == original[index])
+    }
+  }
+
+  @Test func downgradeRefusesIgnoredOwnedFileButAllowsRestorationWithoutTheApp() async throws {
+    let fixture = try Fixture(original: nil)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let files = ThemeConsumerPaths.ghosttyConfigurationFiles(home: fixture.home, environment: [:])
+    try FileManager.default.createDirectory(
+      at: files[3].deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("font-size = 13\n".utf8).write(to: files[3])
+    let digest =
+      try jsonObject(fixture.harness.plan().output)["adoption_evidence_digest"] as? String
+    #expect(try await fixture.apply(adopt: digest).succeeded)
+    let owner = try #require(
+      try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()?.ghostty)
+    let old = EnvironmentProviderInspector(ghosttyVersion: { [1, 2, 3] })
+    #expect(throws: EnvironmentLifecycleError.self) {
+      try old.inspectGhostty(
+        enabled: true, ownership: owner, home: fixture.home, root: fixture.state)
+    }
+    let missing = EnvironmentProviderInspector(ghosttyVersion: { throw Injected.failure })
+    #expect(
+      try missing.inspectGhostty(
+        enabled: false, ownership: owner, home: fixture.home, root: fixture.state
+      ).entry?.status == .restorationRequired)
+    #expect(try await fixture.harness.teardown(consumerPaths: fixture.paths).succeeded)
+    #expect(try Data(contentsOf: files[3]) == Data("font-size = 13\n".utf8))
+  }
+
   @Test func disableRestoresAndMissingPrerequisiteDoesNotAdopt() async throws {
     let fixture = try Fixture(original: "font-size = 13")
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -143,6 +203,36 @@ struct GhosttyPresetLifecycleTests {
     #expect(try EnvironmentStateStore(stateRoot: fixture.state).readTransaction() == nil)
   }
 
+  @Test func deferredCommitAndFinalStatusReuseTheInjectedVersion() async throws {
+    let fixture = try Fixture(original: "font-size = 13\n")
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let probes = Mutex(0)
+    let runner = EnvironmentApplyCommandRunner(
+      prerequisites: .assumed,
+      theme: stubThemeController(
+        reconciled: ("applied", "Reloaded"), inspected: ("ready", "Ready")),
+      verifier: .assumed,
+      ghosttyVersion: {
+        probes.withLock { $0 += 1 }
+        return [1, 2, 3]
+      })
+    let digest =
+      try jsonObject(fixture.harness.plan().output)["adoption_evidence_digest"] as? String
+    let applied = try await fixture.harness.apply(
+      runner: runner, consumerPaths: fixture.paths, adopt: digest, deferFinalization: true)
+    #expect(applied.succeeded, "\(applied.output)")
+    #expect(probes.withLock { $0 } == 1)
+    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readTransaction() != nil)
+    let profile = try PortableProfileLoader().load(at: fixture.profile, required: true)
+    #expect(
+      try runner.finishDeferredApply(
+        resourcesRoot: repositoryRoot.appending(path: "Environment"), profile: profile,
+        stateRoot: fixture.state, homeDirectory: fixture.home, commit: true))
+    #expect(probes.withLock { $0 } == 2)
+    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readTransaction() == nil)
+    #expect(try await fixture.harness.teardown(consumerPaths: fixture.paths).succeeded)
+  }
+
   @Test func appendedBytesStayReadableAndSeparatorShapeIsValidated() throws {
     let url = URL(filePath: "/home/test/.config/ghostty/config")
     let root = URL(filePath: "/home/test/.config/macarchy")
@@ -163,13 +253,18 @@ struct GhosttyPresetLifecycleTests {
     let state: URL
     let profile: URL
     let configuration: URL
-    var harness: PresetLifecycleTestHarness { .init(profile: profile, state: state, home: home) }
+    let version: [Int]
+    var harness: PresetLifecycleTestHarness {
+      let version = version
+      return .init(profile: profile, state: state, home: home, ghosttyVersion: { version })
+    }
     var paths: ThemeConsumerPaths {
       var paths = testConsumerPaths()
       paths.piConfigurationDirectoryURL = home.appending(path: ".pi/agent")
       return paths
     }
-    init(original: String?) throws {
+    init(original: String?, version: [Int] = [1, 4, 0]) throws {
+      self.version = version
       root = FileManager.default.temporaryDirectory.appending(
         path: "ghostty-preset-\(UUID().uuidString)")
       home = root.appending(path: "home")
@@ -193,12 +288,13 @@ struct GhosttyPresetLifecycleTests {
     )
       async throws -> (output: String, succeeded: Bool)
     {
-      try await harness.apply(
+      let version = version
+      return try await harness.apply(
         runner: EnvironmentApplyCommandRunner(
           prerequisites: prerequisites,
           theme: stubThemeController(
             reconciled: ("applied", "Ghostty reloaded"), inspected: ("ready", "Ghostty ready")),
-          verifier: .assumed, transactionFaultInjector: faultInjector),
+          verifier: .assumed, ghosttyVersion: { version }, transactionFaultInjector: faultInjector),
         consumerPaths: paths, adopt: adopt)
     }
   }

@@ -62,6 +62,7 @@ struct EnvironmentProviderInspection: Sendable {
 
 struct EnvironmentProviderInspector: Sendable {
   private static let maximumExternalFileSize = 4 * 1_048_576
+  let ghosttyVersion: @Sendable () throws -> [Int]
   let slackPreset: EnvironmentSlackPreset
   /// Only unified first-install planning supplies a rendered, not-yet-active theme.
   let bootstrapTheme: ThemePackage?
@@ -71,8 +72,10 @@ struct EnvironmentProviderInspector: Sendable {
   init(
     slackPreset: EnvironmentSlackPreset = EnvironmentSlackPreset(),
     bootstrapTheme: ThemePackage? = nil,
-    proposedNativeSources: Set<String> = []
+    proposedNativeSources: Set<String> = [],
+    ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion
   ) {
+    self.ghosttyVersion = ghosttyVersion
     self.slackPreset = slackPreset
     self.bootstrapTheme = bootstrapTheme
     self.proposedNativeSources = proposedNativeSources

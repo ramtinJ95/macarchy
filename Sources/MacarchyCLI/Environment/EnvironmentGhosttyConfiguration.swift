@@ -109,11 +109,23 @@ extension EnvironmentProviderInspector {
     enabled: Bool, ownership: EnvironmentGhosttyOwnership?, home: URL, root: URL
   ) throws -> KeyOwnedInspection<EnvironmentGhosttyOwnership> {
     guard enabled || ownership != nil else { return (nil, nil, nil) }
-    let files = ThemeConsumerPaths.ghosttyConfigurationFiles(home: home)
+    let allFiles = ThemeConsumerPaths.ghosttyConfigurationFiles(home: home)
+    // Disabling/restoring must still work after a downgrade or app removal.
+    let version = try enabled ? ghosttyVersion() : nil
+    let files =
+      version.map { GhosttyConfiguration.filesRead(in: allFiles, version: $0) } ?? allFiles
+    let notice = version.flatMap {
+      GhosttyConfiguration.ignoredFilesMessage(in: allFiles, version: $0)
+    }
     let url =
       try ownership.map { URL(filePath: $0.path) }
       ?? GhosttyConfiguration.selectedFile(in: files)
-    guard files.contains(url), url.path.hasPrefix(home.path + "/"),
+    guard files.contains(url) else {
+      throw EnvironmentLifecycleError.blocked(
+        "The installed Ghostty version does not load the owned configuration: \(url.path). Disable the preset before adopting a supported file."
+      )
+    }
+    guard url.path.hasPrefix(home.path + "/"),
       try !hasSymlinkAncestor(url, stoppingAt: home)
     else {
       throw EnvironmentLifecycleError.blocked(
@@ -126,7 +138,8 @@ extension EnvironmentProviderInspector {
     {
       EnvironmentEntryInspection(
         id: "ghostty_configuration", path: url.path, status: status,
-        ownership: owner, message: message, evidence: evidence)
+        ownership: owner,
+        message: [message, notice].compactMap { $0 }.joined(separator: " "), evidence: evidence)
     }
     if let ownership {
       let exact = try current.map { try ownership.matchesManaged($0, at: url) } ?? false

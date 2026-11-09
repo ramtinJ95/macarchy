@@ -414,6 +414,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
   let verifier: EnvironmentSessionVerifier
   let neovim: EnvironmentNeovimPreparer
   let runtimes: EnvironmentProviderRuntimes
+  let ghosttyVersion: @Sendable () throws -> [Int]
   let transactionFaultInjector: @Sendable (EnvironmentTransactionCheckpoint) throws -> Void
 
   static let live = Self(
@@ -433,6 +434,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     herdrRuntime: EnvironmentHerdrRuntimeReloader = .assumed,
     spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher = .assumed,
     bordersRuntime: EnvironmentBordersRuntime = .live,
+    ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion,
     transactionFaultInjector:
       @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void = {
         _ in
@@ -444,6 +446,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     self.neovim = neovim
     self.runtimes = EnvironmentProviderRuntimes(
       herdr: herdrRuntime, spicetify: spicetifyRuntime, borders: bordersRuntime)
+    self.ghosttyVersion = ghosttyVersion
     self.transactionFaultInjector = transactionFaultInjector
   }
 
@@ -570,10 +573,14 @@ struct EnvironmentApplyCommandRunner: Sendable {
       )
     }
 
+    // Probe once before lifecycle/activation locks, then use that observation for both
+    // initial inspection and locked evidence revalidation. Disabled restoration needs no app.
+    let version = Result { try profile.environment.presets.ghostty ? ghosttyVersion() : [] }
+    let providerInspector = EnvironmentProviderInspector(ghosttyVersion: { try version.get() })
     let coordinator = EnvironmentTransactionCoordinator(
       homeDirectory: homeDirectory,
       stateRoot: stateRoot,
-      faultInjector: transactionFaultInjector
+      faultInjector: transactionFaultInjector, inspector: providerInspector
     )
 
     if profile.environment.isEntirelyDisabled {
@@ -765,7 +772,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
           profileURL: profileURL, profile: profile.environment,
           message: String(describing: error), mutated: false)
       }
-      let inspection = EnvironmentProviderInspector().inspect(
+      let inspection = providerInspector.inspect(
         composition: composition,
         homeDirectory: homeDirectory,
         stateRoot: stateRoot,
@@ -787,7 +794,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
       var prepareFreshNativeNeovim = false
       do {
         applyResult = try ActivationLock(root: stateRoot).withLock {
-          let lockedInspection = EnvironmentProviderInspector().inspect(
+          let lockedInspection = providerInspector.inspect(
             composition: composition,
             homeDirectory: homeDirectory,
             stateRoot: stateRoot,
@@ -968,7 +975,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
         prerequisites: prerequisites,
         theme: theme,
         verifier: verifier,
-        bordersRuntime: runtimes.borders
+        bordersRuntime: runtimes.borders, ghosttyVersion: { try version.get() }
       ).reportAfterApply(
         EnvironmentApplyObservation(
           theme: appliedTheme,
@@ -997,6 +1004,10 @@ struct EnvironmentApplyCommandRunner: Sendable {
     homeDirectory: URL,
     commit: Bool
   ) throws -> Bool {
+    let version = Result {
+      try commit && profile?.environment.presets.ghostty == true ? ghosttyVersion() : []
+    }
+    let inspector = EnvironmentProviderInspector(ghosttyVersion: { try version.get() })
     return try EnvironmentLifecycleLock(stateRoot: stateRoot).withLock {
       let store = EnvironmentStateStore(stateRoot: stateRoot)
       guard let transaction = try store.readTransaction() else { return false }
@@ -1007,7 +1018,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
       }
       let coordinator = EnvironmentTransactionCoordinator(
         homeDirectory: homeDirectory,
-        stateRoot: stateRoot
+        stateRoot: stateRoot, inspector: inspector
       )
       if commit {
         guard transaction.direction == .forward else {

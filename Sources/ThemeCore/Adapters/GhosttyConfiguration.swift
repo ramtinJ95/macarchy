@@ -13,6 +13,23 @@ package enum GhosttyConfiguration {
     }
   }
 
+  /// config.ghostty joined the default search in 1.3.0; older releases ignore it.
+  package static func filesRead(in files: [URL], version: [Int]) -> [URL] {
+    version.lexicographicallyPrecedes([1, 3, 0])
+      ? files.filter { $0.lastPathComponent == "config" } : files
+  }
+
+  package static func ignoredFilesMessage(in files: [URL], version: [Int]) -> String? {
+    guard version.lexicographicallyPrecedes([1, 3, 0]) else { return nil }
+    let ignored = files.filter { $0.lastPathComponent == "config.ghostty" }.filter { url in
+      var metadata = stat()
+      return lstat(url.path, &metadata) == 0
+    }
+    guard !ignored.isEmpty else { return nil }
+    return "Ghostty versions before 1.3.0 ignore: " + ignored.map(\.path).joined(separator: ", ")
+      + "."
+  }
+
   package static func selectedFile(in files: [URL]) throws -> URL {
     for url in files.reversed() {
       var metadata = stat()
