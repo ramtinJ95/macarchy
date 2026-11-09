@@ -6,6 +6,8 @@ package enum ThemeRepaintBoundary: String, Codable, Equatable, Sendable {
   case live
   /// Running instances reload through the consumer's supported reload.
   case reload
+  /// The user reloads the editor window; Macarchy never invokes this action.
+  case reloadWindow = "reload_window"
   case nextPrompt = "next_prompt"
   case nextInvocation = "next_invocation"
   case nextLaunch = "next_launch"
@@ -18,6 +20,7 @@ package enum ThemeRepaintBoundary: String, Codable, Equatable, Sendable {
     switch self {
     case .live: "live"
     case .reload: "reloads"
+    case .reloadWindow: "Reload Window (manual)"
     case .nextPrompt: "next prompt"
     case .nextInvocation: "next invocation"
     case .nextLaunch: "next launch"
@@ -80,7 +83,8 @@ extension RuntimeAdapterKind {
     case .codex, .tuicr: .freshSession
     case .spicetify: .appRestart
     case .starship: .nextPrompt
-    case .vscode, .cursor, .vscodium, .windsurf: .nextLaunch
+    case .vscode: .reloadWindow
+    case .cursor, .vscodium, .windsurf: .nextLaunch
     }
   }
 }

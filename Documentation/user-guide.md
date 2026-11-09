@@ -1444,8 +1444,12 @@ Comments, trailing commas and unrelated settings are preserved. Teardown restore
 original member bytes (or removes inserted members), then uninstalls the owned
 extension. Failed uninstall retains recoverable ownership for retry.
 
-**Repaint boundary:** a newly installed extension version may require **Reload
-Window** or a new editor launch. Macarchy never issues a reload or restart.
+**Repaint boundary:** on VS Code **1.139.1**, first adoption repainted live, but
+later extension-version updates required the user's **Developer: Reload Window**.
+Changing the theme setting away and back did not refresh the updated palette.
+Macarchy reports this manual boundary and never reloads or restarts the editor.
+Cursor, VSCodium and Windsurf/Devin were not GUI-qualified; their conservative
+boundary remains Reload Window or next launch, not a live-repaint promise.
 Non-default `User/profiles/*/settings.json` files are reported but not adopted.
 Workspace settings, color customizations and non-default profiles can override the
 theme; Macarchy does not rewrite them. Missing apps, CLI failures and owned-member
