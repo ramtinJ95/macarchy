@@ -283,7 +283,8 @@ extension Theme {
           themeID: request.selection.themeID,
           backgroundID: request.selection.backgroundID,
           stateRoot: stateRoot,
-          consumerPaths: state.consumerPaths
+          consumerPaths: state.consumerPaths,
+          reviewedDigest: request.reviewedDigest
         )
         try emitExecution(execution)
         return
@@ -292,6 +293,8 @@ extension Theme {
         try ThemeBrowserCommandLoader.live.load(repository: repository, stateRoot: stateRoot)
       }
       let launcher = ThemeBrowserApplyProcessLauncher.live
+      let consumerPaths = state.consumerPaths
+      let runtime = RuntimeEnvironment.live
       try await MainActor.run {
         let controller = try ThemeBrowserWindowController(
           content: content,
@@ -320,9 +323,22 @@ extension Theme {
               try ThemeBrowserCommandLoader.live.load(repository: repository, stateRoot: stateRoot)
             }
           },
-          launchUndo: { try launcher.launchUndo() }
-        ) { selection in
-          try launcher.launch(selection: selection)
+          launchUndo: { try launcher.launchUndo() },
+          reviewSelection: { selection in
+            try ThemeActivationService.live.review(
+              try repository.package(id: selection.themeID), selection.backgroundID, stateRoot,
+              consumerPaths)
+          },
+          editProfile: {
+            _ = try MenuTerminal.launch(
+              .profile,
+              arguments: [MenuProfileEditor.commandName, ProfileEditAction.portable.rawValue],
+              theme: try loadPopupTheme(
+                stateRoot: stateRoot, bundledThemesRoot: runtime.builtInThemesURL),
+              executableURL: runtime.executableURL)
+          }
+        ) { selection, reviewedDigest in
+          try launcher.launch(selection: selection, reviewedDigest: reviewedDigest)
         }
         try controller.run()
       }
