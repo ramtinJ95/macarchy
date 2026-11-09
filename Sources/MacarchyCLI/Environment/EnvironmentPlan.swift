@@ -27,17 +27,20 @@ struct EnvironmentPlanCommandRunner: Sendable {
   let requiresActiveTheme: Bool
   let bordersRuntime: EnvironmentBordersRuntime
   let ghosttyVersion: @Sendable () throws -> [Int]
+  let zedVersion: @Sendable () throws -> [Int]
 
   init(
     prerequisites: EnvironmentPrerequisiteInspector = .live,
     requiresActiveTheme: Bool = false,
     bordersRuntime: EnvironmentBordersRuntime = .live,
-    ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion
+    ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion,
+    zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion
   ) {
     self.prerequisites = prerequisites
     self.requiresActiveTheme = requiresActiveTheme
     self.bordersRuntime = bordersRuntime
     self.ghosttyVersion = ghosttyVersion
+    self.zedVersion = zedVersion
   }
 
   func execute(
@@ -121,7 +124,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
     let provider = homeDirectory.map {
       EnvironmentProviderInspector(
         bootstrapTheme: bootstrapTheme,
-        proposedNativeSources: Set(starterPlans.map(\.destination)), ghosttyVersion: ghosttyVersion
+        proposedNativeSources: Set(starterPlans.map(\.destination)), ghosttyVersion: ghosttyVersion,
+        zedVersion: zedVersion
       ).inspectIncludingBordersRuntime(
         composition: composition,
         homeDirectory: $0,
@@ -346,7 +350,9 @@ struct EnvironmentPlanCommandRunner: Sendable {
       actions.append(tool.planAction)
     }
     // Plan JSON lists preset actions in this order.
-    for preset in [EnvironmentPreset.ghostty, .tuicr, .codex, .herdr, .pi, .spicetify, .slack]
+    for preset in [
+      EnvironmentPreset.zed, .ghostty, .tuicr, .codex, .herdr, .pi, .spicetify, .slack,
+    ]
     where preset.isEnabled(in: profile.presets) {
       actions.append(preset.planAction)
     }

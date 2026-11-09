@@ -74,6 +74,7 @@ enum EnvironmentDailyTool: String, CaseIterable, Sendable {
 
 /// An application preset, in profile-key order.
 enum EnvironmentPreset: String, CaseIterable, Sendable {
+  case zed
   case ghostty
   case codex
   case herdr
@@ -90,6 +91,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .slack: presets.slack
     case .spicetify: presets.spicetify
     case .ghostty: presets.ghostty
+    case .zed: presets.zed
     case .tuicr: presets.tuicr
     }
   }
@@ -102,6 +104,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .slack: ownership.slackEnabled
     case .spicetify: ownership.spicetifyEnabled
     case .ghostty: ownership.ghostty != nil
+    case .zed: ownership.zed != nil
     case .tuicr: ownership.tuicrEnabled
     }
   }
@@ -115,6 +118,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .slack: nil
     case .spicetify: SpicetifyAdapter.id
     case .ghostty: GhosttyAdapter.id
+    case .zed: ZedAdapter.id
     case .tuicr: TuicrAdapter.id
     }
   }
@@ -148,6 +152,9 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
         message:
           "Own only ordinary current_theme/color_scheme selectors or accept a complete exact Stow tuple, create only an absent color.ini link, and run an awaited --no-restart refresh."
       )
+    case .zed:
+      PlanAction(
+        id: "configure_zed", message: "Own Zed’s theme member and watched regular theme family.")
     case .ghostty:
       PlanAction(
         id: "configure_ghostty",
@@ -165,7 +172,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     switch self {
     case .herdr:
       UnifiedSetupService(id: "herdr", ownership: "external", lifecycle: "reload_if_running")
-    case .ghostty, .codex, .pi, .slack, .spicetify, .tuicr: nil
+    case .zed, .ghostty, .codex, .pi, .slack, .spicetify, .tuicr: nil
     }
   }
 
@@ -178,7 +185,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
         kind: "application_ui",
         instruction: "Import the generated four-color theme in each Slack workspace."
       )
-    case .ghostty, .codex, .herdr, .pi, .spicetify, .tuicr: nil
+    case .zed, .ghostty, .codex, .herdr, .pi, .spicetify, .tuicr: nil
     }
   }
 }
@@ -288,6 +295,8 @@ enum EnvironmentLinkedPreset: CaseIterable, Sendable {
 /// A configuration file a daily tool or preset edits by key through a journaled replacement,
 /// in the order the lifecycle validates, revalidates, transitions and preflights them.
 enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
+  case zedFamily = "zed_family"
+  case zed
   case ghostty
   case btop
   case codex
@@ -299,7 +308,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
   /// The linked preset whose enablement and external tuple also govern the file.
   var linkedPreset: EnvironmentLinkedPreset? {
     switch self {
-    case .ghostty, .btop, .herdr: nil
+    case .zed, .zedFamily, .ghostty, .btop, .herdr: nil
     case .codex: .codex
     case .pi: .pi
     case .spicetify: .spicetify
@@ -316,6 +325,8 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .pi: "Pi"
     case .spicetify: "Spicetify"
     case .ghostty: "Ghostty"
+    case .zed: "Zed"
+    case .zedFamily: "Zed theme family"
     case .tuicr: "tuicr"
     }
   }
@@ -329,6 +340,8 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .pi: ConsumerHomePath.piSettings
     case .spicetify: ConsumerHomePath.spicetifyConfiguration
     case .ghostty: preconditionFailure("Ghostty configuration paths require the selected home")
+    case .zed: ".config/zed/settings.json"
+    case .zedFamily: ".config/zed/themes/macarchy.json"
     case .tuicr: ConsumerHomePath.tuicrConfiguration
     }
   }
@@ -342,6 +355,8 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .pi: EnvironmentEntryID.piConfiguration.rawValue
     case .spicetify: "spicetify_configuration"
     case .ghostty: "ghostty_configuration"
+    case .zed: "zed_configuration"
+    case .zedFamily: "zed_family"
     case .tuicr: EnvironmentEntryID.tuicrConfiguration.rawValue
     }
   }
@@ -358,6 +373,8 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .pi: "Pi settings"
     case .spicetify: "Spicetify external tuple"
     case .ghostty: "Ghostty configuration"
+    case .zed: "Zed settings"
+    case .zedFamily: "Zed theme family"
     case .tuicr: "tuicr configuration"
     }
   }
@@ -377,6 +394,8 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .pi: ownership?.pi?.path
     case .spicetify: ownership?.spicetify?.path
     case .ghostty: ownership?.ghostty?.path
+    case .zed: ownership?.zed?.path
+    case .zedFamily: ownership?.zedFamily?.path
     case .tuicr: ownership?.tuicr?.path
     }
   }

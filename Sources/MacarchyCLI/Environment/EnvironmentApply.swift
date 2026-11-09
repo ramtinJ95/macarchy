@@ -415,6 +415,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
   let neovim: EnvironmentNeovimPreparer
   let runtimes: EnvironmentProviderRuntimes
   let ghosttyVersion: @Sendable () throws -> [Int]
+  let zedVersion: @Sendable () throws -> [Int]
   let transactionFaultInjector: @Sendable (EnvironmentTransactionCheckpoint) throws -> Void
 
   static let live = Self(
@@ -435,6 +436,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher = .assumed,
     bordersRuntime: EnvironmentBordersRuntime = .live,
     ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion,
+    zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion,
     transactionFaultInjector:
       @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void = {
         _ in
@@ -447,6 +449,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     self.runtimes = EnvironmentProviderRuntimes(
       herdr: herdrRuntime, spicetify: spicetifyRuntime, borders: bordersRuntime)
     self.ghosttyVersion = ghosttyVersion
+    self.zedVersion = zedVersion
     self.transactionFaultInjector = transactionFaultInjector
   }
 
@@ -576,7 +579,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
     // Probe once before lifecycle/activation locks, then use that observation for both
     // initial inspection and locked evidence revalidation. Disabled restoration needs no app.
     let version = Result { try profile.environment.presets.ghostty ? ghosttyVersion() : [] }
-    let providerInspector = EnvironmentProviderInspector(ghosttyVersion: { try version.get() })
+    let providerInspector = EnvironmentProviderInspector(
+      ghosttyVersion: { try version.get() }, zedVersion: zedVersion)
     let coordinator = EnvironmentTransactionCoordinator(
       homeDirectory: homeDirectory,
       stateRoot: stateRoot,
@@ -975,7 +979,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
         prerequisites: prerequisites,
         theme: theme,
         verifier: verifier,
-        bordersRuntime: runtimes.borders, ghosttyVersion: { try version.get() }
+        bordersRuntime: runtimes.borders, ghosttyVersion: { try version.get() },
+        zedVersion: zedVersion
       ).reportAfterApply(
         EnvironmentApplyObservation(
           theme: appliedTheme,
@@ -1007,7 +1012,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
     let version = Result {
       try commit && profile?.environment.presets.ghostty == true ? ghosttyVersion() : []
     }
-    let inspector = EnvironmentProviderInspector(ghosttyVersion: { try version.get() })
+    let inspector = EnvironmentProviderInspector(
+      ghosttyVersion: { try version.get() }, zedVersion: zedVersion)
     return try EnvironmentLifecycleLock(stateRoot: stateRoot).withLock {
       let store = EnvironmentStateStore(stateRoot: stateRoot)
       guard let transaction = try store.readTransaction() else { return false }

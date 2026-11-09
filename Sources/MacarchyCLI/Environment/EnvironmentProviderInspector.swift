@@ -26,6 +26,8 @@ struct EnvironmentProviderInspection: Sendable {
   var proposedPiOwnership: EnvironmentPiOwnership? = nil
   var proposedSpicetifyOwnership: EnvironmentSpicetifyOwnership? = nil
   var proposedGhosttyOwnership: EnvironmentGhosttyOwnership? = nil
+  var proposedZedOwnership: EnvironmentZedOwnership? = nil
+  var proposedZedFamilyOwnership: EnvironmentZedFamilyOwnership? = nil
   var proposedTuicrOwnership: EnvironmentTuicrOwnership? = nil
   /// Planned evidence of each key-owned file apply must find unchanged.
   var keyOwnedExternalEvidence: [EnvironmentKeyOwnedFile: EnvironmentEntryEvidence] = [:]
@@ -50,6 +52,8 @@ struct EnvironmentProviderInspection: Sendable {
     case .pi: proposedPiOwnership != nil
     case .spicetify: proposedSpicetifyOwnership != nil
     case .ghostty: proposedGhosttyOwnership != nil
+    case .zed: proposedZedOwnership != nil
+    case .zedFamily: proposedZedFamilyOwnership != nil
     case .tuicr: proposedTuicrOwnership != nil
     }
   }
@@ -63,6 +67,7 @@ struct EnvironmentProviderInspection: Sendable {
 struct EnvironmentProviderInspector: Sendable {
   private static let maximumExternalFileSize = 4 * 1_048_576
   let ghosttyVersion: @Sendable () throws -> [Int]
+  let zedVersion: @Sendable () throws -> [Int]
   let slackPreset: EnvironmentSlackPreset
   /// Only unified first-install planning supplies a rendered, not-yet-active theme.
   let bootstrapTheme: ThemePackage?
@@ -73,9 +78,11 @@ struct EnvironmentProviderInspector: Sendable {
     slackPreset: EnvironmentSlackPreset = EnvironmentSlackPreset(),
     bootstrapTheme: ThemePackage? = nil,
     proposedNativeSources: Set<String> = [],
-    ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion
+    ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion,
+    zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion
   ) {
     self.ghosttyVersion = ghosttyVersion
+    self.zedVersion = zedVersion
     self.slackPreset = slackPreset
     self.bootstrapTheme = bootstrapTheme
     self.proposedNativeSources = proposedNativeSources
@@ -527,6 +534,15 @@ struct EnvironmentProviderInspector: Sendable {
         )
       }
 
+      let zed = try inspectZed(
+        enabled: composition.profile.presets.zed, ownership: ownership?.zed, home: homeDirectory)
+      let zedFamily = try inspectZedFamily(
+        enabled: composition.profile.presets.zed, ownership: ownership?.zedFamily,
+        home: homeDirectory, root: stateRoot)
+      for entry in [zed.entry, zedFamily.entry].compactMap({ $0 }) { inspections.append(entry) }
+      for path in [zed.proposedOwnership?.path, zedFamily.proposedOwnership?.path].compactMap({ $0 }
+      ) { try recordMissingParents(of: URL(filePath: path)) }
+
       let ghostty = try inspectGhostty(
         enabled: composition.profile.presets.ghostty, ownership: ownership?.ghostty,
         home: homeDirectory, root: stateRoot)
@@ -603,6 +619,7 @@ struct EnvironmentProviderInspector: Sendable {
               .pi: pi.proposedOwnership?.path,
               .spicetify: spicetify.proposedOwnership?.path,
               .ghostty: ghostty.proposedOwnership?.path,
+              .zed: zed.proposedOwnership?.path, .zedFamily: zedFamily.proposedOwnership?.path,
               .tuicr: tuicr.proposedOwnership?.path,
             ].compactMapValues { $0 },
             borders: borders.ownership,
@@ -618,6 +635,8 @@ struct EnvironmentProviderInspector: Sendable {
         proposedPiOwnership: pi.proposedOwnership,
         proposedSpicetifyOwnership: spicetify.proposedOwnership,
         proposedGhosttyOwnership: ghostty.proposedOwnership,
+        proposedZedOwnership: zed.proposedOwnership,
+        proposedZedFamilyOwnership: zedFamily.proposedOwnership,
         proposedTuicrOwnership: tuicr.proposedOwnership,
         keyOwnedExternalEvidence: [
           EnvironmentKeyOwnedFile.btop: btop.externalEvidence,
@@ -626,6 +645,7 @@ struct EnvironmentProviderInspector: Sendable {
           .pi: pi.externalEvidence,
           .spicetify: spicetify.externalEvidence,
           .ghostty: ghostty.externalEvidence,
+          .zed: zed.externalEvidence, .zedFamily: zedFamily.externalEvidence,
           .tuicr: tuicr.externalEvidence,
         ].compactMapValues { $0 },
         proposedBordersOwnership: borders.ownership,

@@ -245,6 +245,27 @@ enum ThemeRuntimeSelection {
         provider, homeDirectory: homeDirectory, stateRoot: stateRoot)
     }
     var paths = consumerPaths
+    if let zed = ownership.zed, let family = ownership.zedFamily {
+      paths.zedValidateOwnership = { target in
+        guard target.standardizedFileURL.path == family.path,
+          zed.path
+            == ThemeConsumerPaths.zedConfigurationDirectory(home: homeDirectory).appending(
+              path: "settings.json"
+            ).path,
+          family.path
+            == ThemeConsumerPaths.zedConfigurationDirectory(home: homeDirectory).appending(
+              path: "themes/macarchy.json"
+            ).path,
+          family.stateRoot == stateRoot.path,
+          try EnvironmentZedOwnership.matchesManaged(
+            PinnedFilesystem.readRegularFile(at: URL(filePath: zed.path)).data,
+            at: URL(filePath: zed.path)),
+          try family.matchesManaged(
+            PinnedFilesystem.readRegularFile(at: URL(filePath: family.path)).data,
+            at: URL(filePath: family.path))
+        else { throw ZedAdapter.Failure.drift }
+      }
+    }
     paths.ghosttyOwnedConfigurationURL = ownership.ghostty.map { URL(filePath: $0.path) }
     paths.ghosttyOwnedLineIndex = ownership.ghostty?.lineIndex
     paths.starshipBehaviorURL = EnvironmentNativeFileMigration.starshipBehaviorURL(

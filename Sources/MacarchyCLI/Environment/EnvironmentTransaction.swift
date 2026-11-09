@@ -310,6 +310,8 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     spicetifyRuntimeDeferred = try container.decodeIfPresent(
       Bool.self, forKey: .spicetifyRuntimeDeferred)
     try decodeName(.ghostty)
+    try decodeName(.zed)
+    try decodeName(.zedFamily)
     try decodeName(.tuicr)
     replacementNames = EnvironmentReplacementNames(names)
     bordersPreviousRuntime = try container.decodeIfPresent(
@@ -348,6 +350,8 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     try container.encodeIfPresent(spicetifyRuntimeVerified, forKey: .spicetifyRuntimeVerified)
     try container.encodeIfPresent(spicetifyRuntimeDeferred, forKey: .spicetifyRuntimeDeferred)
     try encodeName(.ghostty)
+    try encodeName(.zed)
+    try encodeName(.zedFamily)
     try encodeName(.tuicr)
     try container.encodeIfPresent(bordersPreviousRuntime, forKey: .bordersPreviousRuntime)
     try container.encodeIfPresent(bordersRuntimeTarget, forKey: .bordersRuntimeTarget)
