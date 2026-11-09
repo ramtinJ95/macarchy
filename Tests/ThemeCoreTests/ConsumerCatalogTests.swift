@@ -4,6 +4,14 @@ import Testing
 @testable import ThemeCore
 
 struct ConsumerCatalogTests {
+  @Test func alacrittyIsAnOptInRequiredEnvironmentConsumer() throws {
+    let catalog = ConsumerCatalog.shared
+    let entry = try #require(catalog.entries.first { $0.id == .alacritty })
+    #expect(entry.mode.requirement == .required)
+    #expect(!entry.setupManaged)
+    #expect(!catalog.defaultEnabledAdapterIDs.contains(AlacrittyAdapter.id))
+    #expect(catalog.rendererVersions[AlacrittyAdapter.id] == 1)
+  }
   @Test
   func runtimeAdapterInventoryPreservesResolutionOrderAndRequirements() {
     let inventory = ConsumerCatalog.shared.runtimeEntries.map { entry in
@@ -29,6 +37,7 @@ struct ConsumerCatalogTests {
           "spicetify:required",
           "starship:required",
           "zed:required",
+          "alacritty:required",
           "ghostty:required",
           "tuicr:required",
           "user-scripts:optional",

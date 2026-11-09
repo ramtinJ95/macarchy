@@ -607,7 +607,7 @@ extension AdapterContractTests {
         wallpaperSignal: try Self.wallpaperSignal(root: root),
         enabledAdapterIDs: Set(ThemeActivationCoordinator.adapterRequirements.keys)
           .subtracting([
-            ZedAdapter.id, GhosttyAdapter.id, BordersAdapter.id, BordersAdapter.leanID,
+            ZedAdapter.id, AlacrittyAdapter.id, GhosttyAdapter.id, BordersAdapter.id, BordersAdapter.leanID,
             UserScriptsAdapter.id,
             TuicrAdapter.id,
           ])

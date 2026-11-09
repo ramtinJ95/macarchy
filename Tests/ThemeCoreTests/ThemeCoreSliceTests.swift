@@ -197,7 +197,8 @@ struct ThemeCoreSliceTests {
     #expect(
       Set(rendered.artifacts.map(\.path))
         == [
-          "generated/atuin.toml", "generated/bat.tmTheme", "generated/btop.theme",
+          "generated/alacritty.toml", "generated/atuin.toml", "generated/bat.tmTheme",
+          "generated/btop.theme",
           "generated/capabilities.json", "generated/eza.yml", "generated/ghostty.conf",
           "generated/zed.json",
           "generated/herdr.txt",
@@ -345,6 +346,7 @@ struct ThemeCoreSliceTests {
         (EzaAdapter.outputPath, "eza.yml"),
         (ThemeRenderer.themeOutputPath, "theme.json"),
         (KittyAdapter.outputPath, "kitty.conf"),
+        (AlacrittyAdapter.outputPath, "alacritty.toml"),
         (GhosttyAdapter.outputPath, "ghostty.conf"),
         (ZedAdapter.outputPath, "zed.json"),
         (NeovimAdapter.outputPath, "neovim.lua"),
