@@ -10,6 +10,7 @@ fi
 binary=${1:A}
 menu_binary="${binary:h}/macarchy-menu"
 focus_binary="${binary:h}/macarchy-focus-ring"
+look_binary="${binary:h}/macarchy-look"
 # Scripts/build-ttfx.sh output. An explicit argument rather than a file beside
 # the binary: .build is restored from CI caches, and ttfx has its own toolchain
 # and pinned source, so it must never come from a stale SwiftPM product directory.
@@ -32,6 +33,10 @@ if [[ ! -x "$menu_binary" || "$(/usr/bin/lipo -archs "$menu_binary")" != "arm64"
 fi
 if [[ ! -x "$focus_binary" || "$(/usr/bin/lipo -archs "$focus_binary")" != "arm64" ]]; then
   print -u2 "matching arm64 macarchy-focus-ring helper is missing beside the release binary"
+  exit 66
+fi
+if [[ ! -x "$look_binary" || "$(/usr/bin/lipo -archs "$look_binary")" != "arm64" ]]; then
+  print -u2 "matching arm64 macarchy-look helper is missing beside the release binary"
   exit 66
 fi
 ttfx_binary="$ttfx_directory/ttfx"
@@ -66,6 +71,7 @@ mkdir -p "$destination/bin" "$destination/libexec" "$destination/share/macarchy"
 install -m 0755 "$binary" "$destination/bin/macarchy"
 install -m 0755 "$menu_binary" "$destination/bin/macarchy-menu"
 install -m 0755 "$focus_binary" "$destination/bin/macarchy-focus-ring"
+install -m 0755 "$look_binary" "$destination/bin/macarchy-look"
 # Homebrew links bin/ onto PATH but not libexec/, so the engine stays private to macarchy.
 install -m 0755 "$ttfx_binary" "$destination/libexec/ttfx"
 for executable in $release_executables; do

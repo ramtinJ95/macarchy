@@ -9,6 +9,7 @@ let package = Package(
     .library(name: "ThemeCore", targets: ["ThemeCore"]),
     .executable(name: "macarchy", targets: ["MacarchyCLI"]),
     .executable(name: "macarchy-menu", targets: ["MacarchyMenu"]),
+    .executable(name: "macarchy-look", targets: ["MacarchyLook"]),
     .executable(name: "macarchy-focus-ring", targets: ["MacarchyFocusRing"]),
     .executable(
       name: "theme-activation-crash-probe",
@@ -51,6 +52,7 @@ let package = Package(
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .executableTarget(name: "MacarchyMenu", swiftSettings: [.swiftLanguageMode(.v6)]),
+    .executableTarget(name: "MacarchyLook", swiftSettings: [.swiftLanguageMode(.v6)]),
     .executableTarget(
       name: "MacarchyFocusRing",
       dependencies: [

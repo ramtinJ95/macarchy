@@ -8,7 +8,7 @@ ttfx_version=0.5.0
 
 # Release layout, relative to the package root. HomebrewLifecycle.swift verifies an
 # installed subset of it; test-release-archive-validation.sh removes members by name.
-release_executables=(bin/macarchy bin/macarchy-menu bin/macarchy-focus-ring libexec/ttfx)
+release_executables=(bin/macarchy bin/macarchy-menu bin/macarchy-focus-ring bin/macarchy-look libexec/ttfx)
 # Repository directories shipped as share/macarchy/<lowercased name>.
 release_resources=(Themes Keybindings Desktop Environment)
 # Repository files shipped as share/doc/macarchy/<file name>.
