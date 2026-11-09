@@ -1105,8 +1105,8 @@ private struct HerdrFixture {
       )
     }
     return ThemeActivationService(
-      preflight: { package, background, _, _ in
-        try makeCoordinator().preflight(package: package, requestedBackgroundID: background)
+      review: { package, background, _, _ in
+        try makeCoordinator().review(package: package, requestedBackgroundID: background)
       },
       activate: { package, background, _, _, expected in
         try await makeCoordinator().activate(

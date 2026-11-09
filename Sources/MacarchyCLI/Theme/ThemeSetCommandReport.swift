@@ -11,7 +11,8 @@ enum ThemeSetReport {
     case committedReconciliationError = "committed_reconciliation_error"
   }
 
-  case dryRun(themeID: String)
+  /// A planned activation; it succeeds only when the plan can be applied.
+  case dryRun(review: ThemeActivationReview)
   case precommitFailure(themeID: String, error: String)
   case committed(result: ThemeActivationResult, requiredFailure: Bool, slackTheme: String?)
   case committedActivationError(
@@ -60,13 +61,8 @@ enum ThemeSetReport {
     }
 
     switch self {
-    case .dryRun(let themeID):
-      return [
-        "Theme '\(themeID)' is valid.",
-        "Required adapter preflight passed.",
-        "Canonical state: unchanged (dry run).",
-        "No files written; no processes run.",
-      ].joined(separator: "\n")
+    case .dryRun(let review):
+      return renderReview(review).joined(separator: "\n")
     case .precommitFailure(let themeID, let error):
       return [
         "Theme '\(themeID)' was not activated.",
@@ -97,11 +93,14 @@ enum ThemeSetReport {
 
   var jsonReport: ThemeSetJSONReport {
     switch self {
-    case .dryRun(let themeID):
+    case .dryRun(let review):
       ThemeSetJSONReport(
-        themeID: themeID,
-        outcome: .dryRun,
-        committed: false
+        themeID: review.themeID,
+        outcome: review.canApply ? .dryRun : .precommitFailure,
+        committed: false,
+        error: review.canApply
+          ? nil : ThemeActivationReviewError.blocked(review.failedConsumerIDs).description,
+        review: review
       )
     case .precommitFailure(let themeID, let error):
       ThemeSetJSONReport(
@@ -155,6 +154,8 @@ struct ThemeSetJSONReport: Encodable, Sendable {
   var notice: String? = nil
   var slackTheme: String? = nil
   var error: String? = nil
+  /// A dry run's plan, consumer by consumer, with the digest `--reviewed` applies.
+  var review: ThemeActivationReview? = nil
 
   /// Only a dry run and an activation whose required reconciliation completed succeed.
   var succeeded: Bool { outcome == .dryRun || outcome == .success }
@@ -168,7 +169,41 @@ struct ThemeSetJSONReport: Encodable, Sendable {
     case notice
     case slackTheme = "slack_theme"
     case error
+    case review
   }
+}
+
+/// A dry run's plan: what each enabled consumer would change and when it shows, its preflight,
+/// the disabled consumers, and how to apply exactly this plan.
+func renderReview(_ review: ThemeActivationReview) -> [String] {
+  var lines = [
+    "Plan for theme '\(review.themeID)'"
+      + (review.backgroundID.map { " with background '\($0)'" } ?? "") + ":"
+  ]
+  for consumer in review.consumers {
+    let preflight: String
+    switch consumer.preflight {
+    case .ready: preflight = "ready"
+    case .notSetUp: preflight = "not set up; reported as drifted"
+    case .failed(let message): preflight = "FAILED: \(message)"
+    }
+    let artifacts =
+      consumer.artifacts.isEmpty ? "" : " (\(consumer.artifacts.joined(separator: ", ")))"
+    lines.append(
+      "  \(consumer.id): \(consumer.change)\(artifacts); \(consumer.repaint.description); "
+        + preflight)
+  }
+  if !review.disabledConsumerIDs.isEmpty {
+    lines.append("Disabled in the profile: \(review.disabledConsumerIDs.joined(separator: ", "))")
+  }
+  lines.append("Canonical state: unchanged (dry run). No files written; no processes run.")
+  if review.canApply {
+    lines.append(
+      "Apply exactly this plan: macarchy theme set \(review.themeID) --reviewed \(review.digest)")
+  } else {
+    lines.append(ThemeActivationReviewError.blocked(review.failedConsumerIDs).description + ".")
+  }
+  return lines
 }
 
 /// The text lines of a committed activation under its command's headline.

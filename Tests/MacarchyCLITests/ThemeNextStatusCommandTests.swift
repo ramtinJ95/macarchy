@@ -16,7 +16,10 @@ struct ThemeNextStatusCommandTests {
     ] {
       let selected = Mutex<String?>(nil)
       let activation = ThemeActivationService(
-        preflight: { package, _, _, _ in selected.withLock { $0 = package.id } },
+        review: { package, _, _, _ in
+          selected.withLock { $0 = package.id }
+          return try passingReview(package)
+        },
         activate: { _, _, _, _, _ in throw TestError.unexpectedActivation }
       )
       let runner = ThemeNextCommandRunner(
@@ -33,7 +36,7 @@ struct ThemeNextStatusCommandTests {
 
       #expect(execution.succeeded)
       #expect(selected.withLock { $0 } == expected)
-      #expect(execution.output.contains("Theme '\(expected)' is valid."))
+      #expect(execution.output.contains("Plan for theme '\(expected)'"))
     }
   }
 
@@ -42,7 +45,7 @@ struct ThemeNextStatusCommandTests {
     let runner = ThemeNextCommandRunner(
       activeManifest: { _ in testManifest(themeID: "removed-theme") },
       activation: ThemeActivationService(
-        preflight: { _, _, _, _ in },
+        review: { package, _, _, _ in try passingReview(package) },
         activate: { _, _, _, _, _ in throw TestError.unexpectedActivation }
       )
     )
@@ -75,7 +78,7 @@ struct ThemeNextStatusCommandTests {
     let canonical = Mutex(testManifest(generationID: "g-initial", themeID: "catppuccin-mocha"))
     let attempts = Mutex([String]())
     let activation = ThemeActivationService(
-      preflight: { _, _, _, _ in },
+      review: { package, _, _, _ in try passingReview(package) },
       activate: { package, _, _, _, expectedGenerationID in
         let attempt = attempts.withLock { attempts in
           attempts.append(package.id)

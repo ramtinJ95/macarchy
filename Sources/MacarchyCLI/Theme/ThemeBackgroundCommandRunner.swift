@@ -113,7 +113,7 @@ struct ThemeBackgroundCommandRunner: Sendable {
     expectedGenerationID: String
   ) async throws -> CommandExecution {
     if dryRun {
-      try activation.preflight(package, backgroundID, stateRoot, consumerPaths)
+      try activation.review(package, backgroundID, stateRoot, consumerPaths).requireApplicable()
       return (
         "Background '\(backgroundID)' for theme '\(package.id)' is valid.\n"
           + "Canonical state: unchanged (dry run).",

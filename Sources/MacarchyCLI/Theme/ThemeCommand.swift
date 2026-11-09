@@ -136,6 +136,18 @@ extension Theme {
     @Flag(help: .hidden)
     var alertOnError = false
 
+    @Option(
+      help:
+        "Apply only the plan a --dry-run printed with this digest; refused if anything changed.")
+    var reviewed: String?
+
+    mutating func validate() throws {
+      if reviewed != nil && options.dryRun {
+        throw ValidationError(
+          "--reviewed applies a reviewed plan; it cannot be combined with --dry-run.")
+      }
+    }
+
     @MainActor
     mutating func run() async throws {
       let execution = try await ThemeActivationService.live.execute(
@@ -144,7 +156,8 @@ extension Theme {
         stateRoot: options.stateRootURL,
         consumerPaths: options.consumerPaths,
         dryRun: options.dryRun,
-        json: json
+        json: json,
+        reviewedDigest: reviewed
       )
       if alertOnError && !execution.succeeded {
         showNativeAlert(title: "Theme not applied", message: execution.output)
