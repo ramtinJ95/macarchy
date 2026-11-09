@@ -28,6 +28,7 @@ struct ConsumerCatalogTests {
           "sketchybar:required",
           "spicetify:required",
           "starship:required",
+          "zed:required",
           "ghostty:required",
           "tuicr:required",
           "user-scripts:optional",

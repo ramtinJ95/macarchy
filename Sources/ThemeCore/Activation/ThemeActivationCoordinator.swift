@@ -340,6 +340,14 @@ package struct ThemeActivationCoordinator: Sendable {
             controlIsAvailable: { controlIsAvailable(StarshipAdapter.liveExecutableURL) },
             processRunner: processRunner
           ))
+      case .zed:
+        return RuntimeConsumer(
+          ZedAdapter(
+            root: root,
+            configurationDirectory: ThemeConsumerPaths.zedConfigurationDirectory(
+              home: consumerPaths.piDerivedHomeDirectoryURL),
+            version: ZedAdapter.installedVersion,
+            validateOwnership: consumerPaths.zedValidateOwnership))
       case .ghostty:
         return RuntimeConsumer(
           GhosttyAdapter(
@@ -945,6 +953,7 @@ extension SpicetifyAdapter: ContextFreeThemeAdapter {}
 extension StarshipAdapter: ContextFreeThemeAdapter {}
 extension TuicrAdapter: ContextFreeThemeAdapter {}
 extension GhosttyAdapter: ContextFreeThemeAdapter {}
+extension ZedAdapter: ContextFreeThemeAdapter {}
 extension YaziAdapter: ContextFreeThemeAdapter {}
 
 /// One runtime consumer's adapter, built once per coordinator.

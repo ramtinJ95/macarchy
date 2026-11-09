@@ -434,6 +434,11 @@ struct DependencyProfile: Sendable {
           remediation: .formula("starship")
         ),
         consumerCapability(
+          .zed,
+          probes: [.exists(ZedAdapter.applicationURL)],
+          remediation: .external("Install Zed.app in /Applications; Macarchy only themes it.")
+        ),
+        consumerCapability(
           .ghostty,
           probes: [.executable(GhosttyAdapter.liveExecutableURL)],
           remediation: .external("Install Ghostty.app in /Applications; Macarchy only themes it.")
