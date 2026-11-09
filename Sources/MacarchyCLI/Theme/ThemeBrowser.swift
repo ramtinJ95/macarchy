@@ -28,9 +28,8 @@ struct ThemeBrowserItem: Sendable {
     try metadata.backgroundData(id: id)
   }
 
-  fileprivate func matches(_ terms: [String]) -> Bool {
-    PopupSearch.matches(
-      terms, fields: [metadata.id, metadata.displayName, metadata.appearance.rawValue])
+  fileprivate func matches(_ search: ThemeSearch) -> Bool {
+    search.matches(id: id, displayName: displayName, appearance: appearance)
   }
 }
 
@@ -49,8 +48,8 @@ struct ThemeBrowserContent: Sendable {
   }
 
   func filteredItems(query: String) -> [ThemeBrowserItem] {
-    let terms = PopupSearch.terms(query)
-    return items.filter { $0.matches(terms) }
+    let search = ThemeSearch(query)
+    return items.filter { $0.matches(search) }
   }
 
   func item(id: String) -> ThemeBrowserItem? {
