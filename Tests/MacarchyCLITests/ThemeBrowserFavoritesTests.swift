@@ -36,6 +36,21 @@ struct ThemeBrowserFavoritesTests {
     #expect(content.notices == ["Removed favorite 'gone', which is no longer installed."])
   }
 
+  @Test func searchMatchesWordPrefixesOnly() throws {
+    let packages = try ThemeRepository(builtInRoot: themesRoot).packages()
+    let content = ThemeBrowserContent(
+      items: packages.map { package in
+        ThemeBrowserItem(
+          metadata: package.metadata,
+          generatedPreview: ThemeBrowserPreview(label: "", data: Data()),
+          initialBackgroundID: nil)
+      },
+      initialThemeID: packages[0].id)
+
+    #expect(content.filteredItems(query: "tok ni dark").map(\.id) == ["tokyo-night"])
+    #expect(content.filteredItems(query: "okyo").isEmpty)
+  }
+
   private var themesRoot: URL {
     repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory)
   }
