@@ -629,7 +629,8 @@ struct EnvironmentStatusCommandRunner: Sendable {
 
     let generation = EnvironmentGenerationStore(stateRoot: stateRoot).inspect(expected: composition)
     let provider = EnvironmentProviderInspector(
-      alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion, vscodeDiscover: vscodeDiscover, vscodeRunner: vscodeRunner,
+      alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion,
+      vscodeDiscover: vscodeDiscover, vscodeRunner: vscodeRunner,
       zedVersion: zedVersion
     )
     .inspectIncludingBordersRuntime(

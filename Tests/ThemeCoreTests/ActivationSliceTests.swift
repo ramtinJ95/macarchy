@@ -390,7 +390,7 @@ struct ActivationSliceTests {
           "generated/starship.toml",
           "generated/alacritty.toml", "generated/ghostty.conf", "generated/zed.json",
           "generated/tuicr.toml",
-          "generated/vscode/package.json", "generated/vscode/themes/macarchy-color-theme.json",
+          "generated/vscode-package.json", "generated/vscode-theme.json",
           "generated/wallpaper.png",
           "generated/yazi-flavor.toml",
           "generated/yazi.tmTheme", "theme.json",

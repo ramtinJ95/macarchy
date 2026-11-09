@@ -2,8 +2,10 @@ import Foundation
 
 /// One generated extension is shared by all four editors; no extension code executes.
 package struct VSCodeTheme: Sendable {
-  package static let packagePath = "generated/vscode/package.json"
-  package static let themePath = "generated/vscode/themes/macarchy-color-theme.json"
+  // Generation artifacts stay flat, matching the immutable generation boundary.
+  // Only the temporary VSIX payload needs the extension/themes hierarchy.
+  package static let packagePath = "generated/vscode-package.json"
+  package static let themePath = "generated/vscode-theme.json"
   package static let paths = [packagePath, themePath]
   package let package: Data
   package let theme: Data
@@ -88,7 +90,8 @@ package struct VSCodeTheme: Sendable {
         ["scope": $0.0, "settings": ["foreground": $0.1]] as [String: Any]
       },
     ])
-    let version = "1.0.\(UInt32(sha256Digest(theme).prefix(8), radix: 16)!)"
+    let digestPrefix = sha256Hex(theme).prefix(8)
+    let version = "1.0.\(UInt32(digestPrefix, radix: 16)!)"
     let package = try json([
       "name": "macarchy-theme", "publisher": "macarchy", "displayName": "Macarchy",
       "version": version, "engines": ["vscode": "^1.50.0"], "categories": ["Themes"],

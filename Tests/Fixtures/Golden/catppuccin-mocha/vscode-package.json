@@ -1,0 +1,22 @@
+{
+  "categories" : [
+    "Themes"
+  ],
+  "contributes" : {
+    "themes" : [
+      {
+        "id" : "Macarchy",
+        "label" : "Macarchy",
+        "path" : "./themes/macarchy-color-theme.json",
+        "uiTheme" : "vs-dark"
+      }
+    ]
+  },
+  "displayName" : "Macarchy",
+  "engines" : {
+    "vscode" : "^1.50.0"
+  },
+  "name" : "macarchy-theme",
+  "publisher" : "macarchy",
+  "version" : "1.0.1129092515"
+}

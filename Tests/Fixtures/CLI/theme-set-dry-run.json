@@ -169,10 +169,14 @@
         "requirement" : "required"
       }
     ],
-    "digest" : "sha256:bbb94adc4c9f29d3e604984ffa737b6f4bfee7041beb357b222a2cbb6b046809",
+    "digest" : "sha256:fdce6aec25006b7e64e1b60b0ba97801961a8db6e4af6baf57fca7eddaae8573",
     "disabled_consumers" : [
       "borders",
       "lean-focus-ring",
+      "vscode",
+      "cursor",
+      "vscodium",
+      "windsurf",
       "zed",
       "alacritty",
       "ghostty",

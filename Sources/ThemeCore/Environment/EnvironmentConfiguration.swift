@@ -407,6 +407,19 @@ package struct EnvironmentConfigurationComposer: Sendable {
 
     artifacts.sort { $0.path < $1.path }
     let renderedDigest = Self.artifactDigest(artifacts)
+    var presetIdentity = [
+      "codex": options.presets.codex, "herdr": options.presets.herdr,
+      "pi": options.presets.pi, "tuicr": options.presets.tuicr,
+    ]
+    // Later opt-in presets stay absent when disabled, preserving existing identities.
+    for (name, enabled) in [
+      "ghostty": options.presets.ghostty, "zed": options.presets.zed,
+      "alacritty": options.presets.alacritty, "vscode": options.presets.vscode,
+      "cursor": options.presets.cursor, "vscodium": options.presets.vscodium,
+      "windsurf": options.presets.windsurf,
+    ] where enabled {
+      presetIdentity[name] = true
+    }
     let identity = EnvironmentInputIdentity(
       schemaVersion: 1,
       focusRing: options.focusRing.rawValue,
@@ -421,28 +434,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
         "eza": options.tools.eza,
         "yazi": options.tools.yazi,
       ],
-      presets: [
-        "codex": options.presets.codex,
-        "herdr": options.presets.herdr,
-        "pi": options.presets.pi,
-        "tuicr": options.presets.tuicr,
-      ].merging(
-        options.presets.ghostty ? ["ghostty": true] : [:], uniquingKeysWith: { _, new in new }
-      ).merging(options.presets.zed ? ["zed": true] : [:], uniquingKeysWith: { _, new in new })
-        .merging(
-          options.presets.alacritty ? ["alacritty": true] : [:], uniquingKeysWith: { _, new in new }
-        )
-        .merging(
-          options.presets.vscode ? ["vscode": true] : [:], uniquingKeysWith: { _, new in new }
-        )
-        .merging(
-          options.presets.cursor ? ["cursor": true] : [:], uniquingKeysWith: { _, new in new }
-        )
-        .merging(
-          options.presets.vscodium ? ["vscodium": true] : [:], uniquingKeysWith: { _, new in new }
-        )
-        .merging(
-          options.presets.windsurf ? ["windsurf": true] : [:], uniquingKeysWith: { _, new in new }),
+      presets: presetIdentity,
       artifacts: Dictionary(uniqueKeysWithValues: artifacts.map { ($0.path, $0.digest) })
     )
     return EnvironmentComposition(

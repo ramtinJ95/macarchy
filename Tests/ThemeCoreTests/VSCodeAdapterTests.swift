@@ -19,7 +19,8 @@ struct VSCodeAdapterTests {
     #expect(colors["terminal.ansiBrightBlue"] == package.terminal.ansi[12].rawValue)
     #expect(colors.keys.filter { $0.hasPrefix("terminal.ansi") }.count == 16)
     #expect((object["tokenColors"] as? [Any])?.count == 8)
-    #expect(result.version == "1.0.\(UInt32(sha256Digest(result.theme).prefix(8), radix: 16)!)")
+    let digestPrefix = sha256Digest(result.theme).dropFirst("sha256:".count).prefix(8)
+    #expect(result.version == "1.0.\(UInt32(digestPrefix, radix: 16)!)")
     #expect(try VSCodeTheme.render(package: package).package == result.package)
     let manifest = try #require(
       try JSONSerialization.jsonObject(with: result.package) as? [String: Any])
