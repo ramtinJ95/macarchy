@@ -1601,7 +1601,10 @@ macarchy setup teardown
 ```
 
 Teardown reverses recorded configuration changes and preserves unrelated data
-and installed packages. It does not cover clipboard history: if you enabled
+and installed packages. It also puts back each display's wallpaper from before Macarchy
+first changed it, and the macOS appearance from before setup. A wallpaper or
+appearance you changed yourself since then is kept and named in the report, as is
+an original image that no longer exists or a display that is not connected. It does not cover clipboard history: if you enabled
 clearing, run `macarchy clipboard disable` first. That removes the hourly
 automatic-clear job, restores Maccy's two settings and keeps its history. It also
 does not cover the idle screensaver: if you turned it on, run

@@ -61,91 +61,11 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       )
     },
     themeTeardown: { stateRoot, ownership, desiredAppearance, dryRun in
-      guard let ownership else {
-        return .noChange("No setup-owned canonical theme exists.")
-      }
-      let activator = ThemeActivator(root: stateRoot)
-      _ = try activator.deactivate(
-        expectedGenerationID: ownership.themeGenerationID,
-        dryRun: true
-      )
-      let appearance = MacOSAppearanceAdapter.live(root: stateRoot)
-      let currentAppearance = try appearance.preflight()
-      guard currentAppearance == desiredAppearance else {
-        return UnifiedSetupTeardownStage(
-          succeeded: false,
-          mutated: false,
-          outcome: "blocked",
-          message:
-            "macOS appearance changed after setup; refusing to overwrite the external change."
-        )
-      }
-      if dryRun {
-        return UnifiedSetupTeardownStage(
-          succeeded: true,
-          mutated: false,
-          outcome: "planned",
-          message: "Would restore macOS appearance and remove the setup-owned canonical theme."
-        )
-      }
-
-      let appearanceChanged = currentAppearance != ownership.originalAppearance
-      let appearanceResult: AdapterResult
-      do {
-        appearanceResult = try await appearance.apply(ownership.originalAppearance)
-      } catch {
-        return UnifiedSetupTeardownStage(
-          succeeded: false,
-          mutated: appearanceChanged,
-          outcome: "failed",
-          message: "macOS appearance restoration failed: \(error)"
-        )
-      }
-      guard appearanceResult.status == .applied else {
-        return UnifiedSetupTeardownStage(
-          succeeded: false,
-          mutated: appearanceChanged,
-          outcome: "failed",
-          message: appearanceResult.message ?? "macOS appearance restoration failed."
-        )
-      }
-      let cleanupError: String?
-      do {
-        cleanupError = try activator.deactivate(
-          expectedGenerationID: ownership.themeGenerationID,
-          dryRun: false
-        )
-      } catch {
-        return UnifiedSetupTeardownStage(
-          succeeded: false,
-          mutated: appearanceChanged,
-          outcome: "failed",
-          message: "Canonical theme removal failed: \(error)"
-        )
-      }
-      if let cleanupError {
-        return UnifiedSetupTeardownStage(
-          succeeded: false,
-          mutated: true,
-          outcome: "recovery_required",
-          message: "Canonical theme was removed, but cleanup remains: \(cleanupError)."
-        )
-      }
-      do {
-        try SetupCoreOwnershipStore(stateRoot: stateRoot).remove()
-      } catch {
-        return UnifiedSetupTeardownStage(
-          succeeded: false,
-          mutated: true,
-          outcome: "recovery_required",
-          message: "Canonical theme was removed, but setup ownership cleanup failed: \(error)"
-        )
-      }
-      return UnifiedSetupTeardownStage(
-        succeeded: true,
-        mutated: true,
-        outcome: "restored",
-        message: "Restored macOS appearance and removed the setup-owned canonical theme."
+      try await SetupThemeTeardown.live.run(
+        stateRoot: stateRoot,
+        ownership: ownership,
+        desiredAppearance: desiredAppearance,
+        dryRun: dryRun
       )
     },
     environmentApplyFinalization: { context, commit in
