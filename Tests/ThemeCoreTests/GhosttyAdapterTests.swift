@@ -55,6 +55,48 @@ struct GhosttyAdapterTests {
     }
   }
 
+  @Test(arguments: [[1, 2, 3], [1, 3, 0], [1, 4, 0]])
+  func defaultFileSelectionHonorsTheInstalledVersion(version: [Int]) throws {
+    try withTemporaryRoot(named: "ghostty-version-paths") { home in
+      let files = ThemeConsumerPaths.ghosttyConfigurationFiles(home: home, environment: [:])
+      let supported = GhosttyConfiguration.filesRead(in: files, version: version)
+      let legacy = version[1] == 2
+      #expect(supported == (legacy ? [files[0], files[2]] : files))
+      // Only extension-bearing files exist: old releases must create XDG/config.
+      for file in [files[1], files[3]] { try write("font-size = 13\n", to: file) }
+      #expect(
+        try GhosttyConfiguration.selectedFile(in: supported) == (legacy ? files[0] : files[3]))
+      #expect(
+        (GhosttyConfiguration.ignoredFilesMessage(in: files, version: version) != nil) == legacy)
+      try write("font-size = 14\n", to: files[2])
+      #expect(
+        try GhosttyConfiguration.selectedFile(in: supported) == (legacy ? files[2] : files[3]))
+    }
+  }
+
+  @Test func olderVersionReportsIgnoredFilesWithoutTreatingTheirIncludesAsOverrides() throws {
+    try withTemporaryRoot(named: "ghostty-ignored-files") { home in
+      let adapter = try fixture(
+        home: home,
+        runner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "Ghostty 1.2.3") })
+      let files = adapter.configurationFiles
+      try write("config-file = \(home.appending(path: "color").path)\n", to: files[3])
+      try write("background = #123456\n", to: home.appending(path: "color"))
+      let inspection = adapter.inspection()
+      #expect(inspection.status == .ready)
+      #expect(inspection.message?.contains("before 1.3.0 ignore:") == true)
+      #expect(inspection.message?.contains(files[3].path) == true)
+      #expect(inspection.message?.contains("color overrides") != true)
+      let downgraded = GhosttyAdapter(
+        root: home, home: home, configurationFiles: files,
+        ownedConfigurationURL: files[3], ownedLineIndex: 0,
+        executableURL: adapter.executableURL, controlIsAvailable: { true },
+        processRunner: adapter.processRunner, processes: fakeProcesses())
+      #expect(downgraded.inspection().status == .failed)
+      #expect(downgraded.inspection().message?.contains("does not load the owned") == true)
+    }
+  }
+
   @Test func onlyIncludesLoadedAfterMacarchyOverrideItsColors() throws {
     try withTemporaryRoot(named: "ghostty-queue") { home in
       let state = home.appending(path: "state")
@@ -142,7 +184,7 @@ struct GhosttyAdapterTests {
       let stopped = try fixture(
         home: home,
         runner: ProcessRunner { request in
-          Issue.record("Stopped Ghostty must not run a signal command")
+          #expect(request.arguments == ["--version"])
           return ProcessResult(terminationStatus: 0, output: "Ghostty 1.4.0")
         }, processes: fakeProcesses(instances: []))
       let result = try await stopped.reconciliation().run()
@@ -155,9 +197,9 @@ struct GhosttyAdapterTests {
     try withTemporaryRoot(named: "ghostty-drift") { home in
       let adapter = try fixture(
         home: home,
-        runner: ProcessRunner { _ in
-          Issue.record("Inspection does not reload Ghostty")
-          return ProcessResult(terminationStatus: 0, output: "")
+        runner: ProcessRunner { request in
+          #expect(request.arguments == ["--version"])
+          return ProcessResult(terminationStatus: 0, output: "Ghostty 1.4.0")
         })
       let file = try #require(adapter.ownedConfigurationURL)
       try write("# moved\n\(GhosttyConfiguration.includeDirective(root: home))\n", to: file)
@@ -172,10 +214,10 @@ struct GhosttyAdapterTests {
     try await withTemporaryRoot(named: "ghostty-symlink") { home in
       let adapter = try fixture(
         home: home,
-        runner: ProcessRunner { _ in
-          Issue.record("Unsafe configuration must not reload Ghostty")
-          return ProcessResult(terminationStatus: 0, output: "")
-        })
+        runner: ProcessRunner { request in
+          #expect(request.arguments == ["--version"])
+          return ProcessResult(terminationStatus: 0, output: "Ghostty 1.4.0")
+        }, processes: fakeProcesses(signal: { _ in Issue.record("Unsafe config must not reload") }))
       let file = try #require(adapter.ownedConfigurationURL)
       let original = kind == "leaf" ? file : file.deletingLastPathComponent()
       let target = home.appending(path: "redirected")

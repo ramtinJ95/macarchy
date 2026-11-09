@@ -38,23 +38,36 @@ package struct GhosttyAdapter: Sendable {
   enum Failure: Error, CustomStringConvertible {
     case includeDrift
     case unsafeConfiguration
+    case ignoredConfiguration(String)
     case version(String)
     var description: String {
       switch self {
       case .includeDrift: "The owned Ghostty config-file line was edited, moved or removed"
       case .unsafeConfiguration:
         "The owned Ghostty configuration is not an ordinary home-contained file"
+      case .ignoredConfiguration(let path):
+        "The installed Ghostty version does not load the owned configuration: \(path). Disable the preset to restore it before adopting a supported file."
       case .version(let output):
         "Cannot determine Ghostty's reload capability from --version: \(output)"
       }
     }
   }
 
-  func preflight() throws {
+  private func installedVersion() throws -> [Int] {
     guard controlIsAvailable() else {
       throw AdapterConfigurationError.controlUnavailable("Ghostty", executableURL)
     }
-    let url = try ownedConfigurationURL ?? GhosttyConfiguration.selectedFile(in: configurationFiles)
+    return try Self.version(executableURL: executableURL, processRunner: processRunner)
+  }
+
+  func preflight() throws {
+    try preflight(version: installedVersion())
+  }
+
+  private func preflight(version: [Int]) throws {
+    let files = GhosttyConfiguration.filesRead(in: configurationFiles, version: version)
+    let url = try ownedConfigurationURL ?? GhosttyConfiguration.selectedFile(in: files)
+    guard files.contains(url) else { throw Failure.ignoredConfiguration(url.path) }
     var metadata = stat()
     if lstat(url.path, &metadata) != 0, errno == ENOENT { throw Failure.includeDrift }
     guard url.path.hasPrefix(home.path + "/"),
@@ -76,9 +89,9 @@ package struct GhosttyAdapter: Sendable {
     }
   }
 
-  private var runtime: OrdinaryAdapterRuntime {
+  private func runtime(version: [Int]) -> OrdinaryAdapterRuntime {
     OrdinaryAdapterRuntime(
-      .ghostty, preflight: preflight,
+      .ghostty, preflight: { try preflight(version: version) },
       isIntegrationDrift: {
         if case Failure.includeDrift = $0 { return true }
         return false
@@ -86,11 +99,38 @@ package struct GhosttyAdapter: Sendable {
   }
 
   func inspection() -> AdapterInspection {
-    runtime.inspection(readyMessage: overrideMessage())
+    do {
+      let version = try installedVersion()
+      return runtime(version: version).inspection(readyMessage: overrideMessage(version: version))
+    } catch {
+      return AdapterInspection(
+        adapterID: Self.id, requirement: .required, status: .failed,
+        message: String(describing: error))
+    }
   }
 
-  private func overrideMessage() -> String? {
-    GhosttyConfiguration.overrideMessage(files: configurationFiles, root: root, home: home)
+  private func overrideMessage(version: [Int]) -> String? {
+    let messages = [
+      GhosttyConfiguration.ignoredFilesMessage(in: configurationFiles, version: version),
+      GhosttyConfiguration.overrideMessage(
+        files: GhosttyConfiguration.filesRead(in: configurationFiles, version: version),
+        root: root, home: home),
+    ].compactMap { $0 }
+    return messages.isEmpty ? nil : messages.joined(separator: " ")
+  }
+
+  package static func installedVersion() throws -> [Int] {
+    try version(
+      executableURL: liveExecutableURL.resolvingSymlinksInPath(), processRunner: .live)
+  }
+
+  static func version(executableURL: URL, processRunner: ProcessRunner) throws -> [Int] {
+    let result = try processRunner.run(
+      ProcessRequest(executableURL: executableURL, arguments: ["--version"], timeout: 5))
+    guard result.terminationStatus == 0, let version = parseVersion(result.output) else {
+      throw Failure.version(result.output)
+    }
+    return version
   }
 
   package static func parseVersion(_ output: String) -> [Int]? {
@@ -105,7 +145,9 @@ package struct GhosttyAdapter: Sendable {
   }
 
   func reconciliation() -> AdapterReconciliation {
-    runtime.reconciliation {
+    AdapterReconciliation(id: Self.id, requirement: .required) {
+      let version = try installedVersion()
+      if let failure = runtime(version: version).preflightFailure() { return failure }
       // An optional include must not hide a missing generated artifact (for example, a theme
       // activated by an older Macarchy build). Re-select the theme to generate it.
       _ = try GhosttyConfiguration.read(
@@ -114,24 +156,22 @@ package struct GhosttyAdapter: Sendable {
       if running.isEmpty {
         return AdapterOutcome(
           status: .applied,
-          message: ["Ghostty will use the theme on next launch.", overrideMessage()].compactMap {
+          message: [
+            "Ghostty will use the theme on next launch.", overrideMessage(version: version),
+          ].compactMap {
             $0
           }.joined(separator: " "))
-      }
-      let result = try processRunner.run(
-        ProcessRequest(executableURL: executableURL, arguments: ["--version"], timeout: 5))
-      guard result.terminationStatus == 0, let version = Self.parseVersion(result.output) else {
-        throw Failure.version(result.output)
       }
       guard !version.lexicographicallyPrecedes([1, 2, 0]) else {
         return AdapterOutcome(
           status: .restartRequired,
           message: [
-            "Ghostty versions before 1.2.0: press ⌘⇧, in Ghostty to reload.", overrideMessage(),
+            "Ghostty versions before 1.2.0: press ⌘⇧, in Ghostty to reload.",
+            overrideMessage(version: version),
           ].compactMap { $0 }.joined(separator: " "))
       }
       for identity in running { try processes.reload(identity) }
-      return AdapterOutcome(status: .applied, message: overrideMessage())
+      return AdapterOutcome(status: .applied, message: overrideMessage(version: version))
     }
   }
 

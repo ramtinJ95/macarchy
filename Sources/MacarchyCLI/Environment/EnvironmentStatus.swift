@@ -482,6 +482,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
   let theme: DesktopThemeController?
   let verifier: EnvironmentSessionVerifier
   let bordersRuntime: EnvironmentBordersRuntime
+  let ghosttyVersion: @Sendable () throws -> [Int]
 
   static let live = Self(prerequisites: .live, theme: .live, verifier: .live)
 
@@ -489,12 +490,14 @@ struct EnvironmentStatusCommandRunner: Sendable {
     prerequisites: EnvironmentPrerequisiteInspector,
     theme: DesktopThemeController?,
     verifier: EnvironmentSessionVerifier = .assumed,
-    bordersRuntime: EnvironmentBordersRuntime = .live
+    bordersRuntime: EnvironmentBordersRuntime = .live,
+    ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion
   ) {
     self.prerequisites = prerequisites
     self.theme = theme
     self.verifier = verifier
     self.bordersRuntime = bordersRuntime
+    self.ghosttyVersion = ghosttyVersion
   }
 
   func execute(
@@ -610,12 +613,13 @@ struct EnvironmentStatusCommandRunner: Sendable {
     }
 
     let generation = EnvironmentGenerationStore(stateRoot: stateRoot).inspect(expected: composition)
-    let provider = EnvironmentProviderInspector().inspectIncludingBordersRuntime(
-      composition: composition,
-      homeDirectory: homeDirectory,
-      stateRoot: stateRoot,
-      runtime: bordersRuntime
-    )
+    let provider = EnvironmentProviderInspector(ghosttyVersion: ghosttyVersion)
+      .inspectIncludingBordersRuntime(
+        composition: composition,
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot,
+        runtime: bordersRuntime
+      )
     let prerequisiteState = prerequisites.inspect(profile.environment, homeDirectory)
     let transactionStatus: String
     do {

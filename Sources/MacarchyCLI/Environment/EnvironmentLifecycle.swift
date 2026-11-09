@@ -354,7 +354,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
       guard let expected = inspection.keyOwnedExternalEvidence[file] else { continue }
       try revalidate(
         expected,
-        at: try file.configurationURL(home: homeDirectory, ownership: inspection.ownership),
+        at: try file.configurationURL(
+          home: homeDirectory, ownership: inspection.ownership,
+          proposedGhostty: inspection.proposedGhosttyOwnership),
         file.revalidationLabel
       ) { evidence in
         guard file.revalidatesExternalTuple, let linked = file.linkedPreset else { return true }

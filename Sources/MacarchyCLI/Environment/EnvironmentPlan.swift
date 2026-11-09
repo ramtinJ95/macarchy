@@ -26,15 +26,18 @@ struct EnvironmentPlanCommandRunner: Sendable {
   let prerequisites: EnvironmentPrerequisiteInspector
   let requiresActiveTheme: Bool
   let bordersRuntime: EnvironmentBordersRuntime
+  let ghosttyVersion: @Sendable () throws -> [Int]
 
   init(
     prerequisites: EnvironmentPrerequisiteInspector = .live,
     requiresActiveTheme: Bool = false,
-    bordersRuntime: EnvironmentBordersRuntime = .live
+    bordersRuntime: EnvironmentBordersRuntime = .live,
+    ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion
   ) {
     self.prerequisites = prerequisites
     self.requiresActiveTheme = requiresActiveTheme
     self.bordersRuntime = bordersRuntime
+    self.ghosttyVersion = ghosttyVersion
   }
 
   func execute(
@@ -118,7 +121,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     let provider = homeDirectory.map {
       EnvironmentProviderInspector(
         bootstrapTheme: bootstrapTheme,
-        proposedNativeSources: Set(starterPlans.map(\.destination))
+        proposedNativeSources: Set(starterPlans.map(\.destination)), ghosttyVersion: ghosttyVersion
       ).inspectIncludingBordersRuntime(
         composition: composition,
         homeDirectory: $0,
