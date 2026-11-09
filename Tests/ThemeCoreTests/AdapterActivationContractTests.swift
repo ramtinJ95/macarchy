@@ -607,6 +607,7 @@ extension AdapterContractTests {
         wallpaperSignal: try Self.wallpaperSignal(root: root),
         enabledAdapterIDs: Set(ThemeActivationCoordinator.adapterRequirements.keys)
           .subtracting([
+            "vscode", "cursor", "vscodium", "windsurf",
             ZedAdapter.id, AlacrittyAdapter.id, GhosttyAdapter.id, BordersAdapter.id,
             BordersAdapter.leanID,
             UserScriptsAdapter.id, MacOSAccentAdapter.id,
