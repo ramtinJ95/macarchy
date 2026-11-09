@@ -11,7 +11,7 @@ struct ThemeActivationService: Sendable {
   let review:
     @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths) throws -> ThemeActivationReview
   let activate:
-    @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths, String?) async throws
+    @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths, String?, Bool) async throws
       -> ThemeActivationResult
   var slackIsEnabled: @Sendable (URL) throws -> Bool = { _ in true }
   /// Records committed activations for `theme undo`; nil keeps no history.
@@ -51,7 +51,9 @@ struct ThemeActivationService: Sendable {
           enabledAdapterIDs: enabledAdapterIDs
         ).review(package: package, requestedBackgroundID: backgroundID)
       },
-      activate: { package, backgroundID, stateRoot, consumerPaths, expectedActiveGenerationID in
+      activate: {
+        package, backgroundID, stateRoot, consumerPaths, expectedActiveGenerationID,
+        reconcileAllConsumers in
         try await ThemeRuntimeSelection.activationCoordinator(
           stateRoot: stateRoot,
           consumerPaths: consumerPaths,
@@ -60,6 +62,7 @@ struct ThemeActivationService: Sendable {
           package: package,
           expectedActiveGenerationID: expectedActiveGenerationID,
           requestedBackgroundID: backgroundID,
+          reconcileAllConsumers: reconcileAllConsumers,
           onCommittedLocked: onCommittedLocked
         )
       },
@@ -99,7 +102,8 @@ struct ThemeActivationService: Sendable {
         dryRun: dryRun,
         expectedActiveGenerationID: expectedActiveGenerationID,
         json: json,
-        requestedBackgroundID: requestedBackgroundID
+        requestedBackgroundID: requestedBackgroundID,
+        reconcileAllConsumers: reviewedDigest != nil
       )
     }
     do {
@@ -118,7 +122,8 @@ struct ThemeActivationService: Sendable {
     expectedActiveGenerationID: String?,
     json: Bool,
     requestedBackgroundID: String? = nil,
-    historyUpdate: ThemeHistoryUpdate = .record
+    historyUpdate: ThemeHistoryUpdate = .record,
+    reconcileAllConsumers: Bool = false
   ) async throws -> CommandExecution {
     try await reportLocked(
       package: package,
@@ -127,7 +132,8 @@ struct ThemeActivationService: Sendable {
       dryRun: dryRun,
       expectedActiveGenerationID: expectedActiveGenerationID,
       requestedBackgroundID: requestedBackgroundID,
-      historyUpdate: historyUpdate
+      historyUpdate: historyUpdate,
+      reconcileAllConsumers: reconcileAllConsumers
     ).execution(json: json)
   }
 
@@ -139,7 +145,8 @@ struct ThemeActivationService: Sendable {
     dryRun: Bool,
     expectedActiveGenerationID: String?,
     requestedBackgroundID: String? = nil,
-    historyUpdate: ThemeHistoryUpdate = .record
+    historyUpdate: ThemeHistoryUpdate = .record,
+    reconcileAllConsumers: Bool = false
   ) async throws -> ThemeSetReport {
     if dryRun {
       do {
@@ -157,7 +164,8 @@ struct ThemeActivationService: Sendable {
       stateRoot: stateRoot,
       consumerPaths: consumerPaths,
       expectedActiveGenerationID: expectedActiveGenerationID,
-      historyUpdate: historyUpdate
+      historyUpdate: historyUpdate,
+      reconcileAllConsumers: reconcileAllConsumers
     )
     return ThemeSetReport(outcome, themeID: package.id, slackTheme: slackTheme)
   }
@@ -168,7 +176,8 @@ struct ThemeActivationService: Sendable {
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths,
     expectedActiveGenerationID: String?,
-    historyUpdate: ThemeHistoryUpdate = .record
+    historyUpdate: ThemeHistoryUpdate = .record,
+    reconcileAllConsumers: Bool = false
   ) async throws -> ThemeActivationOutcome {
     let previous = history?.activeSelection(stateRoot: stateRoot)
     let outcome = try await ThemeActivationOutcome.classify {
@@ -177,7 +186,8 @@ struct ThemeActivationService: Sendable {
         backgroundID,
         stateRoot,
         consumerPaths,
-        expectedActiveGenerationID
+        expectedActiveGenerationID,
+        reconcileAllConsumers
       )
     }
     guard let history, let previous else { return outcome }

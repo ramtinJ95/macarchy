@@ -226,7 +226,7 @@ struct ThemeUndoCommandTests {
     try await withTemporaryRoot(named: "macarchy-theme-undo") { stateRoot in
       var activation = ThemeActivationService(
         review: { package, _, _, _ in try passingReview(package) },
-        activate: { _, _, _, _, _ in throw TestError.activation },
+        activate: { _, _, _, _, _, _ in throw TestError.activation },
         slackIsEnabled: { _ in false }
       )
       activation.history = UndoFixture(initial: selectionManifest("catppuccin-mocha", nil))
@@ -291,7 +291,7 @@ private final class UndoFixture: Sendable {
         self.calls.withLock { $0.preflights.append("\(package.id)#\(backgroundID ?? "-")") }
         return try passingReview(package)
       },
-      activate: { package, backgroundID, _, _, _ in
+      activate: { package, backgroundID, _, _, _, _ in
         self.calls.withLock { $0.activations.append("\(package.id)#\(backgroundID ?? "-")") }
         let manifest = selectionManifest(package.id, backgroundID ?? "default")
         self.canonical.withLock { $0 = manifest }

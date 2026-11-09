@@ -112,7 +112,7 @@ struct SlackPresetLifecycleTests {
     func runner(enabled: Bool) -> ThemeActivationService {
       ThemeActivationService(
         review: { package, _, _, _ in try passingReview(package) },
-        activate: { package, _, stateRoot, _, _ in
+        activate: { package, _, stateRoot, _, _, _ in
           let manifest = try ThemeActivator(root: stateRoot).activate(package: package)
           return ThemeActivationResult(
             manifest: manifest,

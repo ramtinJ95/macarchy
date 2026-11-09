@@ -20,7 +20,7 @@ struct ThemeNextStatusCommandTests {
           selected.withLock { $0 = package.id }
           return try passingReview(package)
         },
-        activate: { _, _, _, _, _ in throw TestError.unexpectedActivation }
+        activate: { _, _, _, _, _, _ in throw TestError.unexpectedActivation }
       )
       let runner = ThemeNextCommandRunner(
         activeManifest: { _ in testManifest(themeID: active) },
@@ -46,7 +46,7 @@ struct ThemeNextStatusCommandTests {
       activeManifest: { _ in testManifest(themeID: "removed-theme") },
       activation: ThemeActivationService(
         review: { package, _, _, _ in try passingReview(package) },
-        activate: { _, _, _, _, _ in throw TestError.unexpectedActivation }
+        activate: { _, _, _, _, _, _ in throw TestError.unexpectedActivation }
       )
     )
 
@@ -79,7 +79,7 @@ struct ThemeNextStatusCommandTests {
     let attempts = Mutex([String]())
     let activation = ThemeActivationService(
       review: { package, _, _, _ in try passingReview(package) },
-      activate: { package, _, _, _, expectedGenerationID in
+      activate: { package, _, _, _, expectedGenerationID, _ in
         let attempt = attempts.withLock { attempts in
           attempts.append(package.id)
           return attempts.count

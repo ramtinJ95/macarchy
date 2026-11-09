@@ -46,7 +46,7 @@ struct ThemeSetReviewTests {
     let current = Mutex("g-active")
     let service = fakeService(
       review: { try review($0, active: current.withLock { $0 }, kitty: .ready) },
-      activate: { expected in activated.withLock { $0.append(expected) } })
+      activate: { expected, _ in activated.withLock { $0.append(expected) } })
     let reviewed = try review(try package(), active: "g-active", kitty: .ready).digest
 
     // Another activation changed the active generation since the review.
@@ -61,12 +61,27 @@ struct ThemeSetReviewTests {
     #expect(activated.withLock { $0 } == ["g-active"])
   }
 
+  @Test(arguments: [false, true])
+  func onlyReviewedApplyReconcilesAllConsumers(reviewed: Bool) async throws {
+    let requested = Mutex([Bool]())
+    let service = fakeService(
+      review: { try review($0, active: "g-active", kitty: .ready) },
+      activate: { _, all in requested.withLock { $0.append(all) } })
+    let digest = try review(try package(), active: "g-active", kitty: .ready).digest
+
+    _ = try await execute(
+      service, dryRun: false, json: false, reviewed: reviewed ? digest : nil,
+      background: "default")
+
+    #expect(requested.withLock { $0 } == [reviewed])
+  }
+
   @Test func aReviewedApplyIsRefusedWhenPreflightNowFails() async throws {
     let activated = Mutex(0)
     let ready = try review(try package(), active: nil, kitty: .ready)
     let service = fakeService(
       review: { try review($0, active: nil, kitty: .failed("Kitty is not installed")) },
-      activate: { _ in activated.withLock { $0 += 1 } })
+      activate: { _, _ in activated.withLock { $0 += 1 } })
 
     let refused = try await execute(service, dryRun: false, json: false, reviewed: ready.digest)
 
@@ -146,12 +161,12 @@ private enum ReviewTestError: Error { case notActivated }
 
 private func fakeService(
   review: @escaping @Sendable (ThemePackage) throws -> ThemeActivationReview,
-  activate: @escaping @Sendable (String?) -> Void = { _ in }
+  activate: @escaping @Sendable (String?, Bool) -> Void = { _, _ in }
 ) -> ThemeActivationService {
   ThemeActivationService(
     review: { package, _, _, _ in try review(package) },
-    activate: { _, _, _, _, expected in
-      activate(expected)
+    activate: { _, _, _, _, expected, reconcileAllConsumers in
+      activate(expected, reconcileAllConsumers)
       // The test only needs to see the conditional activation request.
       throw ReviewTestError.notActivated
     },

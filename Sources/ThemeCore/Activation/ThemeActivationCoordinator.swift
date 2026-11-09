@@ -441,10 +441,13 @@ package struct ThemeActivationCoordinator: Sendable {
   }
 
   /// `onCommittedLocked` runs under the activation lock right after the pointer swap.
+  /// A reviewed plan applies every enabled consumer it listed, so `reconcileAllConsumers`
+  /// never carries results forward.
   package func activate(
     package: ThemePackage,
     expectedActiveGenerationID: String? = nil,
     requestedBackgroundID: String? = nil,
+    reconcileAllConsumers: Bool = false,
     onCommittedLocked: (GenerationManifest) throws -> Void = { _ in }
   ) async throws -> ThemeActivationResult {
     try await withTaskExecutorPreference(Self.activationExecutor) {
@@ -455,7 +458,7 @@ package struct ThemeActivationCoordinator: Sendable {
         package: package,
         expectedActiveGenerationID: expectedActiveGenerationID,
         preparedBackground: {
-          if requestedBackgroundID != nil {
+          if !reconcileAllConsumers, requestedBackgroundID != nil {
             previousEvidence = try previousReconciliationEvidence()
           }
           let background = try prepare(
@@ -482,12 +485,15 @@ package struct ThemeActivationCoordinator: Sendable {
             unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
           )
         )
-        let plan = backgroundOnlyReconciliationPlan(
-          requestedBackgroundID: requestedBackgroundID,
-          previousEvidence: previousEvidence,
-          manifest: manifest,
-          adapters: adapters
-        )
+        let plan =
+          reconcileAllConsumers
+          ? (adapters: adapters, preservedResults: [])
+          : backgroundOnlyReconciliationPlan(
+            requestedBackgroundID: requestedBackgroundID,
+            previousEvidence: previousEvidence,
+            manifest: manifest,
+            adapters: adapters
+          )
         let reconciliation = try await reconciler.reconcile(
           manifest: manifest,
           adapters: plan.adapters.map { $0.reconciliation() },

@@ -247,7 +247,9 @@ struct ThemeSetCommandTests {
           wallpaperSignal: wallpaperSignal
         ).review(package: package, requestedBackgroundID: backgroundID)
       },
-      activate: { package, backgroundID, stateRoot, consumerPaths, expectedGenerationID in
+      activate: {
+        package, backgroundID, stateRoot, consumerPaths, expectedGenerationID, reconcileAllConsumers
+        in
         try await ThemeActivationCoordinator(
           root: stateRoot,
           consumerPaths: consumerPaths,
@@ -257,7 +259,8 @@ struct ThemeSetCommandTests {
         ).activate(
           package: package,
           expectedActiveGenerationID: expectedGenerationID,
-          requestedBackgroundID: backgroundID
+          requestedBackgroundID: backgroundID,
+          reconcileAllConsumers: reconcileAllConsumers
         )
       }
     )
@@ -268,7 +271,7 @@ struct ThemeSetCommandTests {
   ) -> ThemeActivationService {
     ThemeActivationService(
       review: { package, _, _, _ in try passingReview(package) },
-      activate: { _, _, _, _, _ in try await activate() }
+      activate: { _, _, _, _, _, _ in try await activate() }
     )
   }
 

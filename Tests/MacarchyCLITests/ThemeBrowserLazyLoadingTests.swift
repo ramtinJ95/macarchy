@@ -143,7 +143,7 @@ struct ThemeBrowserLazyLoadingTests {
         calls.withLock { $0 += 1 }
         return try passingReview(package)
       },
-      activate: { _, _, _, _, _ in
+      activate: { _, _, _, _, _, _ in
         calls.withLock { $0 += 1 }
         throw LazyBrowserTestError.unexpectedActivation
       })
