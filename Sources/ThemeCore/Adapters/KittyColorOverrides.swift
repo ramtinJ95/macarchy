@@ -8,7 +8,8 @@ import Foundation
 struct KittyColorOverrides: Equatable, Sendable {
   struct Source: Equatable, Sendable {
     let description: String
-    /// The color options it sets, in file order; nil when it could not be read.
+    /// The color options it sets, in file order; nil when it could not be read, which Kitty
+    /// also skips, so it is reported as unchecked rather than as an override.
     let keys: [String]?
   }
 
@@ -42,13 +43,23 @@ struct KittyColorOverrides: Equatable, Sendable {
 
   /// What the adapter reports alongside its status; nil when nothing overrides the theme.
   var message: String? {
-    guard !sources.isEmpty else { return nil }
-    return "Theme colors are overridden by "
-      + sources.map { "\($0.description) (\(Self.describe($0.keys)))" }.joined(separator: "; ")
+    var parts: [String] = []
+    let overriding = sources.compactMap { source in
+      source.keys.map { "\(source.description) (\(Self.describe($0)))" }
+    }
+    if !overriding.isEmpty {
+      parts.append("Theme colors are overridden by " + overriding.joined(separator: "; "))
+    }
+    let unreadable = sources.filter { $0.keys == nil }.map(\.description)
+    if !unreadable.isEmpty {
+      parts.append(
+        "Not checked for color overrides because it could not be read: "
+          + unreadable.joined(separator: "; "))
+    }
+    return parts.isEmpty ? nil : parts.joined(separator: ". ")
   }
 
-  private static func describe(_ keys: [String]?) -> String {
-    guard let keys else { return "unreadable" }
+  private static func describe(_ keys: [String]) -> String {
     guard !keys.isEmpty else { return "sets no colors, so Kitty's defaults show" }
     guard keys.count > listedKeyLimit else { return keys.joined(separator: ", ") }
     return keys.prefix(listedKeyLimit).joined(separator: ", ")
@@ -61,6 +72,7 @@ struct KittyColorOverrides: Equatable, Sendable {
     configuration: String,
     directory: URL,
     includeDirective: String,
+    environment: [String: String] = ProcessInfo.processInfo.environment,
     read: (URL) throws -> String = {
       try BoundedRegularFile.readUTF8(at: $0.resolvingSymlinksInPath())
     }
@@ -87,7 +99,9 @@ struct KittyColorOverrides: Equatable, Sendable {
       if colorOptions.contains(key) {
         appendUnique(key, to: &direct)
       } else if key == "include" || key == "globinclude" {
-        for url in includedFiles(value, glob: key == "globinclude", directory: directory) {
+        for url in includedFiles(
+          value, glob: key == "globinclude", directory: directory, environment: environment)
+        {
           let keys = try? colorKeys(in: read(url))
           if keys?.isEmpty == true { continue }
           sources.append(
@@ -128,20 +142,61 @@ struct KittyColorOverrides: Equatable, Sendable {
     if !keys.contains(key) { keys.append(key) }
   }
 
-  /// The files an include names, relative paths resolved against the configuration directory as
-  /// Kitty does; a glob include's matches are sorted, also as Kitty does.
-  private static func includedFiles(_ value: String, glob isGlob: Bool, directory: URL) -> [URL] {
+  /// The files an include names, as Kitty resolves them: `~` and environment variables expanded,
+  /// relative paths against the configuration directory, and a glob include matched like
+  /// Python's `Path.glob` (`**` spans directories, `*` also matches hidden names), sorted.
+  private static func includedFiles(
+    _ value: String, glob isGlob: Bool, directory: URL, environment: [String: String]
+  ) -> [URL] {
     guard !value.isEmpty else { return [] }
-    let expanded = (value as NSString).expandingTildeInPath
-    let path =
-      expanded.hasPrefix("/") ? expanded : directory.appending(path: expanded).path
-    guard isGlob else { return exists(URL(filePath: path)) ? [URL(filePath: path)] : [] }
-    var matches = glob_t()
-    defer { globfree(&matches) }
-    guard Darwin.glob(path, 0, nil, &matches) == 0 else { return [] }
-    return (0..<Int(matches.gl_pathc)).compactMap { index in
-      matches.gl_pathv[index].map { URL(filePath: String(cString: $0)) }
+    let expanded = expandVariables((value as NSString).expandingTildeInPath, environment)
+    guard isGlob else {
+      let url =
+        expanded.hasPrefix("/") ? URL(filePath: expanded) : directory.appending(path: expanded)
+      return exists(url) ? [url] : []
+    }
+    var matches = [expanded.hasPrefix("/") ? URL(filePath: "/") : directory]
+    for component in expanded.split(separator: "/").map(String.init) {
+      matches = matches.flatMap { match -> [URL] in
+        switch component {
+        case ".", "..": return [match.appending(path: component)]
+        case "**": return [match] + descendantDirectories(of: match)
+        default:
+          let names = (try? FileManager.default.contentsOfDirectory(atPath: match.path)) ?? []
+          return names.filter { fnmatch(component, $0, 0) == 0 }.map {
+            match.appending(path: $0)
+          }
+        }
+      }
+    }
+    var seen = Set<String>()
+    return matches.filter { url in
+      var isDirectory: ObjCBool = false
+      return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        && !isDirectory.boolValue && seen.insert(url.standardizedFileURL.path).inserted
     }.sorted { $0.path < $1.path }
+  }
+
+  /// `$NAME` and `${NAME}` replaced from `environment`; unknown names stay as written, as with
+  /// Python's `os.path.expandvars`, which Kitty uses.
+  private static func expandVariables(_ path: String, _ environment: [String: String]) -> String {
+    let pattern = /\$(?:\{([A-Za-z0-9_]+)\}|([A-Za-z0-9_]+))/
+    return path.replacing(pattern) { match in
+      let name = String(match.output.1 ?? match.output.2 ?? "")
+      return environment[name] ?? String(match.output.0)
+    }
+  }
+
+  /// Every directory below `url`, without following symbolic links, as `Path.glob` does.
+  private static func descendantDirectories(of url: URL) -> [URL] {
+    guard
+      let enumerator = FileManager.default.enumerator(
+        at: url, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+    else { return [] }
+    return enumerator.compactMap { $0 as? URL }.filter {
+      let values = try? $0.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+      return values?.isDirectory == true && values?.isSymbolicLink != true
+    }
   }
 
   private static func exists(_ url: URL) -> Bool {
