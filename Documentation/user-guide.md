@@ -693,7 +693,8 @@ deletes pinned items too.
 
 ### Your own scripts
 
-List executables in the profile to run them after every theme change and when
+List executables in the profile to run them after every theme activation,
+including the initial activation made by `macarchy setup apply`, and when
 Macarchy is torn down:
 
 ```toml
