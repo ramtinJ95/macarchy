@@ -305,6 +305,7 @@ struct GhosttyAdapterTests {
         "config-file = ?\"\(StateLayout(root: home).currentThemeArtifact(GhosttyAdapter.outputPath).path)\"\n"
       let file = try #require(adapter.ownedConfigurationURL)
       try write(legacy, to: file)
+      try FileManager.default.removeItem(at: home.appending(path: GhosttyAdapter.bridgePath))
       #expect(adapter.inspection().status == .drifted)
       #expect(adapter.inspection().message?.contains("re-enable") == true)
       let result = try await adapter.reconciliation().run()
@@ -314,6 +315,45 @@ struct GhosttyAdapterTests {
       #expect(
         !FileManager.default.fileExists(
           atPath: home.appending(path: GhosttyAdapter.bridgePath).path))
+    }
+  }
+
+  @Test(arguments: ["missing", "edited", "leaf", "ancestor", "directory"])
+  func inspectionReportsBridgeDriftAndUnsafePathsWithoutRepairingThem(change: String) throws {
+    try withTemporaryRoot(named: "ghostty-inspect-bridge") { home in
+      let adapter = try fixture(
+        home: home,
+        runner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "Ghostty 1.4.0") },
+        processes: fakeProcesses(signal: { _ in Issue.record("Inspection must not reload") }))
+      let bridge = home.appending(path: GhosttyAdapter.bridgePath)
+      let expected = try Data(contentsOf: bridge)
+      #expect(adapter.inspection().status == .ready)
+      let target = home.appending(path: "redirected")
+      switch change {
+      case "missing": try FileManager.default.removeItem(at: bridge)
+      case "edited": try Data("background = #123456\n".utf8).write(to: bridge)
+      case "leaf", "ancestor":
+        let original = change == "leaf" ? bridge : bridge.deletingLastPathComponent()
+        try FileManager.default.moveItem(at: original, to: target)
+        try FileManager.default.createSymbolicLink(at: original, withDestinationURL: target)
+      default:
+        try FileManager.default.removeItem(at: bridge)
+        try FileManager.default.createDirectory(at: bridge, withIntermediateDirectories: false)
+      }
+      // Publication readiness must not require a bridge before first reconciliation.
+      try adapter.preflight()
+      let inspection = adapter.inspection()
+      #expect(inspection.status == (["missing", "edited"].contains(change) ? .drifted : .failed))
+      switch change {
+      case "missing": #expect(!FileManager.default.fileExists(atPath: bridge.path))
+      case "edited": #expect(try Data(contentsOf: bridge) == Data("background = #123456\n".utf8))
+      case "leaf", "ancestor":
+        let original = change == "leaf" ? bridge : bridge.deletingLastPathComponent()
+        #expect(
+          try FileManager.default.destinationOfSymbolicLink(atPath: original.path) == target.path)
+        #expect(try Data(contentsOf: bridge) == expected)
+      default: #expect(try FileManager.default.contentsOfDirectory(atPath: bridge.path).isEmpty)
+      }
     }
   }
 
@@ -347,6 +387,8 @@ struct GhosttyAdapterTests {
       _ = try ThemeActivator(root: home, faultInjector: { _ in }).activate(
         package: BuiltInThemePackages.catppuccinMocha.get())
     }
+    try StableAdapterBridge.publish(
+      GhosttyAdapter.activeConfiguration(root: home), root: home, path: GhosttyAdapter.bridgePath)
     return GhosttyAdapter(
       root: home, home: home, configurationFiles: files,
       ownedConfigurationURL: files[0], ownedLineIndex: 0,
