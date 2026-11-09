@@ -10,7 +10,14 @@ package struct AlacrittyImportEdit: Codable, Equatable, Sendable {
   }
   package let themePath: String
   package let elementIndex: Int
+  package let introducedTable: Bool
   package let changes: [Change]
+  enum CodingKeys: String, CodingKey {
+    case themePath = "theme_path"
+    case elementIndex = "element_index"
+    case introducedTable = "introduced_table"
+    case changes
+  }
   package var hasValidShape: Bool {
     themePath.hasPrefix("/") && themePath.utf8.count < 16_384 && elementIndex >= 0
       && !changes.isEmpty && changes.count <= 2
@@ -21,15 +28,18 @@ package struct AlacrittyImportEdit: Codable, Equatable, Sendable {
           && !$0.inserted.isEmpty && $0.inserted.count < 32_768
       } && changes.map(\.offset) == changes.map(\.offset).sorted()
   }
-  package enum Failure: Error, CustomStringConvertible {
+  package enum Failure: Error, CustomStringConvertible, Equatable {
     case manual(String)
     case drift
+    case tableInUse
     package var description: String {
       switch self {
       case .manual(let reason):
         "Alacritty manual boundary: \(reason). Use a [general] table with import = [string paths]; move legacy top-level import into that table."
       case .drift:
         "The owned Alacritty import element or its separator was edited, moved or removed"
+      case .tableInUse:
+        "The Macarchy-introduced [general] table now contains user settings; removing it would change their scope. Teardown requires manual separation of those settings."
       }
     }
   }
@@ -147,7 +157,8 @@ package struct AlacrittyImportEdit: Codable, Equatable, Sendable {
           inserted: Data(((end == 0 ? "" : "\n\n") + "[general]\nimport = [\(value)]\n").utf8)))
     }
     let edit = Self(
-      themePath: themePath, elementIndex: doc.general?.imports?.count ?? 0, changes: changes)
+      themePath: themePath, elementIndex: doc.general?.imports?.count ?? 0,
+      introducedTable: selector.selectionTableHeader == nil, changes: changes)
     guard edit.hasValidShape else { throw Failure.manual("theme path is not safely representable") }
     _ = try imports(String(decoding: edit.apply(to: data), as: UTF8.self))
     return edit
@@ -166,9 +177,8 @@ package struct AlacrittyImportEdit: Codable, Equatable, Sendable {
     }
     return result
   }
-  package func restore(_ managed: Data) throws -> Data {
+  package func validateManaged(_ managed: Data) throws {
     guard hasValidShape else { throw Failure.drift }
-    var result = managed
     var delta = 0
     for change in changes {
       let start = change.offset + delta
@@ -178,14 +188,24 @@ package struct AlacrittyImportEdit: Codable, Equatable, Sendable {
       else { throw Failure.drift }
       delta += change.inserted.count - change.removed.count
     }
+    let imports = try Self.imports(String(decoding: managed, as: UTF8.self))
+    guard imports.indices.filter({ imports[$0] == themePath }) == [elementIndex] else {
+      throw Failure.drift
+    }
+  }
+
+  package func restore(_ managed: Data) throws -> Data {
+    try validateManaged(managed)
+    if introducedTable {
+      let general = try TOMLTable(source: managed).table(forKey: "general")
+      guard general.keys == ["import"] else { throw Failure.tableInUse }
+    }
+    var result = managed
+    var delta = changes.reduce(0) { $0 + $1.inserted.count - $1.removed.count }
     for change in changes.reversed() {
       delta -= change.inserted.count - change.removed.count
       let start = change.offset + delta
       result.replaceSubrange(start..<(start + change.inserted.count), with: change.removed)
-    }
-    let imports = try Self.imports(String(decoding: managed, as: UTF8.self))
-    guard imports.indices.filter({ imports[$0] == themePath }) == [elementIndex] else {
-      throw Failure.drift
     }
     // Later user imports are allowed and reported as overrides. They are not ours
     // to remove; the element's recorded position and punctuation must still match.

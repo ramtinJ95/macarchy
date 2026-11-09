@@ -4,6 +4,13 @@ import Testing
 @testable import ThemeCore
 
 struct AlacrittyImportEditTests {
+  @Test func introducedTableWithNewUserSettingsCannotBeRemoved() throws {
+    let source = Data("[font]\nsize = 12\n".utf8)
+    let edit = try AlacrittyImportEdit.adopting(source, themePath: "/theme")
+    let managed = try edit.apply(to: source) + Data("live_config_reload = false\n".utf8)
+    try edit.validateManaged(managed)
+    #expect(throws: AlacrittyImportEdit.Failure.tableInUse) { try edit.restore(managed) }
+  }
   @Test(arguments: [
     "", "# keep\n", "# keep\n\n\n", "[font]\nsize = 14\n",
     "[general] # keep\n[font]\nsize = 14\n", "[general]",
