@@ -691,6 +691,33 @@ unpin the item. Maccy's **Pin to** setting can move pinned items to the bottom
 instead. A full clear, with **Clear clipboard history** or `macarchy clipboard clear`,
 deletes pinned items too.
 
+### Your own scripts
+
+List executables in the profile to run them after every theme change and when
+Macarchy is torn down:
+
+```toml
+[scripts]
+run = ["scripts/notify-theme"]
+```
+
+Declare at most eight distinct scripts. A machine profile’s `run` list replaces
+the portable profile’s list. Paths are relative to the profile and must stay
+beside it. Run `macarchy setup apply` after changing the list. Each script runs without a shell, so it needs an
+interpreter line such as `#!/bin/sh`. It must belong to you, be executable, and
+neither it nor its directory may be writable by your group or by others;
+otherwise it is refused. It gets 10 seconds; anything it starts is stopped when
+it ends.
+
+Each script receives `MACARCHY_EVENT` (`apply` or `teardown`),
+`MACARCHY_THEME_ID`, `MACARCHY_APPEARANCE`, `MACARCHY_THEME_FILE` (the active
+`theme.json`), one `MACARCHY_<ROLE>` per palette role (for example
+`MACARCHY_BACKGROUND`, `MACARCHY_MUTED_TEXT`) and `MACARCHY_ANSI_0` to
+`MACARCHY_ANSI_15`, each `#rrggbb`, plus `PATH=/usr/bin:/bin:/usr/sbin:/sbin`,
+`HOME`, `USER`, `LOGNAME`, `TMPDIR` and `LANG`. `macarchy theme status` shows
+each script's last result as the `user-scripts` consumer; a failing script shows
+the start of what it wrote to standard error.
+
 ### Bring an Omarchy theme
 
 ```sh
