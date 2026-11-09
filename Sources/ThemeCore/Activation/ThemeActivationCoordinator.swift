@@ -383,6 +383,54 @@ package struct ThemeActivationCoordinator: Sendable {
     )
   }
 
+  /// What `activate` would do, as a plan to review; nothing is written. Unlike `preflight`,
+  /// every enabled consumer is checked, so the plan lists each failure.
+  package func review(
+    package: ThemePackage,
+    requestedBackgroundID: String? = nil
+  ) throws -> ThemeActivationReview {
+    // Activation first remembers the active theme's background; the review does the same in
+    // memory, so it plans the background activation would pick, without writing.
+    let background = try resolveBackground(
+      package: package,
+      requestedBackgroundID: requestedBackgroundID,
+      recoverActivePreference: true,
+      persistsRecoveredPreference: false
+    )
+    _ = try ThemeRenderer().render(
+      package: package,
+      generationID: "dry-run-\(package.id)",
+      wallpaperData: background.data
+    )
+    let context = AdapterPreflightContext(
+      package: package,
+      hasSelectedWallpaper: background.selection != nil
+    )
+    let consumers = configuredAdapters(context: AdapterResolutionContext()).map { adapter in
+      let preflight: ThemeActivationReview.Preflight
+      do {
+        try adapter.preflight(context)
+        preflight = .ready
+      } catch CanonicalThemeLinkError.absent(_) {
+        preflight = .notSetUp
+      } catch {
+        preflight = .failed(String(describing: error))
+      }
+      return ThemeActivationReview.Consumer(entry: adapter.entry, preflight: preflight)
+    }
+    return try ThemeActivationReview(
+      themeID: package.id,
+      backgroundID: background.selection?.id,
+      activeGenerationID: try themeGenerations.activeManifestIfPresent()?.generationID,
+      inputDigest: try activator.reviewInputDigest(package: package, background: background),
+      enabledAdapterIDs: enabledAdapterIDs,
+      consumers: consumers,
+      disabledConsumerIDs: ConsumerCatalog.shared.runtimeEntries.map(\.id.rawValue).filter {
+        !enabledAdapterIDs.contains($0)
+      }
+    )
+  }
+
   /// `onCommittedLocked` runs under the activation lock right after the pointer swap.
   package func activate(
     package: ThemePackage,
@@ -619,18 +667,10 @@ package struct ThemeActivationCoordinator: Sendable {
     requestedBackgroundID: String?,
     recoverActivePreference: Bool
   ) throws -> PreparedThemeBackground {
-    let effectivePackage = try configurationStore.addingPersonalBackgrounds(to: package)
-    var preferences = try backgroundPreferences.load()
-    if recoverActivePreference,
-      let active = try themeGenerations.activeManifestIfPresent(),
-      active.manifestSchemaVersion == GenerationManifest.currentSchemaVersion
-    {
-      try rememberBackground(of: active, in: &preferences)
-    }
-    let background = try BackgroundSelectionResolver.resolve(
-      package: effectivePackage,
+    let background = try resolveBackground(
+      package: package,
       requestedBackgroundID: requestedBackgroundID,
-      preferences: preferences
+      recoverActivePreference: recoverActivePreference
     )
     let preflightContext = AdapterPreflightContext(
       package: package,
@@ -647,6 +687,31 @@ package struct ThemeActivationCoordinator: Sendable {
       }
     }
     return background
+  }
+
+  private func resolveBackground(
+    package: ThemePackage,
+    requestedBackgroundID: String?,
+    recoverActivePreference: Bool,
+    persistsRecoveredPreference: Bool = true
+  ) throws -> PreparedThemeBackground {
+    let effectivePackage = try configurationStore.addingPersonalBackgrounds(to: package)
+    var preferences = try backgroundPreferences.load()
+    if recoverActivePreference,
+      let active = try themeGenerations.activeManifestIfPresent(),
+      active.manifestSchemaVersion == GenerationManifest.currentSchemaVersion
+    {
+      if persistsRecoveredPreference {
+        try rememberBackground(of: active, in: &preferences)
+      } else {
+        preferences[active.themeID] = active.background?.id
+      }
+    }
+    return try BackgroundSelectionResolver.resolve(
+      package: effectivePackage,
+      requestedBackgroundID: requestedBackgroundID,
+      preferences: preferences
+    )
   }
 
   private static func activeWallpaperURL(manifest: GenerationManifest, root: URL) -> URL? {
