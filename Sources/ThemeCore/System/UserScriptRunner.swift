@@ -88,6 +88,7 @@ package struct UserScriptRunner: Sendable {
       return .failure(Refusal("it is not a regular file"))
     }
     if let problem = ownershipProblem(file, what: "it") { return .failure(Refusal(problem)) }
+    if let problem = aclProblem(at: resolved, what: "it") { return .failure(Refusal(problem)) }
     guard file.st_mode & S_IXUSR != 0 else {
       return .failure(Refusal("it is not executable by its owner"))
     }
@@ -99,6 +100,9 @@ package struct UserScriptRunner: Sendable {
         Refusal("its directory cannot be inspected (\(String(cString: strerror(errno))))"))
     }
     if let problem = ownershipProblem(parent, what: "its directory \(directory)") {
+      return .failure(Refusal(problem))
+    }
+    if let problem = aclProblem(at: directory, what: "its directory \(directory)") {
       return .failure(Refusal(problem))
     }
     return .success(resolved)
@@ -117,6 +121,54 @@ package struct UserScriptRunner: Sendable {
       return "\(what) is writable by its group or by others"
     }
     return nil
+  }
+
+  /// Refuse write grants regardless of principal or ACE ordering; deny-only ACLs are safe.
+  private func aclProblem(at path: String, what: String) -> String? {
+    func inspectionFailure() -> String {
+      "\(what) has an access control list that cannot be inspected (\(String(cString: strerror(errno))))"
+    }
+    guard let acl = acl_get_link_np(path, ACL_TYPE_EXTENDED) else {
+      // Darwin also returns ENOENT for an existing object with no ACL. Do not infer
+      // absence from that error: require a successful no-follow security query that
+      // explicitly reports no ACL. Missing/unreadable objects still fail closed.
+      guard errno == ENOENT, let security = filesec_init() else { return inspectionFailure() }
+      defer { filesec_free(security) }
+      var metadata = stat()
+      guard lstatx_np(path, &metadata, security) == 0 else { return inspectionFailure() }
+      var present: Int32 = 0
+      guard filesec_query_property(security, FILESEC_ACL, &present) == 0 else {
+        return inspectionFailure()
+      }
+      return present == 0
+        ? nil : "\(what) has an access control list that changed while being inspected"
+    }
+    defer { acl_free(UnsafeMutableRawPointer(acl)) }
+    guard acl_valid(acl) == 0 else { return inspectionFailure() }
+    let writes: [acl_perm_t] = [
+      ACL_WRITE_DATA, ACL_APPEND_DATA, ACL_DELETE, ACL_ADD_FILE, ACL_ADD_SUBDIRECTORY,
+      ACL_DELETE_CHILD, ACL_WRITE_ATTRIBUTES, ACL_WRITE_EXTATTRIBUTES, ACL_WRITE_SECURITY,
+      ACL_CHANGE_OWNER,
+    ]
+    var entry: acl_entry_t?
+    var selector = ACL_FIRST_ENTRY.rawValue
+    while acl_get_entry(acl, selector, &entry) == 0 {
+      selector = ACL_NEXT_ENTRY.rawValue
+      var tag = ACL_UNDEFINED_TAG
+      guard acl_get_tag_type(entry, &tag) == 0 else { return inspectionFailure() }
+      guard tag == ACL_EXTENDED_ALLOW else { continue }
+      var permissions: acl_permset_t?
+      guard acl_get_permset(entry, &permissions) == 0 else { return inspectionFailure() }
+      for permission in writes {
+        let granted = acl_get_perm_np(permissions, permission)
+        guard granted >= 0 else { return inspectionFailure() }
+        if granted == 1 {
+          return "\(what) has an access control list that lets others change it"
+        }
+      }
+    }
+    // Darwin uses EINVAL for the end of a valid ACL, including an empty ACL.
+    return errno == EINVAL ? nil : inspectionFailure()
   }
 
   /// Runs `script` with `environment` after checking it may run.
