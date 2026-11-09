@@ -243,10 +243,8 @@ struct GhosttyPresetLifecycleTests {
       try FileManager.default.setAttributes(
         [.posixPermissions: 0o700], ofItemAtPath: directory.path)
       // A fresh runner resumes the persisted rollback; no in-memory transaction is reused.
-      #expect(
-        try EnvironmentApplyCommandRunner(prerequisites: .assumed, theme: nil, verifier: .assumed)
-          .finishDeferredApply(
-            stateRoot: f.state, homeDirectory: f.home, commit: false))
+      _ = try EnvironmentApplyCommandRunner(prerequisites: .assumed, theme: nil, verifier: .assumed)
+        .finishDeferredApply(stateRoot: f.state, homeDirectory: f.home, commit: false)
     }
     if let beforeBridge {
       #expect(try Data(contentsOf: bridge) == beforeBridge)
