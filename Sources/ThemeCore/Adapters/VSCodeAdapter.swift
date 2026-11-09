@@ -39,19 +39,37 @@ package struct VSCodeAdapter: Sendable {
     }
   }
 
-  package static func command(_ cli: URL, _ arguments: [String], runner: ProcessRunner) throws
+  package static func command(
+    _ cli: URL, _ arguments: [String], runner: ProcessRunner,
+    environment: [String: String] = ProcessInfo.processInfo.environment
+  ) throws
     -> String
   {
+    // Also covers readback and teardown of an already-owned installation: portable
+    // data can have appeared since discovery/adoption.
+    try VSCodeEditor.refusePortableCLI(cli)
     let result = try runner.run(
       ProcessRequest(
         executableURL: cli, arguments: arguments, timeout: 120,
-        environmentRemovals: ["VSCODE_IPC_HOOK_CLI", "VSCODE_CWD", "ELECTRON_RUN_AS_NODE"]))
+        environmentRemovals: environmentRemovals(environment), isolatedProcessGroup: true))
     guard result.terminationStatus == 0 else {
       throw Failure.blocked(
         "\(cli.path) \(arguments.first ?? "") failed (\(result.terminationStatus)): \(result.output.prefix(1000))"
       )
     }
     return result.output
+  }
+
+  package static func environmentRemovals(_ environment: [String: String]) -> Set<String> {
+    // VS Code's bootstrap accepts relocation and remote CLI controls. The wrapper
+    // also forwards NODE_OPTIONS into VSCODE_NODE_OPTIONS. Preserve neither family.
+    // Removing HOME makes Node use the account home, matching the default profile.
+    Set(environment.keys.filter { $0.hasPrefix("VSCODE_") || $0.hasPrefix("ELECTRON_") })
+      .union([
+        "VSCODE_EXTENSIONS", "VSCODE_APPDATA", "VSCODE_PORTABLE", "VSCODE_DEV",
+        "VSCODE_CLI", "VSCODE_IPC_HOOK_CLI", "VSCODE_CWD", "ELECTRON_RUN_AS_NODE",
+        "HOME", "NODE_OPTIONS", "NODE_PATH", "NODE_REPL_EXTERNAL_MODULE",
+      ])
   }
 
   package static func installedVersion(cli: URL, runner: ProcessRunner = .live) throws -> String? {

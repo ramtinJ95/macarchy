@@ -55,7 +55,37 @@ package enum VSCodeEditor: String, CaseIterable, Codable, Sendable {
     guard executable(selected.cli) else {
       throw AdapterConfigurationError.controlUnavailable("\(label) bundled CLI", selected.cli)
     }
+    try Self.refusePortableCLI(selected.cli)
     return selected
+  }
+
+  package static func refusePortableCLI(
+    _ cli: URL,
+    exists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) },
+    product: (URL) throws -> Data = { try PinnedFilesystem.readRegularFile(at: $0).data }
+  ) throws {
+    guard let installation = allCases.flatMap(\.installations).first(where: { $0.cli == cli })
+    else { return }  // The VSIX archiver is not an editor.
+    let application = installation.applicationURL.resolvingSymlinksInPath()
+    // An absent app will fail executable discovery/spawn; it cannot redirect a CLI.
+    guard exists(application) else { return }
+    let metadata = application.appending(path: "Contents/Resources/app/product.json")
+    guard let object = try JSONSerialization.jsonObject(with: product(metadata)) as? [String: Any],
+      let applicationName = object["applicationName"] as? String, !applicationName.isEmpty
+    else {
+      throw VSCodeAdapter.Failure.blocked("Cannot identify portable mode from \(metadata.path)")
+    }
+    // Match configurePortable in VS Code bootstrap-node.ts, including fork overrides.
+    guard object["target"] == nil else { return }
+    let name =
+      (object["portable"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+      ?? "\(applicationName)-portable-data"
+    let directory = application.deletingLastPathComponent().appending(path: name)
+    guard !exists(directory) else {
+      throw VSCodeAdapter.Failure.blocked(
+        "Portable \(installation.application) data at \(directory.path) is unsupported; Macarchy owns only the default profile."
+      )
+    }
   }
 
   package var runtimeKind: RuntimeAdapterKind {
