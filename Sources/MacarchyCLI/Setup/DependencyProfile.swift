@@ -434,6 +434,11 @@ struct DependencyProfile: Sendable {
           remediation: .formula("starship")
         ),
         consumerCapability(
+          .ghostty,
+          probes: [.executable(GhosttyAdapter.liveExecutableURL)],
+          remediation: .external("Install Ghostty.app in /Applications; Macarchy only themes it.")
+        ),
+        consumerCapability(
           .tuicr,
           probes: executable(ExternalTool.tuicr.path),
           remediation: .formula("tuicr")

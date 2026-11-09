@@ -25,6 +25,7 @@ struct EnvironmentProviderInspection: Sendable {
   var proposedHerdrOwnership: EnvironmentHerdrOwnership? = nil
   var proposedPiOwnership: EnvironmentPiOwnership? = nil
   var proposedSpicetifyOwnership: EnvironmentSpicetifyOwnership? = nil
+  var proposedGhosttyOwnership: EnvironmentGhosttyOwnership? = nil
   var proposedTuicrOwnership: EnvironmentTuicrOwnership? = nil
   /// Planned evidence of each key-owned file apply must find unchanged.
   var keyOwnedExternalEvidence: [EnvironmentKeyOwnedFile: EnvironmentEntryEvidence] = [:]
@@ -48,6 +49,7 @@ struct EnvironmentProviderInspection: Sendable {
     case .herdr: proposedHerdrOwnership != nil
     case .pi: proposedPiOwnership != nil
     case .spicetify: proposedSpicetifyOwnership != nil
+    case .ghostty: proposedGhosttyOwnership != nil
     case .tuicr: proposedTuicrOwnership != nil
     }
   }
@@ -522,6 +524,14 @@ struct EnvironmentProviderInspector: Sendable {
         )
       }
 
+      let ghostty = try inspectGhostty(
+        enabled: composition.profile.presets.ghostty, ownership: ownership?.ghostty,
+        home: homeDirectory, root: stateRoot)
+      if let entry = ghostty.entry { inspections.append(entry) }
+      if let proposed = ghostty.proposedOwnership {
+        try recordMissingParents(of: URL(filePath: proposed.path))
+      }
+
       let tuicr = try inspectSelector(
         .tuicr, EnvironmentSelectorDocument<EnvironmentTuicrOwnership>.tuicr,
         composition: composition,
@@ -589,6 +599,7 @@ struct EnvironmentProviderInspector: Sendable {
               .herdr: herdr.proposedOwnership?.path,
               .pi: pi.proposedOwnership?.path,
               .spicetify: spicetify.proposedOwnership?.path,
+              .ghostty: ghostty.proposedOwnership?.path,
               .tuicr: tuicr.proposedOwnership?.path,
             ].compactMapValues { $0 },
             borders: borders.ownership,
@@ -603,6 +614,7 @@ struct EnvironmentProviderInspector: Sendable {
         proposedHerdrOwnership: herdr.proposedOwnership,
         proposedPiOwnership: pi.proposedOwnership,
         proposedSpicetifyOwnership: spicetify.proposedOwnership,
+        proposedGhosttyOwnership: ghostty.proposedOwnership,
         proposedTuicrOwnership: tuicr.proposedOwnership,
         keyOwnedExternalEvidence: [
           EnvironmentKeyOwnedFile.btop: btop.externalEvidence,
@@ -610,6 +622,7 @@ struct EnvironmentProviderInspector: Sendable {
           .herdr: herdr.externalEvidence,
           .pi: pi.externalEvidence,
           .spicetify: spicetify.externalEvidence,
+          .ghostty: ghostty.externalEvidence,
           .tuicr: tuicr.externalEvidence,
         ].compactMapValues { $0 },
         proposedBordersOwnership: borders.ownership,
@@ -1042,7 +1055,7 @@ struct EnvironmentProviderInspector: Sendable {
   /// Inspects a linked preset's key-owned selector file. Legacy setup ownership, Macarchy's own
   /// ownership and an externally authoritative tuple are judged alike for every linked preset;
   /// `inspectUnowned` judges the enabled preset's file when none of those govern it.
-  func inspectLinkedSelector<Ownership: EnvironmentPresetFileOwnership>(
+  func inspectLinkedSelector<Ownership: EnvironmentStaticPresetFileOwnership>(
     _ linked: EnvironmentLinkedPreset,
     composition: EnvironmentComposition,
     homeDirectory: URL,
@@ -1119,7 +1132,7 @@ struct EnvironmentProviderInspector: Sendable {
   }
 
   /// Inspects the Codex, Pi or tuicr selector file through its document rules.
-  private func inspectSelector<Ownership: EnvironmentPresetFileOwnership>(
+  private func inspectSelector<Ownership: EnvironmentStaticPresetFileOwnership>(
     _ linked: EnvironmentLinkedPreset,
     _ document: EnvironmentSelectorDocument<Ownership>,
     composition: EnvironmentComposition,
@@ -1147,7 +1160,7 @@ struct EnvironmentProviderInspector: Sendable {
 
   /// An external symlink must carry the exact selector and links, an ordinary file is exact or
   /// adopted, and an absent file is installed.
-  private func inspectUnownedSelector<Ownership: EnvironmentPresetFileOwnership>(
+  private func inspectUnownedSelector<Ownership: EnvironmentStaticPresetFileOwnership>(
     _ linked: EnvironmentLinkedPreset,
     _ document: EnvironmentSelectorDocument<Ownership>,
     at url: URL,
@@ -1209,7 +1222,7 @@ struct EnvironmentProviderInspector: Sendable {
 
   /// Reads a selector file, following an external symlink chain when one owns it. A text
   /// selector must decode as UTF-8, and each read path reports that failure in its own words.
-  private func selectorData<Ownership: EnvironmentPresetFileOwnership>(
+  private func selectorData<Ownership: EnvironmentStaticPresetFileOwnership>(
     _ document: EnvironmentSelectorDocument<Ownership>,
     at url: URL,
     evidence: EnvironmentEntryEvidence,
@@ -1230,7 +1243,7 @@ struct EnvironmentProviderInspector: Sendable {
         at: url, evidence: evidence, hasExternalAncestor: hasExternalAncestor, label: label)
   }
 
-  private func selectorTupleIsExact<Ownership: EnvironmentPresetFileOwnership>(
+  private func selectorTupleIsExact<Ownership: EnvironmentStaticPresetFileOwnership>(
     _ linked: EnvironmentLinkedPreset,
     _ document: EnvironmentSelectorDocument<Ownership>,
     homeDirectory: URL,

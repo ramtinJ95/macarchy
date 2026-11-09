@@ -155,8 +155,8 @@ protocol EnvironmentPresetFileOwnership: Equatable, Sendable {
   static func owned(by ownership: EnvironmentOwnership?) -> Self?
   /// The file contents with the managed selectors applied to `current`, or to the preset's
   /// empty document when the file is absent.
-  static func managed(from current: Data?, at url: URL) throws -> Data
-  static func matchesManaged(_ data: Data, at url: URL) throws -> Bool
+  func managed(from current: Data?, at url: URL) throws -> Data
+  func matchesManaged(_ data: Data, at url: URL) throws -> Bool
 
   var path: String { get }
   /// The original selectors restored in `current`, or nil when the file should be removed.
@@ -164,17 +164,33 @@ protocol EnvironmentPresetFileOwnership: Equatable, Sendable {
   func matchesOriginal(_ data: Data?, at url: URL) throws -> Bool
 }
 
+/// Existing key-owned presets have context-free selectors; line ownership also needs its
+/// journaled include and position. Both use the same authenticated file transaction.
+protocol EnvironmentStaticPresetFileOwnership: EnvironmentPresetFileOwnership {
+  static func managed(from current: Data?, at url: URL) throws -> Data
+  static func matchesManaged(_ data: Data, at url: URL) throws -> Bool
+}
+
+extension EnvironmentStaticPresetFileOwnership {
+  func managed(from current: Data?, at url: URL) throws -> Data {
+    try Self.managed(from: current, at: url)
+  }
+  func matchesManaged(_ data: Data, at url: URL) throws -> Bool {
+    try Self.matchesManaged(data, at: url)
+  }
+}
+
 struct EnvironmentPresetFileTransaction<Ownership: EnvironmentPresetFileOwnership>: Sendable {
   private enum ExpectedState {
     case original(Ownership)
-    case managed
+    case managed(Ownership)
   }
 
   let homeDirectory: URL
 
   func preflight(_ ownership: Ownership) throws {
     let url = URL(filePath: ownership.path)
-    guard try matches(try Ownership.filesystem.read(url), .managed, at: url) else {
+    guard try matches(try Ownership.filesystem.read(url), .managed(ownership), at: url) else {
       throw EnvironmentLifecycleError.drift(url.path)
     }
   }
@@ -193,8 +209,8 @@ struct EnvironmentPresetFileTransaction<Ownership: EnvironmentPresetFileOwnershi
     let filesystem = Ownership.filesystem
     let url = URL(filePath: ownership.path)
     let residue = url.deletingLastPathComponent().appending(path: replacementName)
-    let source: ExpectedState = oldOwnership == nil ? .original(ownership) : .managed
-    let target: ExpectedState = newOwnership == nil ? .original(ownership) : .managed
+    let source: ExpectedState = oldOwnership == nil ? .original(ownership) : .managed(ownership)
+    let target: ExpectedState = newOwnership == nil ? .original(ownership) : .managed(ownership)
     guard
       case .pending(let current) = try filesystem.pendingTransition(
         at: url, residue: residue, from: source, to: target, driftLabel: Ownership.driftLabel,
@@ -202,11 +218,15 @@ struct EnvironmentPresetFileTransaction<Ownership: EnvironmentPresetFileOwnershi
     else { return }
 
     switch target {
-    case .managed:
-      let updated = try Ownership.managed(from: current, at: url)
+    case .managed(let owner):
+      let updated = try owner.managed(from: current, at: url)
       if let current {
         try replace(updated, current: current, at: url, replacementName: replacementName)
       } else {
+        try ensureSafeEnvironmentParent(
+          of: url, homeDirectory: homeDirectory,
+          outsideHomeMessage:
+            "\(Ownership.driftLabel) configuration target is outside the selected home")
         try filesystem.create(updated, at: url, replacementName: replacementName)
       }
     case .original(let original):
@@ -224,9 +244,9 @@ struct EnvironmentPresetFileTransaction<Ownership: EnvironmentPresetFileOwnershi
 
   private func matches(_ data: Data?, _ state: ExpectedState, at url: URL) throws -> Bool {
     switch state {
-    case .managed:
+    case .managed(let owner):
       guard let data else { return false }
-      return try Ownership.matchesManaged(data, at: url)
+      return try owner.matchesManaged(data, at: url)
     case .original(let original):
       return try original.matchesOriginal(data, at: url)
     }

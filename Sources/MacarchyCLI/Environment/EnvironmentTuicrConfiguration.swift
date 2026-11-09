@@ -189,7 +189,7 @@ typealias EnvironmentTuicrFileTransaction = EnvironmentPresetFileTransaction<
   EnvironmentTuicrOwnership
 >
 
-extension EnvironmentTuicrOwnership: EnvironmentPresetFileOwnership {
+extension EnvironmentTuicrOwnership: EnvironmentStaticPresetFileOwnership {
   static let filesystem = EnvironmentPresetFilesystem(
     configurationLabel: "tuicr configuration",
     residueLabel: "tuicr transaction residue",
