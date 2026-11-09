@@ -6,6 +6,61 @@ import Testing
 @testable import ThemeCore
 
 struct MacOSIconStyleAdapterTests {
+  @Test func sameThemeIDStyleEditsPublishAndReconcileTheNewNormalizedOptions() async throws {
+    try await withTemporaryRoot(named: "icon-style-edited-package") { root in
+      let base = try BuiltInThemePackages.catppuccinMocha.get()
+      func package(_ style: ThemeIconStyle?) -> ThemePackage {
+        ThemePackage(
+          packageURL: base.packageURL, schemaVersion: base.schemaVersion, id: base.id,
+          displayName: base.displayName, appearance: base.appearance, semantic: base.semantic,
+          terminal: base.terminal, backgrounds: base.backgrounds,
+          backgroundData: base.backgroundData, mappings: base.mappings,
+          macos: style.map { MacOSThemeOptions(iconStyle: $0) })
+      }
+      let fake = IconStyleFake(IconStyleFixtureValues.original, root: root)
+      let adapter = MacOSIconStyleAdapter(root: root, helper: fake.helper)
+      let activator = ThemeActivator(root: root)
+      let unset = try activator.activate(package: package(nil))
+      #expect(try activator.activate(package: package(nil)).generationID == unset.generationID)
+      #expect(try await adapter.reconciliation().run().status == .applied)
+      #expect(fake.writes.isEmpty)
+
+      let dark = try activator.activate(package: package(.dark))
+      #expect(dark.themeID == unset.themeID)
+      #expect(dark.inputDigest != unset.inputDigest)
+      #expect(dark.themeDigest != unset.themeDigest)
+      #expect(dark.generationID != unset.generationID)
+      #expect(try dark.normalizedTheme(root: root).macos?.iconStyle == .dark)
+      #expect(try await adapter.reconciliation().run().status == .applied)
+      #expect(fake.current.style == "RegularDark")
+      #expect(fake.writes.count == 1)
+
+      let clear = try activator.activate(package: package(.clear))
+      #expect(clear.themeID == dark.themeID)
+      #expect(clear.inputDigest != dark.inputDigest)
+      #expect(clear.themeDigest != dark.themeDigest)
+      #expect(clear.generationID != dark.generationID)
+      #expect(try clear.normalizedTheme(root: root).macos?.iconStyle == .clear)
+      #expect(try await adapter.reconciliation().run().status == .applied)
+      #expect(fake.current.style == "ClearDark")
+      #expect(fake.writes.count == 2)
+
+      let removed = try activator.activate(package: package(nil))
+      #expect(removed.themeID == clear.themeID)
+      #expect(removed.inputDigest == unset.inputDigest)
+      #expect(removed.themeDigest == unset.themeDigest)
+      // The original generation has been collected; the newly active generation must be unset.
+      #expect(removed.generationID != clear.generationID)
+      #expect(try removed.normalizedTheme(root: root).macos == nil)
+      #expect(
+        try await adapter.reconciliation().run().message == "theme does not set an icon style")
+      #expect(fake.current.style == "ClearDark")
+      #expect(fake.writes.count == 2)
+      #expect(
+        try MacOSIconStyleStore(root: root).load()?.original == IconStyleFixtureValues.original)
+    }
+  }
+
   @Test func firstWriteRecordsOriginalBeforeMutationAndLaterWritesPreserveIt() throws {
     try withTemporaryRoot(named: "icon-style-original") { (root: URL) throws in
       let fake = IconStyleFake(IconStyleFixtureValues.original, root: root)

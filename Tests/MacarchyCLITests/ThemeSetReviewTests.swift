@@ -7,6 +7,46 @@ import Testing
 @testable import ThemeCore
 
 struct ThemeSetReviewTests {
+  @Test(arguments: [
+    (Optional<ThemeIconStyle>.none, Optional<ThemeIconStyle>.some(.dark)),
+    (.some(.dark), .some(.clear)), (.some(.clear), .none),
+  ])
+  func sameThemeIDIconStyleEditInvalidatesReviewedApply(
+    before: ThemeIconStyle?, after: ThemeIconStyle?
+  ) async throws {
+    try await withTemporaryRoot(named: "icon-style-reviewed-edit") { root in
+      let themes = root.appending(path: "themes")
+      let packageURL = themes.appending(path: "tokyo-night")
+      try FileManager.default.createDirectory(at: themes, withIntermediateDirectories: true)
+      try FileManager.default.copyItem(
+        at: repositoryRoot.appending(path: "Themes/tokyo-night"), to: packageURL)
+      let manifest = packageURL.appending(path: "theme.toml")
+      let original = try String(contentsOf: manifest, encoding: .utf8)
+      func write(_ style: ThemeIconStyle?) throws {
+        let options = style.map { "\n[macos]\nicon_style = \"\($0.rawValue)\"\n" } ?? ""
+        try (original + options).write(to: manifest, atomically: false, encoding: .utf8)
+      }
+      try write(before)
+      let repository = ThemeRepository(builtInRoot: themes)
+      let state = root.appending(path: "state")
+      let paths = testConsumerPaths(homeDirectory: root)
+      // Use the real coordinator digest and the public service's locked stale-review check.
+      // No native consumers are needed: package inputs are always part of the review.
+      let service = ThemeActivationService.reconciling([], onCommittedLocked: { _ in })
+      let reviewed = try service.review(repository.package(id: "tokyo-night"), nil, state, paths)
+      try write(after)
+      let changed = try service.review(repository.package(id: "tokyo-night"), nil, state, paths)
+      #expect(changed.digest != reviewed.digest)
+      let result = try await service.execute(
+        repository: repository, themeID: "tokyo-night", stateRoot: state, consumerPaths: paths,
+        dryRun: false, json: false, reviewedDigest: reviewed.digest)
+      #expect(!result.succeeded)
+      #expect(result.output.contains("review it again"))
+      #expect(!FileManager.default.fileExists(atPath: state.appending(path: "current").path))
+      #expect(!FileManager.default.fileExists(atPath: state.appending(path: "generations").path))
+    }
+  }
+
   @Test func aDryRunPrintsThePlanAndHowToApplyIt() async throws {
     let service = fakeService(review: { try review($0, active: "g-active", kitty: .ready) })
 

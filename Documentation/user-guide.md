@@ -787,7 +787,10 @@ icon_style = "tinted"
 This optional table keeps `schema_version = 1`. Only `default`, `dark`,
 `clear` and `tinted` are accepted; unknown keys and values are errors.
 The declaration is carried into the generation's normalized `theme.json`.
-Older generations and Omarchy imports leave it unset. An unset theme makes no
+Older generations and Omarchy imports leave it unset. Editing these options
+invalidates a cached generation and any earlier apply review, even when the theme
+ID is unchanged. Themes without macOS options retain their existing digests.
+An unset theme makes no
 native write and reports **theme does not set an icon style**; it does not
 reset the style or discard an earlier original.
 
