@@ -2,6 +2,180 @@
   "committed" : false,
   "operation" : "theme_set",
   "outcome" : "dry_run",
+  "review" : {
+    "background_id" : "default",
+    "can_apply" : true,
+    "consumers" : [
+      {
+        "artifacts" : [
+
+        ],
+        "change" : "macOS Light or Dark appearance",
+        "id" : "macos-appearance",
+        "preflight" : "ready",
+        "repaint" : "live",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/atuin.toml"
+        ],
+        "change" : "Atuin theme",
+        "id" : "atuin",
+        "preflight" : "ready",
+        "repaint" : "next_invocation",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/bat.tmTheme"
+        ],
+        "change" : "bat syntax theme",
+        "id" : "bat",
+        "preflight" : "ready",
+        "repaint" : "next_invocation",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/btop.theme"
+        ],
+        "change" : "btop theme",
+        "id" : "btop",
+        "preflight" : "ready",
+        "repaint" : "reload",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+
+        ],
+        "change" : "Codex TUI syntax palette",
+        "id" : "codex",
+        "preflight" : "ready",
+        "repaint" : "fresh_session",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/eza.yml"
+        ],
+        "change" : "eza colors",
+        "id" : "eza",
+        "preflight" : "ready",
+        "repaint" : "next_invocation",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/herdr.txt"
+        ],
+        "change" : "Herdr theme",
+        "id" : "herdr",
+        "preflight" : "ready",
+        "repaint" : "reload",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/kitty.conf"
+        ],
+        "change" : "Kitty colors",
+        "id" : "kitty",
+        "preflight" : "ready",
+        "repaint" : "reload",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/neovim.lua"
+        ],
+        "change" : "Neovim colorscheme",
+        "id" : "neovim",
+        "preflight" : "ready",
+        "repaint" : "live",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/pi.json"
+        ],
+        "change" : "Pi theme",
+        "id" : "pi",
+        "preflight" : "ready",
+        "repaint" : "live",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/sketchybar.lua",
+          "generated/sketchybar.sh"
+        ],
+        "change" : "SketchyBar colors",
+        "id" : "sketchybar",
+        "preflight" : "ready",
+        "repaint" : "live",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/spicetify.ini"
+        ],
+        "change" : "Spotify (Spicetify) colors",
+        "id" : "spicetify",
+        "preflight" : "ready",
+        "repaint" : "app_restart",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/starship.toml"
+        ],
+        "change" : "Starship prompt palette",
+        "id" : "starship",
+        "preflight" : "ready",
+        "repaint" : "next_prompt",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/tuicr.toml"
+        ],
+        "change" : "tuicr palette",
+        "id" : "tuicr",
+        "preflight" : "ready",
+        "repaint" : "fresh_session",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/wallpaper.png"
+        ],
+        "change" : "desktop wallpaper on every display",
+        "id" : "wallpaper",
+        "preflight" : "ready",
+        "repaint" : "live",
+        "requirement" : "required"
+      },
+      {
+        "artifacts" : [
+          "generated/yazi-flavor.toml",
+          "generated/yazi.tmTheme"
+        ],
+        "change" : "Yazi flavor",
+        "id" : "yazi",
+        "preflight" : "ready",
+        "repaint" : "reload",
+        "requirement" : "required"
+      }
+    ],
+    "digest" : "sha256:d365ce7f23b6c143c77e7f0e03f4a65b7f9bf99ba17043e6ad4c29a28b8bd602",
+    "disabled_consumers" : [
+      "borders",
+      "lean-focus-ring"
+    ],
+    "theme_id" : "catppuccin-mocha"
+  },
   "schema_version" : 1,
   "theme_id" : "catppuccin-mocha"
 }

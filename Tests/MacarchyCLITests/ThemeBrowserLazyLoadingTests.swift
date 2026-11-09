@@ -139,7 +139,10 @@ struct ThemeBrowserLazyLoadingTests {
       atPath: current.path, withDestinationPath: "generations/untouched")
     let calls = Mutex(0)
     let runner = ThemeActivationService(
-      preflight: { _, _, _, _ in calls.withLock { $0 += 1 } },
+      review: { package, _, _, _ in
+        calls.withLock { $0 += 1 }
+        return try passingReview(package)
+      },
       activate: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }
         throw LazyBrowserTestError.unexpectedActivation

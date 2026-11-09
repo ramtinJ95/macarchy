@@ -225,7 +225,7 @@ struct ThemeUndoCommandTests {
   @Test func aPrecommitFailureRecordsNothing() async throws {
     try await withTemporaryRoot(named: "macarchy-theme-undo") { stateRoot in
       var activation = ThemeActivationService(
-        preflight: { _, _, _, _ in },
+        review: { package, _, _, _ in try passingReview(package) },
         activate: { _, _, _, _, _ in throw TestError.activation },
         slackIsEnabled: { _ in false }
       )
@@ -287,8 +287,9 @@ private final class UndoFixture: Sendable {
     }
   ) -> ThemeActivationService {
     var service = ThemeActivationService(
-      preflight: { package, backgroundID, _, _ in
+      review: { package, backgroundID, _, _ in
         self.calls.withLock { $0.preflights.append("\(package.id)#\(backgroundID ?? "-")") }
+        return try passingReview(package)
       },
       activate: { package, backgroundID, _, _, _ in
         self.calls.withLock { $0.activations.append("\(package.id)#\(backgroundID ?? "-")") }

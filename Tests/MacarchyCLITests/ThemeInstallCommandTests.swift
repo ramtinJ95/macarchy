@@ -284,7 +284,7 @@ private struct ThemeInstallFixture {
       stager: OmarchyThemeStager(temporaryRoot: staging, processRunner: processRunner)
     )
     let activation = ThemeActivationService(
-      preflight: { _, _, _, _ in },
+      review: { package, _, _, _ in try passingReview(package) },
       activate: { _, _, _, _, _ in
         if let activationResult {
           return activationResult

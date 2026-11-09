@@ -6,7 +6,10 @@ import ThemeCore
 /// ThemePackageLock: the caller holds it through `withThemePackageLock` for anything but a dry
 /// run (ADR-0052), which also serializes the history writes that follow each commit.
 struct ThemeActivationService: Sendable {
-  let preflight: @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths) throws -> Void
+  /// Plans an activation without writing: a dry run's report, and the check a reviewed apply
+  /// repeats under the lock.
+  let review:
+    @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths) throws -> ThemeActivationReview
   let activate:
     @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths, String?) async throws
       -> ThemeActivationResult
@@ -41,12 +44,12 @@ struct ThemeActivationService: Sendable {
     slackIsEnabled: @escaping @Sendable (URL) throws -> Bool
   ) -> Self {
     Self(
-      preflight: { package, backgroundID, stateRoot, consumerPaths in
+      review: { package, backgroundID, stateRoot, consumerPaths in
         try ThemeRuntimeSelection.activationCoordinator(
           stateRoot: stateRoot,
           consumerPaths: consumerPaths,
           enabledAdapterIDs: enabledAdapterIDs
-        ).preflight(package: package, requestedBackgroundID: backgroundID)
+        ).review(package: package, requestedBackgroundID: backgroundID)
       },
       activate: { package, backgroundID, stateRoot, consumerPaths, expectedActiveGenerationID in
         try await ThemeRuntimeSelection.activationCoordinator(
@@ -65,7 +68,9 @@ struct ThemeActivationService: Sendable {
     )
   }
 
-  /// `theme set`: takes ThemePackageLock unless `dryRun`, then activates `themeID`.
+  /// `theme set`: takes ThemePackageLock unless `dryRun`, then activates `themeID`. With
+  /// `reviewedDigest` it first plans again under the lock and activates only while that plan is
+  /// the one reviewed and the reviewed generation is still active.
   func execute(
     repository: ThemeRepository,
     themeID: String,
@@ -73,16 +78,26 @@ struct ThemeActivationService: Sendable {
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool,
     json: Bool,
-    requestedBackgroundID: String? = nil
+    requestedBackgroundID: String? = nil,
+    reviewedDigest: String? = nil
   ) async throws -> CommandExecution {
     let run: @Sendable () async throws -> CommandExecution = {
       let package = try repository.package(id: themeID)
+      var expectedActiveGenerationID: String?
+      if let reviewedDigest {
+        let current = try review(package, requestedBackgroundID, stateRoot, consumerPaths)
+        guard current.digest == reviewedDigest else { throw ThemeActivationReviewError.stale }
+        guard current.canApply else {
+          throw ThemeActivationReviewError.blocked(current.failedConsumerIDs)
+        }
+        expectedActiveGenerationID = current.activeGenerationID
+      }
       return try await executeLocked(
         package: package,
         stateRoot: stateRoot,
         consumerPaths: consumerPaths,
         dryRun: dryRun,
-        expectedActiveGenerationID: nil,
+        expectedActiveGenerationID: expectedActiveGenerationID,
         json: json,
         requestedBackgroundID: requestedBackgroundID
       )
@@ -116,7 +131,7 @@ struct ThemeActivationService: Sendable {
     ).execution(json: json)
   }
 
-  /// Preflights `package` for a dry run, otherwise activates it, reported as `theme set`.
+  /// Plans `package` for a dry run, otherwise activates it, reported as `theme set`.
   func reportLocked(
     package: ThemePackage,
     stateRoot: URL,
@@ -128,8 +143,7 @@ struct ThemeActivationService: Sendable {
   ) async throws -> ThemeSetReport {
     if dryRun {
       do {
-        try preflight(package, requestedBackgroundID, stateRoot, consumerPaths)
-        return .dryRun(themeID: package.id)
+        return .dryRun(review: try review(package, requestedBackgroundID, stateRoot, consumerPaths))
       } catch {
         return .precommitFailure(themeID: package.id, error: error)
       }

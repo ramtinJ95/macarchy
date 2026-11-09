@@ -35,7 +35,7 @@ struct ThemeBackgroundCommandTests {
     let runner = ThemeBackgroundCommandRunner(
       activeManifest: { _ in canonical.withLock { $0 } },
       activation: ThemeActivationService(
-        preflight: { _, _, _, _ in },
+        review: { package, _, _, _ in try passingReview(package) },
         activate: { package, backgroundID, _, _, expectedGenerationID in
           let backgroundID = try #require(backgroundID)
           let expectedGenerationID = try #require(expectedGenerationID)
@@ -95,9 +95,10 @@ struct ThemeBackgroundCommandTests {
         )
       },
       activation: ThemeActivationService(
-        preflight: { package, backgroundID, _, _ in
+        review: { package, backgroundID, _, _ in
           observedBackgrounds.withLock { $0 = package.backgrounds.map(\.id) }
           observedSelection.withLock { $0 = backgroundID }
+          return try passingReview(package)
         },
         activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
       )
@@ -129,9 +130,10 @@ struct ThemeBackgroundCommandTests {
         )
       },
       activation: ThemeActivationService(
-        preflight: { package, backgroundID, _, _ in
+        review: { package, backgroundID, _, _ in
           observedBackgrounds.withLock { $0 = package.backgrounds.map(\.id) }
           observedSelection.withLock { $0 = backgroundID }
+          return try passingReview(package)
         },
         activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
       )
@@ -153,7 +155,7 @@ struct ThemeBackgroundCommandTests {
     ThemeBackgroundCommandRunner(
       activeManifest: { _ in manifest },
       activation: ThemeActivationService(
-        preflight: { _, _, _, _ in },
+        review: { package, _, _, _ in try passingReview(package) },
         activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
       )
     )

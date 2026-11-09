@@ -200,7 +200,7 @@ struct ThemeBrowserTests {
     let activations = Mutex(0)
     let selectedBackground = Mutex<String?>(nil)
     let runner = ThemeActivationService(
-      preflight: { _, _, _, _ in },
+      review: { package, _, _, _ in try passingReview(package) },
       activate: { package, backgroundID, _, _, _ in
         activations.withLock { $0 += 1 }
         selectedBackground.withLock { $0 = backgroundID }

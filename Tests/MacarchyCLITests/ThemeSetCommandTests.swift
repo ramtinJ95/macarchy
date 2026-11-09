@@ -238,14 +238,14 @@ struct ThemeSetCommandTests {
       )
     }
     return ThemeActivationService(
-      preflight: { package, backgroundID, stateRoot, consumerPaths in
+      review: { package, backgroundID, stateRoot, consumerPaths in
         try ThemeActivationCoordinator(
           root: stateRoot,
           consumerPaths: consumerPaths,
           processRunner: runner,
           wallpaperControl: control,
           wallpaperSignal: wallpaperSignal
-        ).preflight(package: package, requestedBackgroundID: backgroundID)
+        ).review(package: package, requestedBackgroundID: backgroundID)
       },
       activate: { package, backgroundID, stateRoot, consumerPaths, expectedGenerationID in
         try await ThemeActivationCoordinator(
@@ -267,7 +267,7 @@ struct ThemeSetCommandTests {
     activate: @escaping @Sendable () async throws -> ThemeActivationResult
   ) -> ThemeActivationService {
     ThemeActivationService(
-      preflight: { _, _, _, _ in },
+      review: { package, _, _, _ in try passingReview(package) },
       activate: { _, _, _, _, _ in try await activate() }
     )
   }
