@@ -1,7 +1,6 @@
 import ArgumentParser
 import Darwin
 import Foundation
-import Synchronization
 import ThemeCore
 
 struct Borders: ParsableCommand {
@@ -76,25 +75,9 @@ struct Borders: ParsableCommand {
   }
 }
 
-/// Ignores SIGINT/SIGTERM/SIGHUP while `body` owns a preview child, exposing the first
-/// one received; the prior handlers are restored after `body` and its cleanup return.
+/// Keep preview's existing behavior: clean up on a signal, then report the lifecycle.
 func withPreviewStopSignals<T>(_ body: (_ received: () -> Int32?) throws -> T) rethrows -> T {
-  let received = Mutex<Int32?>(nil)
-  let handledSignals: [Int32] = [SIGINT, SIGTERM, SIGHUP]
-  let priorHandlers = handledSignals.map { Darwin.signal($0, SIG_IGN) }
-  let signals = handledSignals.map { number in
-    let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
-    source.setEventHandler { received.withLock { $0 = $0 ?? number } }
-    source.resume()
-    return source
-  }
-  defer {
-    for source in signals { source.cancel() }
-    for (number, handler) in zip(handledSignals, priorHandlers) {
-      Darwin.signal(number, handler)
-    }
-  }
-  return try body { received.withLock { $0 } }
+  try withChildProcessStopSignals(body)
 }
 
 struct BordersPreviewEvent: Encodable {

@@ -182,6 +182,14 @@ package struct UserScriptRunner: Sendable {
 
   /// Runs `script` with `environment` after checking it may run.
   package func run(_ script: URL, environment: [String: String]) -> Outcome {
+    withChildProcessStopSignals(reraise: true) { received in
+      run(script, environment: environment, interrupted: { received() != nil })
+    }
+  }
+
+  private func run(
+    _ script: URL, environment: [String: String], interrupted: () -> Bool
+  ) -> Outcome {
     let path: String
     switch trustedPath(of: script) {
     case .success(let resolved): path = resolved
@@ -192,10 +200,14 @@ package struct UserScriptRunner: Sendable {
       path: "macarchy-user-script-\(UUID().uuidString).stderr")
     defer { try? FileManager.default.removeItem(at: errorURL) }
 
+    var defaults: sigset_t = 0
+    sigemptyset(&defaults)
+    for number in [SIGINT, SIGTERM, SIGHUP] { sigaddset(&defaults, number) }
     let spawned = ChildProcess.spawn(
       path,
       arguments: [],
-      flags: Int32(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT),
+      flags: Int32(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF),
+      signalDefaults: defaults,
       processGroup: 0,
       fileActions: [
         .open(descriptor: 0, path: "/dev/null", flags: O_RDONLY, mode: 0),
@@ -219,6 +231,10 @@ package struct UserScriptRunner: Sendable {
     let deadline = clock.now.advanced(by: .seconds(executionLimit))
     var status: Int32 = 0
     while clock.now < deadline {
+      if interrupted() {
+        ChildProcess.killAndReap(processID, target: -processID)
+        return .failed("interrupted and was stopped")
+      }
       let result = waitpid(processID, &status, WNOHANG)
       if result == processID {
         if kill(-processID, 0) == 0 { _ = kill(-processID, SIGKILL) }
