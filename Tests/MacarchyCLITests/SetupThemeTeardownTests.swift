@@ -110,6 +110,175 @@ struct SetupThemeTeardownTests {
     }
   }
 
+  @Test func iconStyleEvidenceCanBeConsumedWithoutOwningTheCanonicalTheme() async throws {
+    let fixture = try ApplyFixture()
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    try SetupCoreOwnershipStore(stateRoot: fixture.state).remove()
+    let store = MacOSIconStyleStore(root: fixture.state)
+    try store.persist(
+      .init(original: IconStyleFixtureValues.original, applied: IconStyleFixtureValues.applied))
+    let fake = ProcessRunnerFake(replies: [
+      .init(
+        arguments: ["check"],
+        output: #"{"ok":true,"value":{"build":"25G83","accent":true,"iconStyle":true}}"#),
+      .init(
+        arguments: ["get", "icon-style"], output: IconStyleFixtureValues.original.fixtureReply),
+    ])
+    let appearance = FakeAppearance(.light)
+    let wallpaper = FakeWallpaper(showing: URL(filePath: "/user/chosen.png"))
+    let teardown = SetupThemeTeardown(
+      appearance: { _ in appearance.control },
+      wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) },
+      iconStyle: { root in
+        MacOSIconStyleAdapter(
+          root: root,
+          helper: MacOSLookHelper(
+            executableURL: URL(filePath: "/usr/bin/true"), processRunner: fake.runner))
+      })
+    let result = try await teardown.run(
+      stateRoot: fixture.state, ownership: nil, desiredAppearance: .dark, dryRun: false)
+    #expect(result.succeeded)
+    #expect(result.message.contains("external theme is preserved"))
+    #expect(try store.load() == nil)
+    #expect(
+      try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
+        == manifest.generationID)
+  }
+
+  @Test(arguments: [false, true])
+  func iconStyleRestorationFailureBlocksRetirementAndKeepsEvidence(dryRun: Bool) async throws {
+    let fixture = try ApplyFixture()
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
+    let store = MacOSIconStyleStore(root: fixture.state)
+    try store.persist(
+      .init(original: IconStyleFixtureValues.original, applied: IconStyleFixtureValues.applied))
+    let appearance = FakeAppearance(.light)
+    let wallpaper = FakeWallpaper(showing: URL(filePath: "/user/chosen.png"))
+    let teardown = SetupThemeTeardown(
+      appearance: { _ in appearance.control },
+      wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) },
+      iconStyle: { root in
+        MacOSIconStyleAdapter(
+          root: root, helper: MacOSLookHelper(executableURL: root.appending(path: "missing")))
+      })
+    let result = try await teardown.run(
+      stateRoot: fixture.state, ownership: ownership, desiredAppearance: .dark, dryRun: dryRun)
+    #expect(!result.succeeded)
+    #expect(result.message.contains("macOS look helper is missing"))
+    #expect(try store.load() != nil)
+    #expect(
+      try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
+        == manifest.generationID)
+  }
+
+  @Test(arguments: [
+    IconStyleFixtureValues.applied, IconStyleFixtureValues.original,
+    IconStyleFixtureValues.external, IconStyleFixtureValues.pending,
+  ])
+  func iconStyleRestoresBeforeRetirementAndOnlyThenRemovesEvidence(current: MacOSIconStyle)
+    async throws
+  {
+    let fixture = try ApplyFixture()
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
+    let store = MacOSIconStyleStore(root: fixture.state)
+    try store.persist(
+      .init(
+        original: IconStyleFixtureValues.original, applied: IconStyleFixtureValues.applied,
+        pending: current == IconStyleFixtureValues.pending ? IconStyleFixtureValues.pending : nil))
+    let appearance = FakeAppearance(.light)
+    let wallpaper = FakeWallpaper(showing: URL(filePath: "/user/chosen.png"))
+    let fake = ProcessRunnerFake(replies: [
+      .init(
+        arguments: ["check"],
+        output: #"{"ok":true,"value":{"build":"25G83","accent":true,"iconStyle":true}}"#),
+      .init(arguments: ["get", "icon-style"], output: current.fixtureReply),
+      .init(
+        arguments: ["set", "icon-style", "RegularLight", "None"],
+        output: IconStyleFixtureValues.original.fixtureReply),
+    ])
+    let runner = ProcessRunner { request in
+      #expect(
+        try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
+          == manifest.generationID)
+      #expect(try store.load() != nil)
+      return try fake.runner.run(request)
+    }
+    let teardown = SetupThemeTeardown(
+      appearance: { _ in appearance.control },
+      wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) },
+      iconStyle: { root in
+        MacOSIconStyleAdapter(
+          root: root,
+          helper: MacOSLookHelper(
+            executableURL: URL(filePath: "/usr/bin/true"), processRunner: runner))
+      })
+    let result = try await teardown.run(
+      stateRoot: fixture.state, ownership: ownership, desiredAppearance: .dark, dryRun: false)
+    #expect(result.succeeded, "\(result.message)")
+    #expect(try store.load() == nil)
+    #expect(
+      fake.requests.filter { $0.arguments.first == "set" }.count
+        == (current == IconStyleFixtureValues.applied || current == IconStyleFixtureValues.pending
+          ? 1 : 0))
+    if current == IconStyleFixtureValues.external {
+      #expect(
+        result.message.contains(
+          "Kept the ClearLight / Green / no custom tint icon style, which was changed after setup.")
+      )
+    }
+  }
+
+  @Test(arguments: [false, true])
+  func aLaterIconFailureKeepsBothReceiptsAndReportsTheCompletedAccentRestore(owned: Bool)
+    async throws
+  {
+    let fixture = try ApplyFixture()
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    let ownership = try SetupCoreOwnershipStore(stateRoot: fixture.state).read()
+    let accents = MacOSAccentStore(root: fixture.state)
+    let icons = MacOSIconStyleStore(root: fixture.state)
+    try accents.persist(.init(original: .graphite, applied: .blue))
+    try icons.persist(
+      .init(original: IconStyleFixtureValues.original, applied: IconStyleFixtureValues.applied))
+    let fake = ProcessRunnerFake(replies: [
+      .init(arguments: ["check"], output: #"{"ok":true,"value":{"build":"25G83","accent":true}}"#),
+      .init(arguments: ["get", "accent"], output: #"{"ok":true,"value":4}"#),
+      .init(arguments: ["set", "accent", "-1"], output: #"{"ok":true,"value":-1}"#),
+    ])
+    let appearance = FakeAppearance(.light)
+    let wallpaper = FakeWallpaper(showing: URL(filePath: "/user/chosen.png"))
+    let teardown = SetupThemeTeardown(
+      appearance: { _ in appearance.control },
+      wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) },
+      iconStyle: { root in
+        MacOSIconStyleAdapter(
+          root: root, helper: MacOSLookHelper(executableURL: root.appending(path: "missing")))
+      },
+      accent: { root in
+        MacOSAccentAdapter(
+          root: root,
+          helper: MacOSLookHelper(
+            executableURL: URL(filePath: "/usr/bin/true"), processRunner: fake.runner))
+      })
+    let result = try await teardown.run(
+      stateRoot: fixture.state,
+      ownership: owned ? ownership : nil, desiredAppearance: .dark, dryRun: false)
+    #expect(!result.succeeded)
+    #expect(result.mutated)
+    #expect(result.message.contains("macOS look helper is missing"))
+    #expect(try accents.load() != nil)
+    #expect(try icons.load() != nil)
+    #expect(
+      try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
+        == manifest.generationID)
+  }
+
   @Test(arguments: [false, true])
   func scriptsReceiveTeardownBeforeRetirementAndFailuresDoNotBlock(journaled: Bool) async throws {
     let fixture = try ApplyFixture()

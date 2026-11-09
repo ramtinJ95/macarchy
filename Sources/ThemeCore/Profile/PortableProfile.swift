@@ -367,9 +367,12 @@ package struct UserScriptsProfile: Equatable, Sendable, PortableProfileSection {
 
 package struct MacOSLookProfile: Equatable, Sendable, PortableProfileSection {
   package var accent = false
+  package var iconStyle = false
   package static let defaults = Self()
   package static let table = "macos_look"
-  package static var fields: [PortableProfileField<Self>] { [.init("accent", \.accent)] }
+  package static var fields: [PortableProfileField<Self>] {
+    [.init("accent", \.accent), .init("icon_style", \.iconStyle)]
+  }
 }
 
 package struct EnvironmentProfile: Equatable, Sendable {
@@ -768,7 +771,9 @@ package struct PortableProfileLoader: Sendable {
         field: "neovim.native_configuration", base: base, source: source)
     )
     var environment = EnvironmentProfile(
-      macOSLook: MacOSLookProfile(accent: document.macOSLook?.accent ?? false),
+      macOSLook: MacOSLookProfile(
+        accent: document.macOSLook?.accent ?? false,
+        iconStyle: document.macOSLook?.iconStyle ?? false),
       scripts: try scripts(document.scripts, source: source, base: base),
       focusRing: try provider(document.focusRing, source: source),
       terminal: terminal,
@@ -1232,6 +1237,11 @@ private struct PortableProfileDocument: Decodable {
 
 private struct MacOSLookDocument: Decodable {
   let accent: Bool?
+  let iconStyle: Bool?
+  enum CodingKeys: String, CodingKey {
+    case accent
+    case iconStyle = "icon_style"
+  }
 }
 
 private struct ScriptsDocument: Decodable {

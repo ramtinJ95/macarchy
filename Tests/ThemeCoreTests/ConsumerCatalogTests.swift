@@ -42,6 +42,7 @@ struct ConsumerCatalogTests {
           "ghostty:required",
           "tuicr:required",
           "macos-accent:optional",
+          "macos-icon-style:optional",
           "user-scripts:optional",
           "wallpaper:required",
           "yazi:required",

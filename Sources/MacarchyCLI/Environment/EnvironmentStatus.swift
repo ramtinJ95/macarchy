@@ -224,7 +224,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
 extension EnvironmentProfile {
   var isEntirelyDisabled: Bool {
     terminal == .disabled && shell == .disabled && prompt == .disabled && history == .disabled
-      && focusRing == .disabled && scripts.run.isEmpty && !macOSLook.accent
+      && focusRing == .disabled && scripts.run.isEmpty && !macOSLook.accent && !macOSLook.iconStyle
       && editor == .disabled
       && !EnvironmentDailyTool.allCases.contains { $0.isEnabled(in: tools) }
       && !EnvironmentPreset.allCases.contains { $0.isEnabled(in: presets) }
@@ -236,6 +236,7 @@ extension EnvironmentProfile {
     if focusRing == .borders { ids.append(BordersAdapter.id) }
     if focusRing == .lean { ids.append(BordersAdapter.leanID) }
     if !scripts.run.isEmpty { ids.append(UserScriptsAdapter.id) }
+    if macOSLook.iconStyle { ids.append(MacOSIconStyleAdapter.id) }
     if macOSLook.accent { ids.append(MacOSAccentAdapter.id) }
     if prompt == .starship { ids.append("starship") }
     if history == .atuin { ids.append("atuin") }

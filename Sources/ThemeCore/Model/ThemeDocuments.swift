@@ -8,13 +8,19 @@ struct ThemeDocument: Decodable {
   let semantic: RawSemanticColors
   let terminal: RawTerminalColors
   let backgrounds: [RawThemeBackground]?
+  let macos: RawMacOSThemeOptions?
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
     case id
     case displayName = "display_name"
-    case appearance, semantic, terminal, backgrounds
+    case appearance, semantic, terminal, backgrounds, macos
   }
+}
+
+struct RawMacOSThemeOptions: Decodable {
+  let iconStyle: String?
+  enum CodingKeys: String, CodingKey { case iconStyle = "icon_style" }
 }
 
 struct RawThemeBackground: Decodable {

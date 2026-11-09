@@ -155,6 +155,15 @@ public struct ThemePreviewAsset: Sendable {
   public let data: Data
 }
 
+public enum ThemeIconStyle: String, Codable, CaseIterable, Sendable {
+  case `default`, dark, clear, tinted
+}
+
+public struct MacOSThemeOptions: Codable, Equatable, Sendable {
+  public let iconStyle: ThemeIconStyle?
+  enum CodingKeys: String, CodingKey { case iconStyle = "icon_style" }
+}
+
 public struct ThemePackage: Sendable {
   public let packageURL: URL
   public let schemaVersion: Int
@@ -163,6 +172,7 @@ public struct ThemePackage: Sendable {
   public let appearance: ThemeAppearance
   public let semantic: SemanticColors
   public let terminal: TerminalColors
+  public let macos: MacOSThemeOptions?
   public let backgrounds: [ThemeBackground]
   let backgroundData: [String: Data]
   public let mappings: [String: String]
@@ -204,7 +214,7 @@ public struct ThemePackage: Sendable {
       terminal: terminal,
       backgrounds: merged.backgrounds,
       backgroundData: data,
-      mappings: mappings
+      mappings: mappings, macos: macos
     )
   }
 
@@ -218,7 +228,8 @@ public struct ThemePackage: Sendable {
     terminal: TerminalColors,
     backgrounds: [ThemeBackground],
     backgroundData: [String: Data],
-    mappings: [String: String]
+    mappings: [String: String],
+    macos: MacOSThemeOptions? = nil
   ) {
     precondition(
       Set(backgrounds.map(\.id)).count == backgrounds.count,
@@ -238,6 +249,7 @@ public struct ThemePackage: Sendable {
     self.backgrounds = backgrounds
     self.backgroundData = backgroundData
     self.mappings = mappings
+    self.macos = macos
   }
 }
 
@@ -258,6 +270,7 @@ public struct NormalizedTheme: Codable, Sendable {
   public let appearance: ThemeAppearance
   public let semantic: SemanticColors
   public let terminal: TerminalColors
+  public let macos: MacOSThemeOptions?
 
   public init(package: ThemePackage, generationID: String) {
     schemaVersion = package.schemaVersion
@@ -266,12 +279,13 @@ public struct NormalizedTheme: Codable, Sendable {
     appearance = package.appearance
     semantic = package.semantic
     terminal = package.terminal
+    macos = package.macos
   }
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
     case generationID = "generation_id"
     case themeID = "theme_id"
-    case appearance, semantic, terminal
+    case appearance, semantic, terminal, macos
   }
 }

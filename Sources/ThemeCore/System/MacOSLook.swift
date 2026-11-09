@@ -73,6 +73,7 @@ package enum MacOSAccent: Int, CaseIterable, Codable, Sendable {
 /// The macOS builds on which each look control was observed to set, read back and repaint.
 /// Every other build reports the control unsupported; there is no override.
 package enum MacOSLookSupport {
+  package static let testedIconStyleBuilds: Set<String> = ["25G83"]
   package static let testedAccentBuilds: Set<String> = ["25G83"]
 }
 
@@ -88,7 +89,7 @@ package enum MacOSLookError: Error, CustomStringConvertible, Equatable, Sendable
     case .helperMissing(let path):
       "the macOS look helper is missing or not executable at \(path); install a Macarchy release containing macarchy-look beside macarchy; source builds must also build macarchy-look"
     case .untestedBuild(let build):
-      "macOS build \(build) is not one Macarchy has tested the accent control on; it is left unchanged"
+      "macOS build \(build) is not one Macarchy has tested this look control on; it is left unchanged"
     case .unavailable(let reason): reason
     case .helperFailed(let reason): "the macOS look helper failed: \(reason)"
     case .unreadableReply(let output):
@@ -107,6 +108,7 @@ package struct MacOSLookHelper: Sendable {
   package struct Capabilities: Equatable, Sendable {
     package let build: String
     package let accent: Bool
+    package var iconStyle: Bool = false
   }
 
   let executableURL: URL
@@ -130,7 +132,8 @@ package struct MacOSLookHelper: Sendable {
     guard let object = value as? [String: Any], let build = object["build"] as? String,
       let accent = object["accent"] as? Bool
     else { throw MacOSLookError.unreadableReply(String(describing: value)) }
-    return Capabilities(build: build, accent: accent)
+    return Capabilities(
+      build: build, accent: accent, iconStyle: object["iconStyle"] as? Bool ?? false)
   }
 
   /// The accent the system stores now.
@@ -155,6 +158,42 @@ package struct MacOSLookHelper: Sendable {
       throw MacOSLookError.unavailable(
         "the accent color functions are unavailable on macOS build \(capabilities.build)")
     }
+  }
+
+  package func requireIconStyleSupport(
+    testedBuilds: Set<String> = MacOSLookSupport.testedIconStyleBuilds
+  ) throws {
+    let capabilities = try check()
+    guard testedBuilds.contains(capabilities.build) else {
+      throw MacOSLookError.untestedBuild(capabilities.build)
+    }
+    guard capabilities.iconStyle else {
+      throw MacOSLookError.unavailable(
+        "the icon & widget style functions are unavailable on macOS build \(capabilities.build)")
+    }
+  }
+
+  package func iconStyle() throws -> MacOSIconStyle {
+    try iconStyle(from: call(["get", "icon-style"]))
+  }
+
+  package func setIconStyle(_ value: MacOSIconStyle) throws -> MacOSIconStyle {
+    try iconStyle(
+      from: call(
+        ["set", "icon-style", value.style, value.tint] + (value.custom.map { [$0] } ?? [])))
+  }
+
+  private func iconStyle(from value: Any) throws -> MacOSIconStyle {
+    guard let object = value as? [String: Any],
+      let style = object["style"] as? String, let tint = object["tint"] as? String,
+      object["custom"] is NSNull || object["custom"] is String
+    else { throw MacOSLookError.unreadableReply(String(describing: value)) }
+    let state = MacOSIconStyle(
+      style: style, tint: tint, custom: (object["custom"] as? String)?.lowercased())
+    guard state.isValidStoredValue else {
+      throw MacOSLookError.unreadableReply(String(describing: value))
+    }
+    return state
   }
 
   private func accent(from value: Any) throws -> MacOSAccent {
@@ -188,4 +227,10 @@ package struct MacOSLookHelper: Sendable {
     }
     return value
   }
+}
+
+package struct MacOSLookRestore: Sendable {
+  package let message: String?
+  package let mutated: Bool
+  package let consumesRecord: Bool
 }

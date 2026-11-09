@@ -35,6 +35,7 @@ extension RuntimeAdapterKind {
   package var reviewChange: String {
     switch self {
     case .macOSAppearance: "macOS Light or Dark appearance"
+    case .macOSIconStyle: "macOS icon & widget style declared by the theme"
     case .macOSAccent: "macOS accent preset nearest the theme accent"
     case .atuin: "Atuin theme"
     case .bat: "bat syntax theme"
@@ -73,7 +74,8 @@ extension RuntimeAdapterKind {
   /// whose current ownership delivers it later reports its own boundary to the review.
   package var repaint: ThemeRepaintBoundary {
     switch self {
-    case .zed, .macOSAccent, .alacritty, .ghostty, .macOSAppearance, .borders, .leanFocus, .neovim,
+    case .zed, .macOSAccent, .macOSIconStyle, .alacritty, .ghostty, .macOSAppearance, .borders,
+      .leanFocus, .neovim,
       .pi,
       .sketchyBar,
       .wallpaper:

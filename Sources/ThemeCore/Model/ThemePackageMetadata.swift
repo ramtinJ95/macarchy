@@ -12,6 +12,7 @@ package struct ThemePackageMetadata: Sendable {
   package let terminal: TerminalColors
   package let backgrounds: [ThemeBackground]
   package let mappings: [String: String]
+  package var macos: MacOSThemeOptions? = nil
 
   package func background(id: String) -> ThemeBackground? {
     backgrounds.first { $0.id == id }
@@ -27,7 +28,7 @@ package struct ThemePackageMetadata: Sendable {
     return Self(
       packageURL: packageURL, schemaVersion: schemaVersion, id: id,
       displayName: displayName, appearance: appearance, semantic: semantic,
-      terminal: terminal, backgrounds: backgrounds + additions, mappings: mappings)
+      terminal: terminal, backgrounds: backgrounds + additions, mappings: mappings, macos: macos)
   }
 
   package func backgroundData(id: String) throws -> Data {
@@ -50,6 +51,6 @@ extension ThemePackage {
     ThemePackageMetadata(
       packageURL: packageURL, schemaVersion: schemaVersion, id: id,
       displayName: displayName, appearance: appearance, semantic: semantic,
-      terminal: terminal, backgrounds: backgrounds, mappings: mappings)
+      terminal: terminal, backgrounds: backgrounds, mappings: mappings, macos: macos)
   }
 }

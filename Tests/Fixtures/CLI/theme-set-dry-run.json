@@ -181,6 +181,7 @@
       "alacritty",
       "ghostty",
       "macos-accent",
+      "macos-icon-style",
       "user-scripts"
     ],
     "theme_id" : "catppuccin-mocha"

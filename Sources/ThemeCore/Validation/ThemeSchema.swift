@@ -14,10 +14,11 @@ enum ThemeSchema {
       "selection_background", "ansi",
     ],
     "backgrounds": ["id", "path", "source", "author", "license"],
+    "macos": ["icon_style"],
   ]
 
   static let requiredThemePaths: Set<String> = Set(
-    themeKeys.filter { $0.key != "backgrounds" }.flatMap { table, keys in
+    themeKeys.filter { $0.key != "backgrounds" && $0.key != "macos" }.flatMap { table, keys in
       keys.map { table.isEmpty ? $0 : "\(table).\($0)" }
     }
   )
@@ -40,6 +41,12 @@ enum ThemeSchema {
         field: table.path,
         message: "Background inventory entries must use [[backgrounds]] array tables"
       )
+    }
+
+    if let table = index.tables.first(where: { $0.path == "macos" && $0.isArray }) {
+      throw ThemeDiagnostic(
+        location: .init(file: file, line: table.line, column: table.column),
+        field: table.path, message: "macOS options must use a [macos] table")
     }
 
     let backgroundCount = index.tables.count { $0.path == "backgrounds" }
