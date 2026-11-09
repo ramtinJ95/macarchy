@@ -8,6 +8,40 @@ import Testing
 @testable import ThemeCore
 
 struct EnvironmentLifecycleTests {
+  @Test func optionalScriptFailureStaysVisibleWithoutRollingBackSetup() async throws {
+    let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try fixture.activateTheme()
+    let original = try String(contentsOf: fixture.profile, encoding: .utf8)
+    try (original + "\n[scripts]\nrun = [\"shared\"]\n")
+      .write(to: fixture.profile, atomically: false, encoding: .utf8)
+    let refused = DesktopThemeAdapterStatus(
+      adapterID: UserScriptsAdapter.id,
+      requirement: "optional", status: "failed", message: "shared refused, group writable")
+    let theme = DesktopThemeController(
+      reconcile: { ids, _, _ in
+        DesktopThemeReconciliation(
+          generationID: "g-00000000-0000-0000-0000-000000000000",
+          results: ids.map {
+            $0 == UserScriptsAdapter.id
+              ? refused
+              : DesktopThemeAdapterStatus(
+                adapterID: $0, requirement: "required", status: "applied", message: nil)
+          },
+          succeeded: true)
+      }, inspect: { _, _, _ in [refused] })
+    let applied = try await fixture.apply(adopt: nil, theme: theme, withinUnifiedSetup: true)
+    #expect(applied.succeeded, "\(applied.output)")
+    #expect(applied.output.contains("shared refused, group writable"))
+    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()?.userScripts != nil)
+    #expect(isAcceptedEnvironmentThemeStatus(refused))
+    #expect(
+      !isAcceptedEnvironmentThemeStatus(
+        DesktopThemeAdapterStatus(
+          adapterID: "kitty",
+          requirement: "required", status: "failed", message: "required failure")))
+  }
+
   @Test func applyingScriptsRecordsReplacesAndRemovesTheirRuntimeAuthority() async throws {
     let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
     defer { try? FileManager.default.removeItem(at: fixture.root) }

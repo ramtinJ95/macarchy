@@ -48,6 +48,8 @@ func isAcceptedReconciliationResult(_ result: AdapterResult) -> Bool {
 /// `environment status` carries inspection and reconciliation outcomes as raw strings. It accepts
 /// what reconcile and doctor accept, except a disabled wallpaper, which it never selects.
 func isAcceptedEnvironmentThemeStatus(_ adapter: DesktopThemeAdapterStatus) -> Bool {
+  // Keep the failed row visible, but an optional consumer must not roll setup back.
+  if adapter.requirement == AdapterRequirement.optional.rawValue { return true }
   switch adapter.status {
   case AdapterInspectionStatus.ready.rawValue, AdapterStatus.applied.rawValue,
     AdapterStatus.restartRequired.rawValue:
