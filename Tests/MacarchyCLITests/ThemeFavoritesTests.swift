@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import TestSupport
 import Testing
 
@@ -66,27 +67,27 @@ struct ThemeFavoritesTests {
 
   @Test func addListAndRemoveFavorites() async throws {
     try await withTemporaryRoot(named: "macarchy-theme-favorites") { root in
-      let installed = Set(try builtInPackages().map(\.id))
+      let installed: @Sendable () throws -> [ThemePackage] = { try builtInPackages() }
       let favorites = ThemeFavorites.live
 
-      let added = try await favorites.add("kanagawa-wave", installed: installed, stateRoot: root)
+      let added = try await favorites.add("kanagawa-wave", packages: installed, stateRoot: root)
       #expect(added.lines == ["Added 'kanagawa-wave' to favorites."])
-      _ = try await favorites.add("tokyo-night", installed: installed, stateRoot: root)
-      let again = try await favorites.add("tokyo-night", installed: installed, stateRoot: root)
+      _ = try await favorites.add("tokyo-night", packages: installed, stateRoot: root)
+      let again = try await favorites.add("tokyo-night", packages: installed, stateRoot: root)
       #expect(again.lines == ["'tokyo-night' is already a favorite."])
       await #expect(throws: ThemeFavoriteError.notInstalled("no-such-theme")) {
-        _ = try await favorites.add("no-such-theme", installed: installed, stateRoot: root)
+        _ = try await favorites.add("no-such-theme", packages: installed, stateRoot: root)
       }
 
-      let listed = try await favorites.favorites(try builtInPackages(), stateRoot: root)
+      let listed = try await favorites.favorites(installed, stateRoot: root)
       #expect(
         listed.lines.map { $0.split(separator: "\t").first } == ["kanagawa-wave", "tokyo-night"])
 
       let removed = try await favorites.remove(
-        "kanagawa-wave", installed: installed, stateRoot: root)
+        "kanagawa-wave", packages: installed, stateRoot: root)
       #expect(removed.lines == ["Removed 'kanagawa-wave' from favorites."])
       let missing = try await favorites.remove(
-        "kanagawa-wave", installed: installed, stateRoot: root)
+        "kanagawa-wave", packages: installed, stateRoot: root)
       #expect(missing.lines == ["'kanagawa-wave' is not a favorite."])
       let stored = try ThemeFavoritesStore(root: root).load()
       #expect(stored == ["tokyo-night"])
@@ -97,7 +98,8 @@ struct ThemeFavoritesTests {
     try await withTemporaryRoot(named: "macarchy-theme-favorites") { root in
       try ThemeFavoritesStore(root: root).persist(["removed-theme", "tokyo-night"])
 
-      let listed = try await ThemeFavorites.live.favorites(try builtInPackages(), stateRoot: root)
+      let listed = try await ThemeFavorites.live.favorites(
+        { try builtInPackages() }, stateRoot: root)
 
       #expect(listed.lines.map { $0.split(separator: "\t").first } == ["tokyo-night"])
       #expect(listed.notices == ["Removed favorite 'removed-theme', which is no longer installed."])
@@ -106,12 +108,35 @@ struct ThemeFavoritesTests {
     }
   }
 
+  @Test func theInventoryIsReadOnlyOnceTheLockIsHeld() async throws {
+    try await withTemporaryRoot(named: "macarchy-theme-favorites") { root in
+      try ThemeFavoritesStore(root: root).persist(["tokyo-night"])
+      let packages = try builtInPackages()
+      // A concurrent install holds the lock and finishes before the favorites read the inventory.
+      let reinstalled = Flag()
+      let installed: @Sendable () throws -> [ThemePackage] = {
+        reinstalled.isSet ? packages : packages.filter { $0.id != "tokyo-night" }
+      }
+      let listing = try await ThemePackageLock(root: root).withLock {
+        let listing = Task { try await ThemeFavorites.live.favorites(installed, stateRoot: root) }
+        try await Task.sleep(for: .milliseconds(100))
+        reinstalled.set()
+        return listing
+      }
+
+      let listed = try await listing.value
+
+      #expect(listed.lines.map { $0.split(separator: "\t").first } == ["tokyo-night"])
+      #expect(listed.notices == [])
+    }
+  }
+
   @Test func addingStartsAnUnreadableRecordAgainWithANotice() async throws {
     try await withTemporaryRoot(named: "macarchy-theme-favorites") { root in
       try writeRecord(#"{"schema_version":2,"theme_ids":[]}"#, root: root)
 
       let added = try await ThemeFavorites.live.add(
-        "tokyo-night", installed: Set(try builtInPackages().map(\.id)), stateRoot: root)
+        "tokyo-night", packages: { try builtInPackages() }, stateRoot: root)
 
       #expect(added.lines == ["Added 'tokyo-night' to favorites."])
       #expect(added.notices.count == 2)
@@ -146,4 +171,11 @@ private func writeRecord(_ contents: String, root: URL) throws {
   try FileManager.default.createDirectory(
     at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
   try Data(contents.utf8).write(to: url)
+}
+
+private final class Flag: Sendable {
+  private let value = Mutex(false)
+
+  var isSet: Bool { value.withLock { $0 } }
+  func set() { value.withLock { $0 = true } }
 }

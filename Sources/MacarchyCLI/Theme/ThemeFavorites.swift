@@ -21,7 +21,9 @@ struct ThemeFavoritesOutput: Equatable, Sendable {
 
 /// Favorite themes, a preference record that puts themes first in every theme list. It is never
 /// canonical state: an unreadable record is a notice, and favorites that are no longer installed
-/// are pruned with a notice whenever the favorites are changed or listed.
+/// are pruned with a notice whenever the favorites are changed or listed. Those commands read the
+/// installed themes (`packages`) only once they hold ThemePackageLock, so a theme installed or
+/// removed meanwhile is never judged on a stale inventory.
 struct ThemeFavorites: Sendable {
   let load: @Sendable (URL) throws -> [String]
   let persist: @Sendable ([String], URL) throws -> Void
@@ -54,9 +56,12 @@ struct ThemeFavorites: Sendable {
   }
 
   /// `theme favorite list`: installed favorites in the order they were added.
-  func favorites(_ packages: [ThemePackage], stateRoot: URL) async throws -> ThemeFavoritesOutput {
+  func favorites(
+    _ packages: @escaping @Sendable () throws -> [ThemePackage], stateRoot: URL
+  ) async throws -> ThemeFavoritesOutput {
     try await withThemePackageLock(stateRoot: stateRoot, unlessDryRun: false) {
-      let resolved = resolveLocked(installed: Set(packages.map(\.id)), stateRoot: stateRoot)
+      let packages = try packages()
+      let resolved = resolveLocked(installed: Swift.Set(packages.map(\.id)), stateRoot: stateRoot)
       let byID = Dictionary(uniqueKeysWithValues: packages.map { ($0.id, $0) })
       return ThemeFavoritesOutput(
         lines: resolved.themeIDs.compactMap { byID[$0] }.map(Self.line),
@@ -65,14 +70,14 @@ struct ThemeFavorites: Sendable {
     }
   }
 
-  /// `installed` holds the identifiers of every installed theme.
   func add(
-    _ themeID: String, installed: Set<String>, stateRoot: URL
+    _ themeID: String, packages: @escaping @Sendable () throws -> [ThemePackage], stateRoot: URL
   ) async throws -> ThemeFavoritesOutput {
-    guard installed.contains(themeID) else {
-      throw ThemeFavoriteError.notInstalled(themeID)
-    }
-    return try await withThemePackageLock(stateRoot: stateRoot, unlessDryRun: false) {
+    try await withThemePackageLock(stateRoot: stateRoot, unlessDryRun: false) {
+      let installed = Swift.Set(try packages().map(\.id))
+      guard installed.contains(themeID) else {
+        throw ThemeFavoriteError.notInstalled(themeID)
+      }
       var resolved = resolveLocked(installed: installed, stateRoot: stateRoot)
       guard !resolved.themeIDs.contains(themeID) else {
         return ThemeFavoritesOutput(
@@ -88,9 +93,10 @@ struct ThemeFavorites: Sendable {
   }
 
   func remove(
-    _ themeID: String, installed: Set<String>, stateRoot: URL
+    _ themeID: String, packages: @escaping @Sendable () throws -> [ThemePackage], stateRoot: URL
   ) async throws -> ThemeFavoritesOutput {
     try await withThemePackageLock(stateRoot: stateRoot, unlessDryRun: false) {
+      let installed = Swift.Set(try packages().map(\.id))
       let resolved = resolveLocked(installed: installed, stateRoot: stateRoot)
       guard resolved.themeIDs.contains(themeID) else {
         return ThemeFavoritesOutput(
@@ -111,7 +117,7 @@ struct ThemeFavorites: Sendable {
 
   /// The installed favorites, oldest first. Favorites no longer installed are removed from the
   /// record with a notice. The caller holds ThemePackageLock.
-  func resolveLocked(installed: Set<String>, stateRoot: URL) -> Resolved {
+  func resolveLocked(installed: Swift.Set<String>, stateRoot: URL) -> Resolved {
     let recorded: [String]
     do {
       recorded = try load(stateRoot)
@@ -154,12 +160,10 @@ extension Theme {
         URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
       }
 
-      func packages() throws -> [ThemePackage] {
-        try roots.repository(userRoot: StateLayout(root: stateRootURL).userThemes).packages()
-      }
-
-      func installedThemeIDs() throws -> Swift.Set<String> {
-        Swift.Set(try packages().map(\.id))
+      /// Reads the installed themes when called, so the runner can call it under the lock.
+      var packages: @Sendable () throws -> [ThemePackage] {
+        let repository = roots.repository(userRoot: StateLayout(root: stateRootURL).userThemes)
+        return { try repository.packages() }
       }
     }
 
@@ -174,7 +178,7 @@ extension Theme {
       mutating func run() async throws {
         emit(
           try await ThemeFavorites.live.add(
-            themeID, installed: options.installedThemeIDs(), stateRoot: options.stateRootURL))
+            themeID, packages: options.packages, stateRoot: options.stateRootURL))
       }
     }
 
@@ -189,7 +193,7 @@ extension Theme {
       mutating func run() async throws {
         emit(
           try await ThemeFavorites.live.remove(
-            themeID, installed: options.installedThemeIDs(), stateRoot: options.stateRootURL))
+            themeID, packages: options.packages, stateRoot: options.stateRootURL))
       }
     }
 
@@ -202,7 +206,7 @@ extension Theme {
       mutating func run() async throws {
         emit(
           try await ThemeFavorites.live.favorites(
-            options.packages(), stateRoot: options.stateRootURL))
+            options.packages, stateRoot: options.stateRootURL))
       }
     }
   }
