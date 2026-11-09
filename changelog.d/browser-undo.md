@@ -1,4 +1,5 @@
 ### Added
 
 - Command-Z in the theme browser undoes the last theme or background change, like
-  `macarchy theme undo`, and reports the result in the browser's status panel.
+  `macarchy theme undo`. The browser's status panel reports the result, and an
+  alert explains a failure or a notice.

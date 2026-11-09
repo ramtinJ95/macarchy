@@ -96,29 +96,15 @@ struct ThemeBrowserApplyRequest: Sendable {
 
 enum ThemeBrowserApplyLaunchError: Error, CustomStringConvertible, Sendable {
   case missingExecutable
+  case unexpectedArguments([String])
 
   var description: String {
     switch self {
     case .missingExecutable:
       "Cannot locate the Macarchy executable for theme activation"
+    case .unexpectedArguments(let arguments):
+      "Cannot derive 'theme undo' from the browser's arguments: \(arguments.joined(separator: " "))"
     }
-  }
-}
-
-/// Asks the browser's child process to undo the last theme change instead of opening a browser.
-enum ThemeBrowserUndoRequest {
-  static let environmentKey = "MACARCHY_THEME_BROWSER_UNDO"
-
-  static func isPresent(in environment: [String: String]) -> Bool {
-    environment[environmentKey] == "1"
-  }
-
-  static func environment(addingTo base: [String: String]) -> [String: String] {
-    var environment = base
-    environment[environmentKey] = "1"
-    environment.removeValue(forKey: ThemeBrowserApplyRequest.themeEnvironmentKey)
-    environment.removeValue(forKey: ThemeBrowserApplyRequest.backgroundEnvironmentKey)
-    return environment
   }
 }
 
@@ -155,15 +141,21 @@ struct ThemeBrowserApplyProcessLauncher: Sendable {
     return try spawn(executableURL, arguments, request.environment(addingTo: environment))
   }
 
-  /// Runs `theme undo` in a child process, through the same command and options as the browser.
+  /// Runs `theme undo --alert-on-error` with the browser's own options, which `theme undo` also
+  /// accepts. Its alert reports a failure or a notice in detail; the browser's status panel only
+  /// reports the exit status.
   func launchUndo(
     executableURL: URL? = Bundle.main.executableURL,
     arguments: [String] = Array(CommandLine.arguments.dropFirst()),
     environment: [String: String] = ProcessInfo.processInfo.environment
   ) throws -> RunningProcess {
     guard let executableURL else { throw ThemeBrowserApplyLaunchError.missingExecutable }
-    return try spawn(
-      executableURL, arguments, ThemeBrowserUndoRequest.environment(addingTo: environment))
+    guard let browse = arguments.firstIndex(of: "browse"), browse > 0,
+      arguments[browse - 1] == "theme"
+    else { throw ThemeBrowserApplyLaunchError.unexpectedArguments(arguments) }
+    var undo = arguments
+    undo.replaceSubrange(browse...browse, with: ["undo", "--alert-on-error"])
+    return try spawn(executableURL, undo, environment)
   }
 }
 
