@@ -4,18 +4,20 @@ import ThemeCore
 /// Reads and sets macOS Light/Dark appearance for setup teardown.
 struct SetupAppearanceControl: Sendable {
   let read: @Sendable () throws -> ThemeAppearance
-  let apply: @Sendable (ThemeAppearance) async throws -> AdapterResult
+  let apply: @Sendable (ThemeAppearance) throws -> AdapterResult
 
   init(
     read: @escaping @Sendable () throws -> ThemeAppearance,
-    apply: @escaping @Sendable (ThemeAppearance) async throws -> AdapterResult
+    apply: @escaping @Sendable (ThemeAppearance) throws -> AdapterResult
   ) {
     self.read = read
     self.apply = apply
   }
 
   init(_ adapter: MacOSAppearanceAdapter) {
-    self.init(read: { try adapter.preflight() }, apply: { try await adapter.apply($0) })
+    self.init(
+      read: { try adapter.preflight() },
+      apply: { try adapter.applyHoldingActivationLock($0) })
   }
 }
 
@@ -34,11 +36,14 @@ struct SetupThemeTeardown: Sendable {
     wallpaper: { WallpaperOriginalRestorer.live(root: $0) }
   )
 
-  /// `desiredAppearance` is the appearance of the setup-owned theme, Macarchy's value.
+  /// The bootstrap receipt authorizes retirement, not the generation to remove.
+  /// The active generation supplies Macarchy's appearance; the caller's observation guards
+  /// the interval between aggregate preflight and retirement. Rollback callers retain the
+  /// bootstrap generation guard instead of adopting a concurrent replacement.
   func run(
     stateRoot: URL,
     ownership: SetupCoreOwnership?,
-    desiredAppearance: ThemeAppearance,
+    expectedGenerationID: String? = nil,
     dryRun: Bool
   ) async throws -> UnifiedSetupTeardownStage {
     guard let ownership else {
@@ -77,15 +82,15 @@ struct SetupThemeTeardown: Sendable {
       }
     }
     let activator = ThemeActivator(root: stateRoot)
-    // Refuses a replaced theme before any native appearance or wallpaper access.
-    _ = try activator.deactivate(
-      expectedGenerationID: ownership.themeGenerationID,
-      dryRun: true
-    )
+    let active = try ThemeGenerationReader(root: stateRoot).activeManifest()
+    let expected = expectedGenerationID ?? active.generationID
+    // Refuse invalid or concurrently replaced canonical state before any native access.
+    _ = try activator.deactivate(expectedGenerationID: expected, dryRun: true)
+    let appliedAppearance = try active.normalizedTheme(root: stateRoot).appearance
     let appearance = appearance(stateRoot)
     let currentAppearance = try appearance.read()
     let originalAppearance = ownership.originalAppearance
-    let restoresAppearance = currentAppearance == desiredAppearance
+    var restoresAppearance = currentAppearance == appliedAppearance
     var notes: [String] = []
     if !restoresAppearance && currentAppearance != originalAppearance {
       notes.append(
@@ -124,34 +129,12 @@ struct SetupThemeTeardown: Sendable {
         succeeded: true,
         mutated: false,
         outcome: "planned",
-        message: Self.message(summary, notes + wallpaper.plan().lines)
+        message: Self.message(summary, notes + wallpaper.plan().lines),
+        plannedThemeGenerationID: expected
       )
     }
 
     var mutated = false
-    if restoresAppearance {
-      let appearanceChanged = currentAppearance != originalAppearance
-      let appearanceResult: AdapterResult
-      do {
-        appearanceResult = try await appearance.apply(originalAppearance)
-      } catch {
-        return UnifiedSetupTeardownStage(
-          succeeded: false,
-          mutated: appearanceChanged,
-          outcome: "failed",
-          message: "macOS appearance restoration failed: \(error)"
-        )
-      }
-      guard appearanceResult.status == .applied else {
-        return UnifiedSetupTeardownStage(
-          succeeded: false,
-          mutated: appearanceChanged,
-          outcome: "failed",
-          message: appearanceResult.message ?? "macOS appearance restoration failed."
-        )
-      }
-      mutated = appearanceChanged
-    }
     if !scripts.isEmpty {
       do {
         let report = try UserScriptsAdapter(
@@ -171,9 +154,25 @@ struct SetupThemeTeardown: Sendable {
     let cleanupError: String?
     do {
       cleanupError = try activator.deactivate(
-        expectedGenerationID: ownership.themeGenerationID,
+        expectedGenerationID: expected,
         dryRun: false,
         beforeRetiringLocked: {
+          // Re-read under the retirement lock: neither theme reconciliation nor a concurrent
+          // activation may slip between the three-way decision and appearance restoration.
+          let current = try appearance.read()
+          restoresAppearance = current == appliedAppearance
+          notes.removeAll { $0.hasPrefix("Kept the macOS ") }
+          if restoresAppearance && current != originalAppearance {
+            mutated = true
+            let result = try appearance.apply(originalAppearance)
+            guard result.status == .applied else {
+              throw SetupCoreOwnershipError.invalid(
+                result.message ?? "macOS appearance restoration failed.")
+            }
+          } else if current != originalAppearance {
+            notes.append(
+              "Kept the macOS \(current.rawValue) appearance, which was changed after setup.")
+          }
           accentReport = try accent.restoreHoldingActivationLock()
           iconReport = try iconStyle.restoreHoldingActivationLock()
           wallpaperReport = wallpaper.restoreHoldingActivationLock()

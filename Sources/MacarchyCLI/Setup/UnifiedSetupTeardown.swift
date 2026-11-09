@@ -5,7 +5,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
   typealias ComponentTeardown<Report> =
     @Sendable (UnifiedSetupPlanContext, ThemeConsumerPaths, Bool) async throws -> Report
   typealias ThemeTeardown =
-    @Sendable (URL, SetupCoreOwnership?, ThemeAppearance, Bool) async throws
+    @Sendable (URL, SetupCoreOwnership?, String?, Bool) async throws
     -> UnifiedSetupTeardownStage
   typealias ApplyFinalization =
     @Sendable (UnifiedSetupPlanContext, Bool) async throws -> UnifiedSetupTeardownStage
@@ -60,11 +60,11 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         dryRun: dryRun
       )
     },
-    themeTeardown: { stateRoot, ownership, desiredAppearance, dryRun in
+    themeTeardown: { stateRoot, ownership, expectedGenerationID, dryRun in
       try await SetupThemeTeardown.live.run(
         stateRoot: stateRoot,
         ownership: ownership,
-        desiredAppearance: desiredAppearance,
+        expectedGenerationID: expectedGenerationID,
         dryRun: dryRun
       )
     },
@@ -265,7 +265,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       themePreview = try await themeTeardown(
         context.stateRoot,
         ownership,
-        model.themePackage.appearance,
+        nil,
         true
       )
       guard themePreview.succeeded else {
@@ -329,11 +329,16 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
             refusal: UnifiedSetupTransactionError.recoveryRequired(
               "another unified setup operation started after preflight")),
           context: context)
+        if let expected = themePreview.plannedThemeGenerationID {
+          _ = try ThemeActivator(root: context.stateRoot).deactivate(
+            expectedGenerationID: expected, dryRun: true)
+        }
         try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).write(transaction)
         return try await recover(
           transaction: transaction,
           context: context,
-          consumerPaths: consumerPaths
+          consumerPaths: consumerPaths,
+          expectedThemeGenerationID: themePreview.plannedThemeGenerationID
         )
       }
       return try result(
@@ -352,9 +357,10 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     } catch let error as UnifiedSetupInterruptionError {
       throw error
     } catch {
+      let started = try transactionStore.read() != nil
       return try result(
-        outcome: "recovery_required",
-        mutated: true,
+        outcome: started ? "recovery_required" : "blocked",
+        mutated: started,
         dryRun: false,
         plan: plan,
         message: String(describing: error),
@@ -390,7 +396,8 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
   func recover(
     transaction: UnifiedSetupTransaction,
     context: UnifiedSetupPlanContext,
-    consumerPaths: ThemeConsumerPaths
+    consumerPaths: ThemeConsumerPaths,
+    expectedThemeGenerationID: String? = nil
   ) async throws -> UnifiedSetupRecoveryResult {
     guard
       transaction.contextDigest
@@ -409,7 +416,6 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         let execution = try await finishApply(
           stageID,
           context: context,
-          desiredAppearance: transaction.desiredAppearance,
           commit: commit
         )
         guard execution.succeeded else {
@@ -428,6 +434,9 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       return result
     }
 
+    // A resumed teardown is a new attempt. Without an in-memory preflight observation,
+    // the theme stage validates and pins the current generation when it resumes. A stale
+    // observation must not trap a forward-recovery journal forever after a theme-set race.
     var result = UnifiedSetupRecoveryResult()
     var remaining = transaction.stages
     for stageID in transaction.stages {
@@ -435,7 +444,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         stageID,
         context: context,
         consumerPaths: consumerPaths,
-        desiredAppearance: transaction.desiredAppearance,
+        expectedGenerationID: expectedThemeGenerationID,
         dryRun: false
       )
       guard execution.succeeded else {
@@ -456,7 +465,6 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
   private func finishApply(
     _ stageID: SetupStage,
     context: UnifiedSetupPlanContext,
-    desiredAppearance: ThemeAppearance,
     commit: Bool
   ) async throws -> UnifiedSetupTeardownStage {
     switch stageID {
@@ -478,11 +486,9 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       return try await desktopApplyFinalization(context, commit)
     case .theme:
       guard !commit else { return .noChange("The setup-owned theme is committed.") }
+      let ownership = try SetupCoreOwnershipStore(stateRoot: context.stateRoot).read()
       return try await themeTeardown(
-        context.stateRoot,
-        SetupCoreOwnershipStore(stateRoot: context.stateRoot).read(),
-        desiredAppearance,
-        false
+        context.stateRoot, ownership, ownership?.themeGenerationID, false
       )
     }
   }
@@ -491,7 +497,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     _ stageID: SetupStage,
     context: UnifiedSetupPlanContext,
     consumerPaths: ThemeConsumerPaths,
-    desiredAppearance: ThemeAppearance,
+    expectedGenerationID: String?,
     dryRun: Bool
   ) async throws -> UnifiedSetupTeardownStage {
     switch stageID {
@@ -518,7 +524,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       return try await themeTeardown(
         context.stateRoot,
         SetupCoreOwnershipStore(stateRoot: context.stateRoot).read(),
-        desiredAppearance,
+        expectedGenerationID,
         dryRun
       )
     }
@@ -610,9 +616,16 @@ struct UnifiedSetupTeardownStage: Encodable, Sendable {
   let outcome: String
   let message: String
   var details: SetupStageDetails? = nil
+  /// The validated canonical generation observed by theme preflight, not bootstrap ownership.
+  var plannedThemeGenerationID: String? = nil
 
   static func noChange(_ message: String) -> Self {
     Self(succeeded: true, mutated: false, outcome: "no_change", message: message)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case succeeded, mutated, outcome, message, details
+    case plannedThemeGenerationID = "planned_theme_generation_id"
   }
 }
 

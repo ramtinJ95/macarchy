@@ -43,7 +43,7 @@ package enum ThemeDeactivationError: Error, CustomStringConvertible, Sendable {
   package var description: String {
     switch self {
     case .activeGenerationChanged(let expected, let active):
-      "Cannot remove setup theme generation '\(expected)' while '\(active)' is active"
+      "The active theme changed after teardown planning (expected '\(expected)', found '\(active)'). Retry setup teardown."
     case .invalidReconciliation(let reason):
       "Cannot remove setup theme with invalid reconciliation state: \(reason)"
     case .system(let operation, let url, let code):
@@ -153,7 +153,7 @@ public struct ThemeActivator: Sendable {
     )
   }
 
-  /// Retires the setup-owned generation. `beforeRetiringLocked` runs under the activation lock
+  /// Retires the validated generation observed by the caller. `beforeRetiringLocked` runs under the activation lock
   /// once the generation is confirmed, just before it is retired, and never for a dry run.
   package func deactivate(
     expectedGenerationID: String,
