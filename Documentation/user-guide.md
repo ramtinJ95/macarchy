@@ -766,6 +766,71 @@ commit recovery. Failed restoration retains the record for a retry,
 including when a macOS upgrade leaves the helper unsupported. This record is
 not a second theme authority: the active theme still determines the desired color.
 
+### Set the macOS icon & widget style from a theme
+
+The optional `macos-icon-style` consumer is off by default. Enable it through
+the applied profile (the machine layer can override the portable layer):
+
+```toml
+[macos_look]
+icon_style = true
+```
+
+Review `macarchy setup plan`, then run `macarchy setup apply`. A theme opts in
+separately, in its canonical **theme.toml** manifest:
+
+```toml
+[macos]
+icon_style = "tinted"
+```
+
+This optional table keeps `schema_version = 1`. Only `default`, `dark`,
+`clear` and `tinted` are accepted; unknown keys and values are errors.
+The declaration is carried into the generation's normalized `theme.json`.
+Older generations and Omarchy imports leave it unset. An unset theme makes no
+native write and reports **theme does not set an icon style**; it does not
+reset the style or discard an earlier original.
+
+| Theme value | Native style | Tint |
+| --- | --- | --- |
+| `default` | RegularLight | Keep the stored tint and custom color |
+| `dark` | RegularDark | Keep the stored tint and custom color |
+| `clear` | ClearLight / ClearDark, by theme appearance | Keep both tint fields |
+| `tinted` | TintedLight / TintedDark, by theme appearance | Other, using `semantic.accent` |
+
+The same isolated `macarchy-look` helper checks the SkyLight class and every
+selector's exact ABI before calling it, then saves, reads back the full stored
+triple and reverts on mismatch. The icon control has its own tested-build
+allowlist; missing helpers, missing capabilities and untested builds report
+unsupported without writing. Source builds must also build `macarchy-look`.
+There is no untested-build override or new permission grant.
+
+The first write preserves the original style, tint and custom color. Every
+later write journals its full intended value before mutation. Teardown, or
+setup apply with `icon_style = false`, restores that original only when the
+current value matches Macarchy's last confirmed or pending value. A later user
+choice is kept and reported, including deferred setup commit recovery.
+Failed restoration retains the record and blocks retirement rather than
+losing the original.
+
+Custom tint restoration compares **eight-bit #rrggbb**, not the exact stored
+floating-point components. If the original tint is **Hardware**, restoration
+sets only the original style and keeps the current tint; the result explicitly
+reports this partial restoration. Non-tinted styles do not reset custom tint.
+
+Native qualification currently covers **macOS build 25G83**: four style choices,
+helper/native-defaults readback, live Dock/Finder changes without restarting those
+processes, unset no-write, and public profile-disable restoration/kept-user-choice.
+Widgets were not separately observed. Other builds remain unsupported.
+
+**Known aggregate teardown limitation:** after a theme switch replaces the
+setup-owned generation, `setup teardown` can refuse with “Cannot remove setup
+theme generation … while … is active” before either icon or accent restoration.
+The qualified restore path in that case is to set `icon_style = false` and run
+`macarchy environment apply --profile <profile.toml>` against the same state root.
+This does not retire the setup theme. Do not delete the native ownership receipt
+to work around the aggregate refusal.
+
 ### Bring an Omarchy theme
 
 ```sh

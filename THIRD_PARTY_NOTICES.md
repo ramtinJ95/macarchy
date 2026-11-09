@@ -10,7 +10,9 @@ is ported from Scene's `PaletteCheck` and its color math, at commit
 `48a69ccae09e0490e2400cf8053fc4a9a5ceff7f` of <https://github.com/InsaneArts/Scene>.
 
 The macOS accent preset mapping (`Sources/ThemeCore/System/MacOSLook.swift`) and
-private AppKit helper approach (`Sources/MacarchyLook/main.swift`) also follow Scene.
+private AppKit helper approach (`Sources/MacarchyLook/main.swift`), icon style mapping
+(`Sources/ThemeCore/System/MacOSIconStyle.swift`) and SkyLight icon & widget
+configuration approach (`Sources/MacarchyLook/IconStyle.swift`) also follow Scene.
 
 ```text
 MIT License
