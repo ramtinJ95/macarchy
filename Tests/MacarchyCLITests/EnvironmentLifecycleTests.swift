@@ -399,7 +399,7 @@ struct EnvironmentLifecycleTests {
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
       commit: true
-    )
+    ).changed
 
     #expect(committed)
     #expect(try EnvironmentStateStore(stateRoot: fixture.state).readTransaction() == nil)
@@ -453,7 +453,7 @@ struct EnvironmentLifecycleTests {
         stateRoot: fixture.state,
         homeDirectory: fixture.home,
         commit: false
-      )
+      ).changed
     )
     #expect(
       try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == previousOwnership

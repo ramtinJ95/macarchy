@@ -1049,7 +1049,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     stateRoot: URL,
     homeDirectory: URL,
     commit: Bool
-  ) throws -> Bool {
+  ) throws -> (changed: Bool, accentRestoration: MacOSAccentRestore?) {
     let alacritty = Result {
       try commit && profile?.environment.presets.alacritty == true ? alacrittyVersion() : []
     }
@@ -1061,7 +1061,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
       zedVersion: zedVersion)
     return try EnvironmentLifecycleLock(stateRoot: stateRoot).withLock {
       let store = EnvironmentStateStore(stateRoot: stateRoot)
-      guard let transaction = try store.readTransaction() else { return false }
+      guard let transaction = try store.readTransaction() else { return (false, nil) }
       guard transaction.operation == .apply else {
         throw EnvironmentLifecycleError.blocked(
           "the pending environment operation is not apply"
@@ -1071,6 +1071,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
         homeDirectory: homeDirectory,
         stateRoot: stateRoot, inspector: inspector
       )
+      var restoration: MacOSAccentRestore?
       if commit {
         guard transaction.direction == .forward else {
           throw EnvironmentLifecycleError.blocked(
@@ -1088,7 +1089,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
           stateRoot: stateRoot
         )
         try ActivationLock(root: stateRoot).withLock {
-          let restoration =
+          restoration =
             try profile.environment.macOSLook.accent
             ? nil : accent(stateRoot).restoreHoldingActivationLock()
           try coordinator.finishApplyLocked(composition: composition)
@@ -1097,7 +1098,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
       } else {
         try runtimes.rollbackTransaction(coordinator: coordinator)
       }
-      return true
+      return (true, restoration)
     }
   }
 

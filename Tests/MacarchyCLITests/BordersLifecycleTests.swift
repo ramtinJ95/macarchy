@@ -149,7 +149,8 @@ struct BordersLifecycleTests {
     #expect(
       try EnvironmentApplyCommandRunner(
         prerequisites: .assumed, theme: nil, verifier: .assumed, bordersRuntime: fixture.runtime
-      ).finishDeferredApply(stateRoot: fixture.root, homeDirectory: fixture.home, commit: false))
+      ).finishDeferredApply(stateRoot: fixture.root, homeDirectory: fixture.home, commit: false)
+        .changed)
     #expect(fixture.state.withLock { $0.actions.isEmpty && $0.running && $0.pid == 100 })
     #expect(try store.readTransaction() == nil)
     #expect(try store.readOwnership() == nil)
@@ -276,7 +277,8 @@ struct BordersLifecycleTests {
     #expect(
       try EnvironmentApplyCommandRunner(
         prerequisites: .assumed, theme: nil, verifier: .assumed, bordersRuntime: fixture.runtime
-      ).finishDeferredApply(stateRoot: fixture.root, homeDirectory: fixture.home, commit: false))
+      ).finishDeferredApply(stateRoot: fixture.root, homeDirectory: fixture.home, commit: false)
+        .changed)
     #expect(fixture.state.withLock { $0.running } == running)
     #expect(
       fixture.state.withLock { $0.actions }

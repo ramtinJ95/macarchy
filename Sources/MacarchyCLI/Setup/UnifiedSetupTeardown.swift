@@ -68,24 +68,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         dryRun: dryRun
       )
     },
-    environmentApplyFinalization: { context, commit in
-      let profile = commit ? try context.loadProfile().profile : nil
-      let changed = try EnvironmentApplyCommandRunner.live.finishDeferredApply(
-        resourcesRoot: commit ? context.environmentResourcesRoot : nil,
-        profile: profile,
-        stateRoot: context.stateRoot,
-        homeDirectory: context.homeDirectory,
-        commit: commit
-      )
-      return UnifiedSetupTeardownStage(
-        succeeded: true,
-        mutated: changed,
-        outcome: changed ? (commit ? "committed" : "restored") : "no_change",
-        message: changed
-          ? "The deferred environment apply was \(commit ? "committed" : "rolled back")."
-          : "No deferred environment apply exists."
-      )
-    },
+    environmentApplyFinalization: finalizeEnvironment(using: .live),
     desktopApplyFinalization: { context, commit in
       let changed = try DesktopApplyCommandRunner.live.finishDeferredAggregateApply(
         stateRoot: context.stateRoot,
@@ -102,6 +85,32 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       )
     }
   )
+
+  /// Shared by the live aggregate path and fake-native lifecycle tests.
+  static func finalizeEnvironment(using runner: EnvironmentApplyCommandRunner) -> ApplyFinalization
+  {
+    { context, commit in
+      let profile = commit ? try context.loadProfile().profile : nil
+      let result = try runner.finishDeferredApply(
+        resourcesRoot: commit ? context.environmentResourcesRoot : nil,
+        profile: profile,
+        stateRoot: context.stateRoot,
+        homeDirectory: context.homeDirectory,
+        commit: commit
+      )
+      let summary =
+        result.changed
+        ? "The deferred environment apply was \(commit ? "committed" : "rolled back")."
+        : "No deferred environment apply exists."
+      return UnifiedSetupTeardownStage(
+        succeeded: true,
+        mutated: result.changed,
+        outcome: result.changed ? (commit ? "committed" : "restored") : "no_change",
+        message: [summary, result.accentRestoration?.message].compactMap { $0 }.joined(
+          separator: " ")
+      )
+    }
+  }
 
   func execute(
     context: UnifiedSetupPlanContext,
