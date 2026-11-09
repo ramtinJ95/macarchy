@@ -189,14 +189,21 @@ struct KittyColorOverrides: Equatable, Sendable {
 
   /// Every directory below `url`, without following symbolic links, as `Path.glob` does.
   private static func descendantDirectories(of url: URL) -> [URL] {
-    guard
-      let enumerator = FileManager.default.enumerator(
-        at: url, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-    else { return [] }
-    return enumerator.compactMap { $0 as? URL }.filter {
-      let values = try? $0.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-      return values?.isDirectory == true && values?.isSymbolicLink != true
+    // Relative names preserve the caller's lexical prefix (not /var → /private/var),
+    // which also keeps the final sort in Kitty's path order.
+    guard let enumerator = FileManager.default.enumerator(atPath: url.path) else { return [] }
+    var directories: [URL] = []
+    for case let relativePath as String in enumerator {
+      let child = url.appending(path: relativePath)
+      var metadata = stat()
+      if lstat(child.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFDIR {
+        directories.append(child)
+      } else {
+        // Never descend into or return a symbolic link to a directory.
+        enumerator.skipDescendants()
+      }
     }
+    return directories
   }
 
   private static func exists(_ url: URL) -> Bool {
