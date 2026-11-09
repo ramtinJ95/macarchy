@@ -98,7 +98,7 @@ struct EnvironmentRuntimeSelectionTests {
         == Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
           ZedAdapter.id, AlacrittyAdapter.id, GhosttyAdapter.id, BordersAdapter.id,
           BordersAdapter.leanID,
-          UserScriptsAdapter.id,
+          UserScriptsAdapter.id, MacOSAccentAdapter.id,
           SpicetifyAdapter.id,
         ])
     )

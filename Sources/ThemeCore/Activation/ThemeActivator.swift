@@ -158,7 +158,7 @@ public struct ThemeActivator: Sendable {
   package func deactivate(
     expectedGenerationID: String,
     dryRun: Bool,
-    beforeRetiringLocked: () -> Void = {}
+    beforeRetiringLocked: () throws -> Void = {}
   ) throws -> String? {
     let cleanupError: String? = try activationLock.withLock {
       let manifest = try ThemeGenerationReader(root: root).activeManifest()
@@ -185,7 +185,7 @@ public struct ThemeActivator: Sendable {
         throw ThemeDeactivationError.invalidReconciliation(String(describing: error))
       }
       if dryRun { return nil }
-      beforeRetiringLocked()
+      try beforeRetiringLocked()
 
       let currentURL = StateLayout(root: root).currentTheme
       let generationURL = root.appending(

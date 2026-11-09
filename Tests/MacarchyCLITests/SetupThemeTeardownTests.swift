@@ -7,6 +7,107 @@ import Testing
 @testable import ThemeCore
 
 struct SetupThemeTeardownTests {
+  @Test func accentEvidenceCanBeConsumedWithoutOwningTheCanonicalTheme() async throws {
+    let fixture = try ApplyFixture()
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    try SetupCoreOwnershipStore(stateRoot: fixture.state).remove()
+    let store = MacOSAccentStore(root: fixture.state)
+    try store.persist(.init(original: .graphite, applied: .blue))
+    let fake = ProcessRunnerFake(replies: [
+      .init(arguments: ["check"], output: #"{"ok":true,"value":{"build":"25G83","accent":true}}"#),
+      .init(arguments: ["get", "accent"], output: #"{"ok":true,"value":-1}"#),
+    ])
+    let appearance = FakeAppearance(.light)
+    let wallpaper = FakeWallpaper(showing: URL(filePath: "/user/chosen.png"))
+    let teardown = SetupThemeTeardown(
+      appearance: { _ in appearance.control },
+      wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) },
+      accent: { root in
+        MacOSAccentAdapter(
+          root: root,
+          helper: MacOSLookHelper(
+            executableURL: URL(filePath: "/usr/bin/true"), processRunner: fake.runner))
+      })
+    let result = try await teardown.run(
+      stateRoot: fixture.state, ownership: nil, desiredAppearance: .dark, dryRun: false)
+    #expect(result.succeeded)
+    #expect(result.message.contains("external theme is preserved"))
+    #expect(try store.load() == nil)
+    #expect(
+      try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
+        == manifest.generationID)
+  }
+
+  @Test(arguments: [false, true])
+  func accentRestorationFailureBlocksRetirementAndKeepsEvidence(dryRun: Bool) async throws {
+    let fixture = try ApplyFixture()
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
+    let store = MacOSAccentStore(root: fixture.state)
+    try store.persist(.init(original: .graphite, applied: .blue))
+    let appearance = FakeAppearance(.light)
+    let wallpaper = FakeWallpaper(showing: URL(filePath: "/user/chosen.png"))
+    let teardown = SetupThemeTeardown(
+      appearance: { _ in appearance.control },
+      wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) },
+      accent: { root in
+        MacOSAccentAdapter(
+          root: root, helper: MacOSLookHelper(executableURL: root.appending(path: "missing")))
+      })
+    let result = try await teardown.run(
+      stateRoot: fixture.state, ownership: ownership, desiredAppearance: .dark, dryRun: dryRun)
+    #expect(!result.succeeded)
+    #expect(result.message.contains("macOS look helper is missing"))
+    #expect(try store.load() != nil)
+    #expect(
+      try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
+        == manifest.generationID)
+  }
+
+  @Test(arguments: [MacOSAccent.blue, .graphite, .green])
+  func accentRestoresBeforeRetirementAndOnlyThenRemovesEvidence(current: MacOSAccent) async throws {
+    let fixture = try ApplyFixture()
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
+    let store = MacOSAccentStore(root: fixture.state)
+    try store.persist(.init(original: .graphite, applied: .blue))
+    let appearance = FakeAppearance(.light)
+    let wallpaper = FakeWallpaper(showing: URL(filePath: "/user/chosen.png"))
+    let fake = ProcessRunnerFake(replies: [
+      .init(arguments: ["check"], output: #"{"ok":true,"value":{"build":"25G83","accent":true}}"#),
+      .init(arguments: ["get", "accent"], output: "{\"ok\":true,\"value\":\(current.rawValue)}"),
+      .init(arguments: ["set", "accent", "-1"], output: #"{"ok":true,"value":-1}"#),
+    ])
+    let runner = ProcessRunner { request in
+      #expect(
+        try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
+          == manifest.generationID)
+      #expect(try store.load() != nil)
+      return try fake.runner.run(request)
+    }
+    let teardown = SetupThemeTeardown(
+      appearance: { _ in appearance.control },
+      wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) },
+      accent: { root in
+        MacOSAccentAdapter(
+          root: root,
+          helper: MacOSLookHelper(
+            executableURL: URL(filePath: "/usr/bin/true"), processRunner: runner))
+      })
+    let result = try await teardown.run(
+      stateRoot: fixture.state, ownership: ownership, desiredAppearance: .dark, dryRun: false)
+    #expect(result.succeeded, "\(result.message)")
+    #expect(try store.load() == nil)
+    #expect(
+      fake.requests.filter { $0.arguments.first == "set" }.count == (current == .blue ? 1 : 0))
+    if current == .green {
+      #expect(result.message.contains("Kept the green accent, which was changed after setup."))
+    }
+  }
+
   @Test(arguments: [false, true])
   func scriptsReceiveTeardownBeforeRetirementAndFailuresDoNotBlock(journaled: Bool) async throws {
     let fixture = try ApplyFixture()

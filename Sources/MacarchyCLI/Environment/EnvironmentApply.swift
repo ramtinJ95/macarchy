@@ -417,6 +417,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
   let alacrittyVersion: @Sendable () throws -> [Int]
   let ghosttyVersion: @Sendable () throws -> [Int]
   let zedVersion: @Sendable () throws -> [Int]
+  let accent: @Sendable (URL) -> MacOSAccentAdapter
   let transactionFaultInjector: @Sendable (EnvironmentTransactionCheckpoint) throws -> Void
 
   static let live = Self(
@@ -439,6 +440,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     alacrittyVersion: @escaping @Sendable () throws -> [Int] = AlacrittyAdapter.installedVersion,
     ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion,
     zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion,
+    accent: @escaping @Sendable (URL) -> MacOSAccentAdapter = { MacOSAccentAdapter(root: $0) },
     transactionFaultInjector:
       @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void = {
         _ in
@@ -453,6 +455,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     self.alacrittyVersion = alacrittyVersion
     self.ghosttyVersion = ghosttyVersion
     self.zedVersion = zedVersion
+    self.accent = accent
     self.transactionFaultInjector = transactionFaultInjector
   }
 
@@ -537,7 +540,9 @@ struct EnvironmentApplyCommandRunner: Sendable {
         )
       }
       let missing = Set(profile.environment.selectedThemeAdapterIDs).subtracting(enabled)
-      guard missing.isEmpty, enabled.count == enabledThemeAdapterIDs.count else {
+      guard missing.isEmpty, enabled.count == enabledThemeAdapterIDs.count,
+        enabled.contains(MacOSAccentAdapter.id) == profile.environment.macOSLook.accent
+      else {
         throw EnvironmentLifecycleError.blocked(
           "enabled theme adapters must contain each selected environment adapter exactly once"
         )
@@ -592,6 +597,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
       faultInjector: transactionFaultInjector, inspector: providerInspector
     )
 
+    var accentRestoration: MacOSAccentRestore?
     if profile.environment.isEntirelyDisabled {
       do {
         let stateStore = EnvironmentStateStore(stateRoot: stateRoot)
@@ -600,6 +606,13 @@ struct EnvironmentApplyCommandRunner: Sendable {
           || stateStore.transactionExists
           || EnvironmentGenerationStore(stateRoot: stateRoot).currentDestination() != nil
         if !hasManagedState {
+          if try MacOSAccentStore(root: stateRoot).load() != nil {
+            accentRestoration = try ActivationLock(root: stateRoot).withLock {
+              let report = try accent(stateRoot).restoreHoldingActivationLock()
+              if report.consumesRecord { try MacOSAccentStore(root: stateRoot).remove() }
+              return report
+            }
+          }
           return EnvironmentStatusCommandRunner(
             prerequisites: prerequisites,
             theme: theme,
@@ -607,9 +620,14 @@ struct EnvironmentApplyCommandRunner: Sendable {
             bordersRuntime: runtimes.borders
           ).reportAfterApply(
             EnvironmentApplyObservation(
-              outcome: "no_change",
-              mutated: false,
-              message: "Every daily tool role is disabled; no managed state was changed."),
+              outcome: accentRestoration?.consumesRecord == true ? "applied" : "no_change",
+              mutated: accentRestoration?.consumesRecord == true,
+              message: [
+                accentRestoration == nil
+                  ? "Every daily tool role is disabled; no managed state was changed."
+                  : "Every daily tool role is disabled.",
+                accentRestoration?.message,
+              ].compactMap { $0 }.joined(separator: " ")),
             resourcesRoot: resourcesRoot,
             profileURL: profileURL,
             profileRequired: profileRequired,
@@ -661,6 +679,11 @@ struct EnvironmentApplyCommandRunner: Sendable {
               mutated: result.changed
             )
           }
+          accentRestoration = try ActivationLock(root: stateRoot).withLock {
+            let report = try accent(stateRoot).restoreHoldingActivationLock()
+            if report.consumesRecord { try MacOSAccentStore(root: stateRoot).remove() }
+            return report
+          }
           return EnvironmentStatusCommandRunner(
             prerequisites: prerequisites,
             theme: theme,
@@ -670,7 +693,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
               theme: restored.theme,
               outcome: result.changed ? "applied" : "no_change",
               mutated: result.changed,
-              message: restored.message),
+              message: [restored.message, accentRestoration?.message].compactMap { $0 }.joined(
+                separator: " ")),
             resourcesRoot: resourcesRoot,
             profileURL: profileURL,
             profileRequired: profileRequired,
@@ -939,7 +963,13 @@ struct EnvironmentApplyCommandRunner: Sendable {
         }
         if !deferFinalization {
           try ActivationLock(root: stateRoot).withLock {
+            if !profile.environment.macOSLook.accent {
+              accentRestoration = try accent(stateRoot).restoreHoldingActivationLock()
+            }
             try coordinator.finishApplyLocked(composition: composition)
+            if accentRestoration?.consumesRecord == true {
+              try MacOSAccentStore(root: stateRoot).remove()
+            }
           }
         }
       } catch {
@@ -992,7 +1022,10 @@ struct EnvironmentApplyCommandRunner: Sendable {
       ).reportAfterApply(
         EnvironmentApplyObservation(
           theme: appliedTheme,
-          verification: verification,
+          verification: verification
+            + (accentRestoration?.message.map {
+              [EnvironmentVerification(id: MacOSAccentAdapter.id, status: "verified", message: $0)]
+            } ?? []),
           outcome: applyResult.changed ? "applied" : "no_change",
           mutated: applyResult.changed,
           message: applyResult.changed
@@ -1055,7 +1088,11 @@ struct EnvironmentApplyCommandRunner: Sendable {
           stateRoot: stateRoot
         )
         try ActivationLock(root: stateRoot).withLock {
+          let restoration =
+            try profile.environment.macOSLook.accent
+            ? nil : accent(stateRoot).restoreHoldingActivationLock()
           try coordinator.finishApplyLocked(composition: composition)
+          if restoration?.consumesRecord == true { try MacOSAccentStore(root: stateRoot).remove() }
         }
       } else {
         try runtimes.rollbackTransaction(coordinator: coordinator)

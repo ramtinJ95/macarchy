@@ -176,6 +176,7 @@
       "zed",
       "alacritty",
       "ghostty",
+      "macos-accent",
       "user-scripts"
     ],
     "theme_id" : "catppuccin-mocha"

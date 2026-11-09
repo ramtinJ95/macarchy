@@ -49,6 +49,8 @@ package struct StateLayout: Sendable {
   }
 
   // Provider generation stores, relative to the state root.
+  package var macOSAccentRecord: URL { root.appending(path: "state/macos-look/accent.json") }
+
   package static let environmentDirectory = "environment"
   package static let keybindingsDirectory = "keybindings"
   package static let yabaiDirectory = "desktop/yabai"
