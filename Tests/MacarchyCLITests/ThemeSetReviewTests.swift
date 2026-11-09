@@ -91,6 +91,36 @@ struct ThemeSetReviewTests {
     #expect(try digest(enabled: ["kitty", "atuin"]) != base)
     #expect(try digest(active: nil) != base)
   }
+
+  @Test func aPlanForARequestedBackgroundDoesNotSuggestAThemeSetCommand() async throws {
+    let service = fakeService(review: { try review($0, active: nil, kitty: .ready) })
+
+    // `theme undo --dry-run` asks for the background it restores; `theme set` cannot.
+    let text = try await execute(service, dryRun: true, json: false, background: "default")
+
+    #expect(text.succeeded)
+    #expect(text.output.contains("Plan for theme 'tokyo-night':"))
+    #expect(!text.output.contains("--reviewed"))
+  }
+
+  @Test func consumersListTheFilesTheyReadAndTheirCurrentRepaintBoundary() throws {
+    func entry(_ id: String) throws -> ConsumerCatalogEntry {
+      try #require(ConsumerCatalog.shared.runtimeEntries.first { $0.id.rawValue == id })
+    }
+
+    let codex = ThemeActivationReview.Consumer(entry: try entry("codex"), preflight: .ready)
+    let pi = ThemeActivationReview.Consumer(
+      entry: try entry("pi"), preflight: .ready, repaint: .freshSession)
+    let wallpaper = ThemeActivationReview.Consumer(entry: try entry("wallpaper"), preflight: .ready)
+      .unchanged(because: "unchanged: the theme has no background")
+
+    #expect(codex.artifacts == [TextMateThemeArtifact.outputPath])
+    #expect(pi.repaint == .freshSession)
+    #expect(
+      ThemeActivationReview.Consumer(entry: try entry("pi"), preflight: .ready).repaint == .live)
+    #expect(wallpaper.artifacts == [])
+    #expect(wallpaper.change == "unchanged: the theme has no background")
+  }
 }
 
 private func package() throws -> ThemePackage {
@@ -129,7 +159,8 @@ private func fakeService(
 }
 
 private func execute(
-  _ service: ThemeActivationService, dryRun: Bool, json: Bool, reviewed: String? = nil
+  _ service: ThemeActivationService, dryRun: Bool, json: Bool, reviewed: String? = nil,
+  background: String? = nil
 ) async throws -> CommandExecution {
   let root = FileManager.default.temporaryDirectory.appending(
     path: "macarchy-theme-review-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -137,5 +168,5 @@ private func execute(
   return try await service.execute(
     repository: ThemeRepository(builtInRoot: repositoryRoot.appending(path: "Themes")),
     themeID: "tokyo-night", stateRoot: root, consumerPaths: testConsumerPaths(),
-    dryRun: dryRun, json: json, reviewedDigest: reviewed)
+    dryRun: dryRun, json: json, requestedBackgroundID: background, reviewedDigest: reviewed)
 }
