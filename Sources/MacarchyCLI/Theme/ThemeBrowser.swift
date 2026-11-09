@@ -13,6 +13,7 @@ struct ThemeBrowserItem: Sendable {
   var screenSaverBackgroundID: String? = nil
   var deletion: ThemeBrowserDeletionAvailability = .unavailable(
     "Built-in themes cannot be deleted.")
+  var isFavorite = false
 
   var id: String { metadata.id }
   var displayName: String { metadata.displayName }
@@ -33,9 +34,11 @@ struct ThemeBrowserItem: Sendable {
   }
 }
 
+/// The browser's themes, favorites first, and notices about the favorites record.
 struct ThemeBrowserContent: Sendable {
   let items: [ThemeBrowserItem]
   let initialThemeID: String
+  var notices: [String] = []
 
   func removingTheme(id: String) -> ThemeBrowserContent {
     let remaining = items.filter { $0.id != id }
@@ -258,6 +261,10 @@ struct ThemeBrowserCommandLoader: Sendable {
   var loadScreenSaverPreferences: @Sendable (URL) throws -> [String: String] = {
     try ScreenSaverPreferenceStore(root: $0).load().mapValues(\.backgroundID)
   }
+  /// Runs under ThemePackageLock with the browser load, so it may prune stale favorites.
+  var loadFavorites: @Sendable (URL, Set<String>) -> ThemeFavorites.Resolved = {
+    ThemeFavorites.live.resolveLocked(installed: $1, stateRoot: $0)
+  }
 
   static let live = ThemeBrowserCommandLoader(
     loadMetadata: { try $0.metadata() },
@@ -276,6 +283,8 @@ struct ThemeBrowserCommandLoader: Sendable {
     let screenSaverPreferences = try loadScreenSaverPreferences(stateRoot)
     let activeManifest = try loadActiveManifest(stateRoot)
     let personalBackgrounds = try loadPersonalBackgrounds(stateRoot, packages.map(\.id))
+    let favorites = loadFavorites(stateRoot, Set(packages.map(\.id)))
+    let favoriteIDs = Set(favorites.themeIDs)
     let effectivePackages = try packages.map { package in
       try package.addingPersonalBackgrounds(personalBackgrounds[package.id] ?? [])
     }
@@ -311,14 +320,17 @@ struct ThemeBrowserCommandLoader: Sendable {
         ),
         initialBackgroundID: initialBackgroundID,
         screenSaverBackgroundID: screenSaverPreferences[package.id],
-        deletion: deletion
+        deletion: deletion,
+        isFavorite: favoriteIDs.contains(package.id)
       )
     }
+    let ordered = favoritesFirst(items, favorites: favoriteIDs, id: \.id)
     let packageIDs = Set(effectivePackages.map(\.id))
     let initialThemeID =
       activeManifest.map(\.themeID).flatMap { packageIDs.contains($0) ? $0 : nil }
-      ?? packages[0].id
-    return ThemeBrowserContent(items: items, initialThemeID: initialThemeID)
+      ?? ordered[0].id
+    return ThemeBrowserContent(
+      items: ordered, initialThemeID: initialThemeID, notices: favorites.notices)
   }
 }
 
