@@ -97,6 +97,7 @@ extension PortableProfile {
       .init(\.desktop.yabai),
       .init(\.topBar),
       .init(\.sketchyBar),
+      .init(\.environment.scripts),
       .init(\.environment.focusRing),
       .init(\.environment.terminal),
       .init(\.environment.kitty),

@@ -344,7 +344,15 @@ extension YaziProfileOptions: PortableProfileSection {
   package static var fields: [PortableProfileField<Self>] { [.init("show_hidden", \.showHidden)] }
 }
 
+package struct UserScriptsProfile: Equatable, Sendable, PortableProfileSection {
+  package var run: [URL] = []
+  package static let defaults = Self()
+  package static let table = "scripts"
+  package static var fields: [PortableProfileField<Self>] { [.init("run", \.run)] }
+}
+
 package struct EnvironmentProfile: Equatable, Sendable {
+  package var scripts: UserScriptsProfile = .defaults
   package var focusRing: FocusRingProviderSelection
   package var terminal: TerminalProviderSelection
   package var shell: ShellProviderSelection
@@ -738,6 +746,7 @@ package struct PortableProfileLoader: Sendable {
         field: "neovim.native_configuration", base: base, source: source)
     )
     var environment = EnvironmentProfile(
+      scripts: try scripts(document.scripts, source: source, base: base),
       focusRing: try provider(document.focusRing, source: source),
       terminal: terminal,
       shell: shell,
@@ -903,6 +912,30 @@ package struct PortableProfileLoader: Sendable {
       .standardized.standardizedFileURL
   }
 
+  private func scripts(_ document: ScriptsDocument?, source: URL, base: URL) throws
+    -> UserScriptsProfile
+  {
+    let paths = document?.run ?? []
+    guard paths.count <= 8 else {
+      throw PortableProfileError.invalid(source, "scripts.run accepts at most 8 entries")
+    }
+    let urls = try paths.map {
+      try Self.resolvePortablePath($0, field: "scripts.run", base: base, source: source)!
+    }
+    guard Set(urls.map { Self.resolvingPortablePath($0).path }).count == urls.count else {
+      throw PortableProfileError.invalid(source, "scripts.run must not contain duplicate paths")
+    }
+    return UserScriptsProfile(run: urls)
+  }
+
+  /// Foundation leaves a missing leaf unresolved, including its existing symlink parents.
+  /// Resolve each component so containment still holds for a not-yet-created input.
+  private static func resolvingPortablePath(_ url: URL) -> URL {
+    url.standardizedFileURL.pathComponents.dropFirst().reduce(URL(filePath: "/")) {
+      $0.appending(path: $1).resolvingSymlinksInPath().standardizedFileURL
+    }
+  }
+
   private static func resolvePortablePath(
     _ path: String?, field: String, base: URL, source: URL
   ) throws -> URL? {
@@ -919,8 +952,8 @@ package struct PortableProfileLoader: Sendable {
     guard lexicalTarget.path.hasPrefix(lexicalPrefix) else {
       throw PortableProfileError.invalid(source, "\(field) must stay beside the profile")
     }
-    let resolvedBase = lexicalBase.resolvingSymlinksInPath().standardizedFileURL
-    let resolvedTarget = lexicalTarget.resolvingSymlinksInPath().standardizedFileURL
+    let resolvedBase = resolvingPortablePath(lexicalBase)
+    let resolvedTarget = resolvingPortablePath(lexicalTarget)
     let resolvedPrefix =
       resolvedBase.path.hasSuffix("/") ? resolvedBase.path : resolvedBase.path + "/"
     guard resolvedTarget.path.hasPrefix(resolvedPrefix) else {
@@ -1118,6 +1151,7 @@ private struct PortableProfileDocument: Decodable {
   let yabai: YabaiDocument?
   let topBar: ProviderDocument?
   let focusRing: ProviderDocument?
+  let scripts: ScriptsDocument?
   let sketchyBar: SketchyBarDocument?
   let terminal: ProviderDocument?
   let kitty: KittyDocument?
@@ -1143,6 +1177,7 @@ private struct PortableProfileDocument: Decodable {
     case yabai
     case topBar = "top_bar"
     case focusRing = "focus_ring"
+    case scripts
     case sketchyBar = "sketchybar"
     case terminal
     case kitty
@@ -1161,6 +1196,10 @@ private struct PortableProfileDocument: Decodable {
     case packages
     case macOSPreferences = "macos_preferences"
   }
+}
+
+private struct ScriptsDocument: Decodable {
+  let run: [String]?
 }
 
 private struct PackagesDocument: Decodable {
