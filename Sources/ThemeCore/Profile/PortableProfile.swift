@@ -309,6 +309,10 @@ package struct PresetsProfile: Equatable, Sendable {
   package var ghostty: Bool = false
   package var zed: Bool = false
   package var alacritty: Bool = false
+  package var vscode: Bool = false
+  package var cursor: Bool = false
+  package var vscodium: Bool = false
+  package var windsurf: Bool = false
 }
 
 extension PresetsProfile: PortableProfileSection {
@@ -326,6 +330,10 @@ extension PresetsProfile: PortableProfileSection {
       .init("ghostty", \.ghostty),
       .init("zed", \.zed),
       .init("alacritty", \.alacritty),
+      .init("vscode", \.vscode),
+      .init("cursor", \.cursor),
+      .init("vscodium", \.vscodium),
+      .init("windsurf", \.windsurf),
     ]
   }
 }
@@ -783,7 +791,11 @@ package struct PortableProfileLoader: Sendable {
         tuicr: document.presets?.tuicr ?? PresetsProfile.defaults.tuicr,
         ghostty: document.presets?.ghostty ?? PresetsProfile.defaults.ghostty,
         zed: document.presets?.zed ?? PresetsProfile.defaults.zed,
-        alacritty: document.presets?.alacritty ?? PresetsProfile.defaults.alacritty
+        alacritty: document.presets?.alacritty ?? PresetsProfile.defaults.alacritty,
+        vscode: document.presets?.vscode ?? PresetsProfile.defaults.vscode,
+        cursor: document.presets?.cursor ?? PresetsProfile.defaults.cursor,
+        vscodium: document.presets?.vscodium ?? PresetsProfile.defaults.vscodium,
+        windsurf: document.presets?.windsurf ?? PresetsProfile.defaults.windsurf
       ),
       btop: BtopProfileOptions(vimKeys: document.btop?.vimKeys),
       yazi: YaziProfileOptions(showHidden: document.yazi?.showHidden)
@@ -1369,6 +1381,10 @@ private struct PresetsDocument: Decodable {
   let ghostty: Bool?
   let zed: Bool?
   let alacritty: Bool?
+  let vscode: Bool?
+  let cursor: Bool?
+  let vscodium: Bool?
+  let windsurf: Bool?
 }
 
 private struct BtopDocument: Decodable {

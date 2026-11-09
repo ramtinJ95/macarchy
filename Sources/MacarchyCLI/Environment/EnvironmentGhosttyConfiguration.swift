@@ -53,7 +53,7 @@ typealias EnvironmentGhosttyFileTransaction = EnvironmentPresetFileTransaction<
   EnvironmentGhosttyOwnership
 >
 
-extension EnvironmentGhosttyOwnership: EnvironmentPresetFileOwnership {
+extension EnvironmentGhosttyOwnership: EnvironmentSelectedPresetFileOwnership {
   static let filesystem = EnvironmentPresetFilesystem(
     configurationLabel: "Ghostty configuration", residueLabel: "Ghostty transaction residue",
     nonRegularMessage: "Ghostty configuration is not an ordinary file")

@@ -152,7 +152,6 @@ protocol EnvironmentPresetFileOwnership: Equatable, Sendable {
   static var ownershipChangedMessage: String { get }
   static var replacementLabel: String { get }
   static var replacementFailureLabel: String? { get }
-  static func owned(by ownership: EnvironmentOwnership?) -> Self?
   /// The file contents with the managed selectors applied to `current`, or to the preset's
   /// empty document when the file is absent.
   func managed(from current: Data?, at url: URL) throws -> Data
@@ -166,7 +165,11 @@ protocol EnvironmentPresetFileOwnership: Equatable, Sendable {
 
 /// Existing key-owned presets have context-free selectors; line ownership also needs its
 /// journaled include and position. Both use the same authenticated file transaction.
-protocol EnvironmentStaticPresetFileOwnership: EnvironmentPresetFileOwnership {
+protocol EnvironmentSelectedPresetFileOwnership: EnvironmentPresetFileOwnership {
+  static func owned(by ownership: EnvironmentOwnership?) -> Self?
+}
+
+protocol EnvironmentStaticPresetFileOwnership: EnvironmentSelectedPresetFileOwnership {
   static func managed(from current: Data?, at url: URL) throws -> Data
   static func matchesManaged(_ data: Data, at url: URL) throws -> Bool
 }
@@ -195,13 +198,10 @@ struct EnvironmentPresetFileTransaction<Ownership: EnvironmentPresetFileOwnershi
     }
   }
 
-  func transition(
-    from old: EnvironmentOwnership?,
-    to new: EnvironmentOwnership?,
-    replacementName: String
+  /// The VS Code family selects one editor's record from its closed per-editor inventory.
+  func transitionOwnership(
+    from oldOwnership: Ownership?, to newOwnership: Ownership?, replacementName: String
   ) throws {
-    let oldOwnership = Ownership.owned(by: old)
-    let newOwnership = Ownership.owned(by: new)
     guard let ownership = oldOwnership ?? newOwnership else { return }
     if let oldOwnership, let newOwnership, oldOwnership != newOwnership {
       throw EnvironmentLifecycleError.blocked(Ownership.ownershipChangedMessage)
@@ -257,6 +257,16 @@ struct EnvironmentPresetFileTransaction<Ownership: EnvironmentPresetFileOwnershi
       data, current: current, at: url, replacementName: replacementName,
       homeDirectory: homeDirectory, label: Ownership.replacementLabel,
       failureLabel: Ownership.replacementFailureLabel
+    )
+  }
+}
+
+extension EnvironmentPresetFileTransaction where Ownership: EnvironmentSelectedPresetFileOwnership {
+  func transition(
+    from old: EnvironmentOwnership?, to new: EnvironmentOwnership?, replacementName: String
+  ) throws {
+    try transitionOwnership(
+      from: Ownership.owned(by: old), to: Ownership.owned(by: new), replacementName: replacementName
     )
   }
 }

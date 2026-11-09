@@ -105,7 +105,7 @@ struct EnvironmentZedFamilyOwnership: Codable, Equatable, Sendable {
   }
 }
 
-extension EnvironmentZedFamilyOwnership: EnvironmentPresetFileOwnership {
+extension EnvironmentZedFamilyOwnership: EnvironmentSelectedPresetFileOwnership {
   static let filesystem = EnvironmentPresetFilesystem(
     configurationLabel: "Zed theme family", residueLabel: "Zed theme family transaction residue",
     nonRegularMessage: "Zed theme family is not an ordinary file")

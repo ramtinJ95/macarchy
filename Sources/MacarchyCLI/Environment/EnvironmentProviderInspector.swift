@@ -26,6 +26,7 @@ struct EnvironmentProviderInspection: Sendable {
   var proposedPiOwnership: EnvironmentPiOwnership? = nil
   var proposedSpicetifyOwnership: EnvironmentSpicetifyOwnership? = nil
   var proposedGhosttyOwnership: EnvironmentGhosttyOwnership? = nil
+  var proposedVSCodeOwnership: [String: EnvironmentVSCodeOwnership]? = nil
   var proposedZedOwnership: EnvironmentZedOwnership? = nil
   var proposedZedFamilyOwnership: EnvironmentZedFamilyOwnership? = nil
   var proposedAlacrittyOwnership: EnvironmentAlacrittyOwnership? = nil
@@ -53,6 +54,7 @@ struct EnvironmentProviderInspection: Sendable {
     case .pi: proposedPiOwnership != nil
     case .spicetify: proposedSpicetifyOwnership != nil
     case .ghostty: proposedGhosttyOwnership != nil
+    case .vscode, .cursor, .vscodium, .windsurf: proposedVSCodeOwnership?[file.rawValue] != nil
     case .zed: proposedZedOwnership != nil
     case .zedFamily: proposedZedFamilyOwnership != nil
     case .alacritty: proposedAlacrittyOwnership != nil
@@ -70,6 +72,8 @@ struct EnvironmentProviderInspector: Sendable {
   private static let maximumExternalFileSize = 4 * 1_048_576
   let alacrittyVersion: @Sendable () throws -> [Int]
   let ghosttyVersion: @Sendable () throws -> [Int]
+  let vscodeDiscover: @Sendable (VSCodeEditor) throws -> VSCodeEditor.Installation
+  let vscodeRunner: ProcessRunner
   let zedVersion: @Sendable () throws -> [Int]
   let slackPreset: EnvironmentSlackPreset
   /// Only unified first-install planning supplies a rendered, not-yet-active theme.
@@ -83,10 +87,16 @@ struct EnvironmentProviderInspector: Sendable {
     proposedNativeSources: Set<String> = [],
     alacrittyVersion: @escaping @Sendable () throws -> [Int] = AlacrittyAdapter.installedVersion,
     ghosttyVersion: @escaping @Sendable () throws -> [Int] = GhosttyAdapter.installedVersion,
+    vscodeDiscover: @escaping @Sendable (VSCodeEditor) throws -> VSCodeEditor.Installation = {
+      try $0.discover()
+    },
+    vscodeRunner: ProcessRunner = .live,
     zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion
   ) {
     self.alacrittyVersion = alacrittyVersion
     self.ghosttyVersion = ghosttyVersion
+    self.vscodeDiscover = vscodeDiscover
+    self.vscodeRunner = vscodeRunner
     self.zedVersion = zedVersion
     self.slackPreset = slackPreset
     self.bootstrapTheme = bootstrapTheme
@@ -539,6 +549,24 @@ struct EnvironmentProviderInspector: Sendable {
         )
       }
 
+      var vscode = [String: EnvironmentVSCodeOwnership]()
+      var vscodeEvidence = [EnvironmentKeyOwnedFile: EnvironmentEntryEvidence]()
+      for editor in VSCodeEditor.allCases {
+        let result = try inspectVSCode(
+          editor: editor,
+          enabled: EnvironmentPreset(rawValue: editor.rawValue)!.isEnabled(
+            in: composition.profile.presets),
+          ownership: ownership?.vscodeEditors?[editor.rawValue], home: homeDirectory,
+          root: stateRoot)
+        if let entry = result.entry { inspections.append(entry) }
+        if let owner = result.proposedOwnership {
+          vscode[editor.rawValue] = owner
+          try recordMissingParents(of: URL(filePath: owner.path))
+        }
+        if let evidence = result.externalEvidence {
+          vscodeEvidence[EnvironmentKeyOwnedFile(rawValue: editor.rawValue)!] = evidence
+        }
+      }
       let zed = try inspectZed(
         enabled: composition.profile.presets.zed, ownership: ownership?.zed, home: homeDirectory)
       let zedFamily = try inspectZedFamily(
@@ -634,7 +662,11 @@ struct EnvironmentProviderInspector: Sendable {
               .zed: zed.proposedOwnership?.path, .zedFamily: zedFamily.proposedOwnership?.path,
               .alacritty: alacritty.proposedOwnership?.path,
               .tuicr: tuicr.proposedOwnership?.path,
-            ].compactMapValues { $0 },
+            ].compactMapValues { $0 }.merging(
+              Dictionary(
+                uniqueKeysWithValues: vscode.map {
+                  (EnvironmentKeyOwnedFile(rawValue: $0.key)!, $0.value.path)
+                }), uniquingKeysWith: { _, new in new }),
             borders: borders.ownership,
             bordersService: bordersService
           ) : nil,
@@ -648,6 +680,7 @@ struct EnvironmentProviderInspector: Sendable {
         proposedPiOwnership: pi.proposedOwnership,
         proposedSpicetifyOwnership: spicetify.proposedOwnership,
         proposedGhosttyOwnership: ghostty.proposedOwnership,
+        proposedVSCodeOwnership: vscode.isEmpty ? nil : vscode,
         proposedZedOwnership: zed.proposedOwnership,
         proposedZedFamilyOwnership: zedFamily.proposedOwnership,
         proposedAlacrittyOwnership: alacritty.proposedOwnership,
@@ -662,7 +695,7 @@ struct EnvironmentProviderInspector: Sendable {
           .zed: zed.externalEvidence, .zedFamily: zedFamily.externalEvidence,
           .alacritty: alacritty.externalEvidence,
           .tuicr: tuicr.externalEvidence,
-        ].compactMapValues { $0 },
+        ].compactMapValues { $0 }.merging(vscodeEvidence, uniquingKeysWith: { _, new in new }),
         proposedBordersOwnership: borders.ownership,
         bordersServiceInspection: bordersService,
         leanServiceInspection: leanService,

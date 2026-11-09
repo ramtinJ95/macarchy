@@ -74,6 +74,10 @@ enum EnvironmentDailyTool: String, CaseIterable, Sendable {
 
 /// An application preset, in profile-key order.
 enum EnvironmentPreset: String, CaseIterable, Sendable {
+  case vscode
+  case cursor
+  case vscodium
+  case windsurf
   case zed
   case ghostty
   case alacritty
@@ -92,6 +96,10 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .slack: presets.slack
     case .spicetify: presets.spicetify
     case .ghostty: presets.ghostty
+    case .vscode: presets.vscode
+    case .cursor: presets.cursor
+    case .vscodium: presets.vscodium
+    case .windsurf: presets.windsurf
     case .zed: presets.zed
     case .alacritty: presets.alacritty
     case .tuicr: presets.tuicr
@@ -106,6 +114,10 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .slack: ownership.slackEnabled
     case .spicetify: ownership.spicetifyEnabled
     case .ghostty: ownership.ghostty != nil
+    case .vscode: ownership.vscodeEditors?["vscode"] != nil
+    case .cursor: ownership.vscodeEditors?["cursor"] != nil
+    case .vscodium: ownership.vscodeEditors?["vscodium"] != nil
+    case .windsurf: ownership.vscodeEditors?["windsurf"] != nil
     case .zed: ownership.zed != nil
     case .alacritty: ownership.alacritty != nil
     case .tuicr: ownership.tuicrEnabled
@@ -121,6 +133,10 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .slack: nil
     case .spicetify: SpicetifyAdapter.id
     case .ghostty: GhosttyAdapter.id
+    case .vscode: "vscode"
+    case .cursor: "cursor"
+    case .vscodium: "vscodium"
+    case .windsurf: "windsurf"
     case .zed: ZedAdapter.id
     case .alacritty: AlacrittyAdapter.id
     case .tuicr: TuicrAdapter.id
@@ -156,6 +172,11 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
         message:
           "Own only ordinary current_theme/color_scheme selectors or accept a complete exact Stow tuple, create only an absent color.ini link, and run an awaited --no-restart refresh."
       )
+    case .vscode, .cursor, .vscodium, .windsurf:
+      PlanAction(
+        id: "configure_\(rawValue)",
+        message:
+          "Own the default-profile color-theme members and install a generated Macarchy extension.")
     case .zed:
       PlanAction(
         id: "configure_zed", message: "Own Zed’s theme member and watched regular theme family.")
@@ -181,7 +202,9 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     switch self {
     case .herdr:
       UnifiedSetupService(id: "herdr", ownership: "external", lifecycle: "reload_if_running")
-    case .zed, .alacritty, .ghostty, .codex, .pi, .slack, .spicetify, .tuicr: nil
+    case .vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .ghostty, .codex, .pi, .slack, .spicetify,
+      .tuicr:
+      nil
     }
   }
 
@@ -194,7 +217,9 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
         kind: "application_ui",
         instruction: "Import the generated four-color theme in each Slack workspace."
       )
-    case .zed, .alacritty, .ghostty, .codex, .herdr, .pi, .spicetify, .tuicr: nil
+    case .vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .ghostty, .codex, .herdr, .pi, .spicetify,
+      .tuicr:
+      nil
     }
   }
 }
@@ -305,6 +330,10 @@ enum EnvironmentLinkedPreset: CaseIterable, Sendable {
 /// in the order the lifecycle validates, revalidates, transitions and preflights them.
 enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
   case zedFamily = "zed_family"
+  case vscode
+  case cursor
+  case vscodium
+  case windsurf
   case zed
   case ghostty
   case alacritty
@@ -318,7 +347,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
   /// The linked preset whose enablement and external tuple also govern the file.
   var linkedPreset: EnvironmentLinkedPreset? {
     switch self {
-    case .zed, .alacritty, .zedFamily, .ghostty, .btop, .herdr: nil
+    case .vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .zedFamily, .ghostty, .btop, .herdr: nil
     case .codex: .codex
     case .pi: .pi
     case .spicetify: .spicetify
@@ -335,6 +364,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .pi: "Pi"
     case .spicetify: "Spicetify"
     case .ghostty: "Ghostty"
+    case .vscode, .cursor, .vscodium, .windsurf: VSCodeEditor(rawValue: rawValue)!.label
     case .zed: "Zed"
     case .zedFamily: "Zed theme family"
     case .alacritty: "Alacritty"
@@ -351,6 +381,8 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .pi: ConsumerHomePath.piSettings
     case .spicetify: ConsumerHomePath.spicetifyConfiguration
     case .ghostty: preconditionFailure("Ghostty configuration paths require the selected home")
+    case .vscode, .cursor, .vscodium, .windsurf:
+      preconditionFailure("VS Code family paths require the selected installation")
     case .zed: ".config/zed/settings.json"
     case .zedFamily: ".config/zed/themes/macarchy.json"
     case .alacritty: preconditionFailure("Alacritty configuration paths require the selected home")
@@ -367,6 +399,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .pi: EnvironmentEntryID.piConfiguration.rawValue
     case .spicetify: "spicetify_configuration"
     case .ghostty: "ghostty_configuration"
+    case .vscode, .cursor, .vscodium, .windsurf: "\(rawValue)_configuration"
     case .zed: "zed_configuration"
     case .zedFamily: "zed_family"
     case .alacritty: "alacritty_configuration"
@@ -386,6 +419,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .pi: "Pi settings"
     case .spicetify: "Spicetify external tuple"
     case .ghostty: "Ghostty configuration"
+    case .vscode, .cursor, .vscodium, .windsurf: "\(label) settings"
     case .zed: "Zed settings"
     case .zedFamily: "Zed theme family"
     case .alacritty: "Alacritty configuration"
@@ -408,6 +442,7 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .pi: ownership?.pi?.path
     case .spicetify: ownership?.spicetify?.path
     case .ghostty: ownership?.ghostty?.path
+    case .vscode, .cursor, .vscodium, .windsurf: ownership?.vscodeEditors?[rawValue]?.path
     case .zed: ownership?.zed?.path
     case .zedFamily: ownership?.zedFamily?.path
     case .alacritty: ownership?.alacritty?.path
@@ -420,11 +455,19 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
   func configurationURL(
     home: URL, ownership: EnvironmentOwnership? = nil,
     proposedAlacritty: EnvironmentAlacrittyOwnership? = nil,
-    proposedGhostty: EnvironmentGhosttyOwnership? = nil
+    proposedGhostty: EnvironmentGhosttyOwnership? = nil,
+    proposedVSCode: [String: EnvironmentVSCodeOwnership]? = nil
   ) throws -> URL {
     if self == .alacritty {
       guard let path = proposedAlacritty?.path ?? ownership?.alacritty?.path else {
         throw EnvironmentLifecycleError.blocked("Missing planned Alacritty configuration path")
+      }
+      return URL(filePath: path)
+    }
+    if VSCodeEditor(rawValue: rawValue) != nil {
+      guard let path = proposedVSCode?[rawValue]?.path ?? ownership?.vscodeEditors?[rawValue]?.path
+      else {
+        throw EnvironmentLifecycleError.blocked("Missing planned VS Code-family path")
       }
       return URL(filePath: path)
     }
