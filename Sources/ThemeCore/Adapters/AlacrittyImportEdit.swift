@@ -179,19 +179,43 @@ package struct AlacrittyImportEdit: Codable, Equatable, Sendable {
   }
   package func validateManaged(_ managed: Data) throws {
     guard hasValidShape else { throw Failure.drift }
-    var delta = 0
-    for change in changes {
-      let start = change.offset + delta
-      let end = start + change.inserted.count
-      guard start >= 0, end <= managed.count,
-        managed.subdata(in: start..<end) == change.inserted
-      else { throw Failure.drift }
-      delta += change.inserted.count - change.removed.count
-    }
     let imports = try Self.imports(String(decoding: managed, as: UTF8.self))
     guard imports.indices.filter({ imports[$0] == themePath }) == [elementIndex] else {
       throw Failure.drift
     }
+    let ownedBytes = try withoutFollowingSeparator(managed, imports: imports)
+    var delta = 0
+    for change in changes {
+      let start = change.offset + delta
+      let end = start + change.inserted.count
+      guard start >= 0, end <= ownedBytes.count,
+        ownedBytes.subdata(in: start..<end) == change.inserted
+      else { throw Failure.drift }
+      delta += change.inserted.count - change.removed.count
+    }
+  }
+
+  /// A later element in an originally empty array needs a new comma after ours.
+  /// Remove that separator with the first element, preserving user whitespace/comments.
+  private func withoutFollowingSeparator(_ managed: Data, imports: [String]) throws -> Data {
+    guard elementIndex == 0, imports.count > 1, changes.count == 1,
+      String(decoding: changes[0].inserted, as: UTF8.self)
+        .trimmingCharacters(in: .whitespacesAndNewlines) == (try Self.basicString(themePath))
+    else { return managed }
+    let text = String(decoding: managed, as: UTF8.self)
+    let selector = CanonicalTOMLSelector(configuration: text, table: "general", key: "import")
+    guard let assignment = selector.assignments.first else { throw Failure.drift }
+    let bytes = Array(managed)
+    let start = text[..<assignment.contentRange.lowerBound].utf8.count
+    let end = text[..<assignment.contentRange.upperBound].utf8.count
+    guard let equals = bytes[start..<end].firstIndex(of: 61) else { throw Failure.drift }
+    let tokens = try Self.arrayTokens(bytes, from: equals + 1, end: end)
+    guard tokens.count >= 5, tokens[1].kind == 34, tokens[2].kind == 44 else {
+      throw Failure.drift
+    }
+    var result = managed
+    result.removeSubrange(tokens[2].start..<tokens[2].end)
+    return result
   }
 
   package func restore(_ managed: Data) throws -> Data {
@@ -200,7 +224,8 @@ package struct AlacrittyImportEdit: Codable, Equatable, Sendable {
       let general = try TOMLTable(source: managed).table(forKey: "general")
       guard general.keys == ["import"] else { throw Failure.tableInUse }
     }
-    var result = managed
+    var result = try withoutFollowingSeparator(
+      managed, imports: Self.imports(String(decoding: managed, as: UTF8.self)))
     var delta = changes.reduce(0) { $0 + $1.inserted.count - $1.removed.count }
     for change in changes.reversed() {
       delta -= change.inserted.count - change.removed.count
