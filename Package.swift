@@ -89,6 +89,10 @@ let package = Package(
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
+      name: "MacarchyLookTests",
+      dependencies: ["MacarchyLook", .product(name: "Testing", package: "swift-testing")],
+      swiftSettings: [.swiftLanguageMode(.v6)]),
+    .testTarget(
       name: "MacarchyMenuTests",
       dependencies: ["MacarchyMenu", .product(name: "Testing", package: "swift-testing")],
       swiftSettings: [.swiftLanguageMode(.v6)]),

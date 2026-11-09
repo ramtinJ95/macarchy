@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-// This executable alone calls the private AppKit accent-color functions. Neither ThemeCore nor
+// This executable alone calls the private AppKit accent and SkyLight icon-style APIs. Neither ThemeCore nor
 // the main CLI links or loads them; `macarchy` runs this helper as a child process, so a crash
 // here cannot take the CLI down. Every command prints one JSON object on standard output:
 // `{"ok":true,"value":…}` with exit status 0, or `{"ok":false,"error":"…"}` with status 1.
@@ -9,6 +9,8 @@ import Foundation
 //   macarchy-look check           which controls resolve on this macOS, and its build
 //   macarchy-look get accent      the stored accent preset
 //   macarchy-look set accent N    sets preset N, reads it back, and reverts on a mismatch
+//   macarchy-look get icon-style  the stored {style, tint, custom} triple
+//   macarchy-look set icon-style STYLE TINT|- [#rrggbb]  sets and verifies; "-" keeps tint
 //
 // Accent presets: -2 multicolor, -1 graphite, 0 red, 1 orange, 2 yellow, 3 green, 4 blue,
 // 5 purple, 6 pink. -3, the hardware-matched color of some Macs, is reported but never set.
@@ -96,7 +98,20 @@ func run(_ arguments: [String]) throws(HelperFailure) -> Any {
   switch arguments {
   case ["check"]:
     guard let build = buildVersion() else { throw HelperFailure("cannot read the macOS build") }
-    return ["build": build, "accent": Accent.resolve() != nil]
+    return [
+      "build": build, "accent": Accent.resolve() != nil, "iconStyle": IconStyle.resolve() != nil,
+    ]
+  case ["get", "icon-style"]:
+    guard IconStyle.resolve() != nil else { throw .iconUnavailable }
+    return IconStyle.stored().json
+  case let command
+  where (4...5).contains(command.count)
+    && command[0] == "set" && command[1] == "icon-style":
+    guard let configuration = IconStyle.resolve() else { throw .iconUnavailable }
+    return try IconStyle.set(
+      .init(style: command[2], tint: command[3], custom: command.count == 5 ? command[4] : nil),
+      configuration
+    ).json
   case ["get", "accent"]:
     guard let functions = Accent.resolve() else { throw .unavailable }
     return Accent.stored(functions)
@@ -105,7 +120,9 @@ func run(_ arguments: [String]) throws(HelperFailure) -> Any {
     guard let functions = Accent.resolve() else { throw .unavailable }
     return try Accent.set(value, functions)
   default:
-    throw HelperFailure("usage: macarchy-look check | get accent | set accent <preset>")
+    throw HelperFailure(
+      "usage: macarchy-look check | get accent | set accent <preset> | get icon-style | set icon-style <style> <tint|-> [#rrggbb]"
+    )
   }
 }
 
