@@ -45,7 +45,9 @@ struct EnvironmentThemeBridgeState: Sendable {
         }
         return Entry(
           path: url.path,
-          data: try url == stateRoot.appending(path: AlacrittyAdapter.bridgePath)
+          data: try AlacrittyAdapter.statePaths.contains(where: {
+            url == stateRoot.appending(path: $0)
+          })
             ? PinnedFilesystem.readRegularFile(at: url).data
             : BoundedRegularFile.read(at: url).data,
           mode: UInt16(metadata.st_mode & 0o7777)
@@ -57,7 +59,7 @@ struct EnvironmentThemeBridgeState: Sendable {
   static func paths(ids: Set<EnvironmentEntryID>, stateRoot: URL, alacritty: Bool = false)
     -> [String]
   {
-    (alacritty ? [stateRoot.appending(path: AlacrittyAdapter.bridgePath).path] : [])
+    (alacritty ? AlacrittyAdapter.statePaths.map { stateRoot.appending(path: $0).path } : [])
       + (ids.contains(.kitty)
         ? [stateRoot.appending(path: KittyAdapter.bridgePath).path] : [])
       + (ids.contains(.starship)
@@ -75,7 +77,7 @@ struct EnvironmentThemeBridgeState: Sendable {
   func restore() throws {
     for entry in entries {
       let url = URL(filePath: entry.path)
-      if entry.path.hasSuffix("/" + AlacrittyAdapter.bridgePath) {
+      if AlacrittyAdapter.statePaths.contains(where: { entry.path.hasSuffix("/" + $0) }) {
         try AlacrittyAdapter.restoreBridge(at: url, data: entry.data, mode: entry.mode)
         continue
       }

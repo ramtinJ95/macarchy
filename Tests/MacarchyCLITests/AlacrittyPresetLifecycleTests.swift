@@ -35,10 +35,40 @@ struct AlacrittyPresetLifecycleTests {
     try FileManager.default.createDirectory(
       at: bridge.deletingLastPathComponent(), withIntermediateDirectories: true)
     try Data("# theme\n".utf8).write(to: bridge)
+    let connection = fixture.state.appending(path: AlacrittyAdapter.connectionPath)
+    try Data("{\"adopted_at_microseconds\":100}\n".utf8).write(to: connection)
     let torn = try await fixture.harness.teardown(consumerPaths: fixture.paths)
     #expect(torn.succeeded, "\(torn.output)")
     #expect((try? Data(contentsOf: fixture.configuration)) == original.map { Data($0.utf8) })
     #expect(!FileManager.default.fileExists(atPath: bridge.path))
+    #expect(!FileManager.default.fileExists(atPath: connection.path))
+  }
+  @Test func aggregateSnapshotsRestoreBothAlacrittyFiles() throws {
+    let fixture = try Fixture(original: nil)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let empty = try EnvironmentThemeBridgeState.capture(
+      ids: [], stateRoot: fixture.state, alacritty: true)
+    #expect(
+      empty.entries.map(\.path)
+        == AlacrittyAdapter.statePaths.map { fixture.state.appending(path: $0).path })
+    #expect(EnvironmentThemeBridgeState.pathsAreValid(empty.entries, stateRoot: fixture.state))
+    for path in AlacrittyAdapter.statePaths {
+      try AlacrittyAdapter.restoreBridge(
+        at: fixture.state.appending(path: path), data: Data("original".utf8), mode: 0o600)
+    }
+    let saved = try EnvironmentThemeBridgeState.capture(
+      ids: [], stateRoot: fixture.state, alacritty: true)
+    for path in AlacrittyAdapter.statePaths {
+      try Data("changed".utf8).write(to: fixture.state.appending(path: path))
+    }
+    try saved.restore()
+    for path in AlacrittyAdapter.statePaths {
+      #expect(try Data(contentsOf: fixture.state.appending(path: path)) == Data("original".utf8))
+    }
+    try empty.restore()
+    for path in AlacrittyAdapter.statePaths {
+      #expect(!FileManager.default.fileExists(atPath: fixture.state.appending(path: path).path))
+    }
   }
   @Test func missingAndOldApplicationDoNotAdopt() async throws {
     let fixture = try Fixture(original: "# keep\n", version: [0, 13, 2])

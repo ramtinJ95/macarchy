@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import TOMLDecoder
 import TestSupport
 import Testing
@@ -133,7 +134,7 @@ struct AlacrittyAdapterTests {
       let adapter = try fixture(home: home, reload: reload)
       #expect(adapter.inspection().status == .drifted)
       let first = try await adapter.reconciliation().run()
-      #expect(first.status == .restartRequired)
+      #expect(first.status == (reload ? .applied : .restartRequired))
       let bridge = home.appending(path: AlacrittyAdapter.bridgePath)
       #expect(
         try Data(contentsOf: bridge)
@@ -167,6 +168,59 @@ struct AlacrittyAdapterTests {
     }
   }
 
+  @Test func reopenBoundaryPersistsUntilEveryOldProcessExits() async throws {
+    try await withTemporaryRoot(named: "alacritty-watcher") { home in
+      let starts = Mutex<[UInt64]>([50])
+      let clock = Mutex<UInt64>(100)
+      let adapter = try fixture(
+        home: home, runningProcessStarts: { starts.withLock { $0 } }, now: { clock.withLock { $0 } }
+      )
+      #expect(adapter.repaintBoundary() == .nextLaunch)
+      for _ in 0..<2 {
+        let result = try await adapter.reconciliation().run()
+        #expect(result.status == .restartRequired)
+        #expect(result.message?.contains("Reopen Alacritty once") == true)
+        #expect(adapter.repaintBoundary() == .nextLaunch)
+        clock.withLock { $0 = 200 }
+      }
+      #expect(try AlacrittyConnection.read(root: home)?.adoptedAt == 100)
+      starts.withLock { $0 = [101] }
+      #expect(adapter.repaintBoundary() == .live)
+      #expect(try await adapter.reconciliation().run().status == .applied)
+      // One newer window does not clear the requirement for another old process.
+      starts.withLock { $0 = [50, 101] }
+      #expect(try await adapter.reconciliation().run().status == .restartRequired)
+      starts.withLock { $0 = [] }
+      #expect(adapter.repaintBoundary() == .live)
+      #expect(try await adapter.reconciliation().run().status == .applied)
+    }
+  }
+
+  @Test func missingConnectionWithAnExistingBridgeDoesNotProveWatcherReadiness() async throws {
+    try await withTemporaryRoot(named: "alacritty-missing-connection") { home in
+      let adapter = try fixture(home: home, runningProcessStarts: { [50] })
+      try AlacrittyAdapter.restoreBridge(
+        at: home.appending(path: AlacrittyAdapter.bridgePath), data: Data("old bridge".utf8),
+        mode: 0o644)
+      #expect(adapter.repaintBoundary() == .nextLaunch)
+      #expect(try await adapter.reconciliation().run().status == .restartRequired)
+      #expect(adapter.repaintBoundary() == .nextLaunch)
+    }
+  }
+
+  @Test func unreadableProcessObservationIsExplicit() throws {
+    try withTemporaryRoot(named: "alacritty-process-error") { home in
+      let adapter = try fixture(
+        home: home,
+        runningProcessStarts: {
+          throw AlacrittyConnection.Failure.observation("unreadable live PID")
+        })
+      #expect(throws: AlacrittyConnection.Failure.self) { try adapter.preflight() }
+      #expect(adapter.repaintBoundary() == .nextLaunch)
+      #expect(adapter.inspection().status == .failed)
+    }
+  }
+
   @Test func redirectedBridgeParentIsRefused() async throws {
     try await withTemporaryRoot(named: "alacritty-redirect") { home in
       let adapter = try fixture(home: home)
@@ -181,7 +235,9 @@ struct AlacrittyAdapterTests {
 
   private func fixture(
     home: URL, reload: Bool = true, available: Bool = true,
-    version: String = "alacritty 0.17.0 (aabbcc)"
+    version: String = "alacritty 0.17.0 (aabbcc)",
+    runningProcessStarts: @escaping @Sendable () throws -> [UInt64] = { [] },
+    now: @escaping @Sendable () -> UInt64 = { 100 }
   ) throws -> AlacrittyAdapter {
     let files = ThemeConsumerPaths.alacrittyConfigurationFiles(home: home, environment: [:])
     let source = Data("[general]\nlive_config_reload = \(reload)\n".utf8)
@@ -199,6 +255,6 @@ struct AlacrittyAdapterTests {
       processRunner: ProcessRunner { request in
         #expect(request.arguments == ["--version"])
         return ProcessResult(terminationStatus: 0, output: version)
-      })
+      }, runningProcessStarts: runningProcessStarts, now: now)
   }
 }
