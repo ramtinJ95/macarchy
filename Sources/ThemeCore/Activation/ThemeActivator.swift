@@ -905,6 +905,7 @@ public struct ThemeActivator: Sendable {
           appearance: package.appearance,
           semantic: package.semantic,
           terminal: package.terminal,
+          macos: package.macos,
           mappings: package.mappings,
           rendererVersions: Self.rendererVersions
         )
@@ -992,6 +993,8 @@ private struct GenerationThemeInput: Encodable {
   let appearance: ThemeAppearance
   let semantic: SemanticColors
   let terminal: TerminalColors
+  // Synthesized encodeIfPresent preserves pre-icon-style digests when absent.
+  let macos: MacOSThemeOptions?
   let mappings: [String: String]
   let rendererVersions: [String: Int]
 
@@ -999,7 +1002,7 @@ private struct GenerationThemeInput: Encodable {
     case manifestSchemaVersion = "manifest_schema_version"
     case themeSchemaVersion = "theme_schema_version"
     case themeID = "theme_id"
-    case appearance, semantic, terminal, mappings
+    case appearance, semantic, terminal, macos, mappings
     case rendererVersions = "renderer_versions"
   }
 }

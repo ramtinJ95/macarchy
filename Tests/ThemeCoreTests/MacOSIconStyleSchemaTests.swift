@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import TestSupport
 import Testing
@@ -5,6 +6,21 @@ import Testing
 @testable import ThemeCore
 
 struct MacOSIconStyleSchemaTests {
+  @Test func absentMacOSOptionsPreserveTheLegacyThemeDigest() throws {
+    try withTemporaryRoot(named: "icon-style-legacy-digest") { root in
+      let package = try BuiltInThemePackages.catppuccinMocha.get()
+      let manifest = try ThemeActivator(root: root).activate(package: package)
+      let legacy = LegacyGenerationThemeInput(
+        manifestSchemaVersion: GenerationManifest.currentSchemaVersion,
+        themeSchemaVersion: package.schemaVersion, themeID: package.id,
+        appearance: package.appearance, semantic: package.semantic, terminal: package.terminal,
+        mappings: package.mappings, rendererVersions: manifest.rendererVersions)
+      let digest = SHA256.hash(data: try prettyJSONDocument(legacy))
+      #expect(
+        manifest.themeDigest == "sha256:" + digest.map { String(format: "%02x", $0) }.joined())
+    }
+  }
+
   @Test(arguments: ThemeIconStyle.allCases)
   func optionalPackageFieldSurvivesMetadataAndNormalization(style: ThemeIconStyle) throws {
     try withTemporaryRoot(named: "icon-style-schema") { root in
@@ -115,5 +131,25 @@ struct MacOSIconStyleSchemaTests {
         == MacOSIconStyle(
           style: native, tint: style == .tinted ? "Other" : "-",
           custom: style == .tinted ? "#abcdef" : nil))
+  }
+}
+
+// Frozen pre-icon-style input shape: a nil field must encode as absent, never as null.
+private struct LegacyGenerationThemeInput: Encodable {
+  let manifestSchemaVersion: Int
+  let themeSchemaVersion: Int
+  let themeID: String
+  let appearance: ThemeAppearance
+  let semantic: SemanticColors
+  let terminal: TerminalColors
+  let mappings: [String: String]
+  let rendererVersions: [String: Int]
+
+  enum CodingKeys: String, CodingKey {
+    case manifestSchemaVersion = "manifest_schema_version"
+    case themeSchemaVersion = "theme_schema_version"
+    case themeID = "theme_id"
+    case appearance, semantic, terminal, mappings
+    case rendererVersions = "renderer_versions"
   }
 }
