@@ -161,7 +161,8 @@ struct AlacrittyPresetLifecycleTests {
     #expect(
       try runner.finishDeferredApply(
         resourcesRoot: repositoryRoot.appending(path: "Environment"), profile: profile,
-        stateRoot: fixture.state, homeDirectory: fixture.home, commit: true))
+        stateRoot: fixture.state, homeDirectory: fixture.home, commit: true
+      ).changed)
     #expect(probes.withLock { $0 } == 2)
     #expect(try EnvironmentStateStore(stateRoot: fixture.state).readTransaction() == nil)
     #expect(try await fixture.harness.teardown(consumerPaths: fixture.paths).succeeded)
