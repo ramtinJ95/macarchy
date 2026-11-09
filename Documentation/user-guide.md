@@ -2001,10 +2001,21 @@ macarchy setup teardown
 ```
 
 Teardown reverses recorded configuration changes and preserves unrelated data
-and installed packages. It also puts back each display's wallpaper from before Macarchy
-first changed it, and the macOS appearance from before setup. A wallpaper or
-appearance you changed yourself since then is kept and named in the report, as is
-an original image that no longer exists or a display that is not connected. It does not cover clipboard history: if you enabled
+and installed packages. When setup created the canonical theme, teardown retires
+the active Macarchy generation even after theme switches or undo. It restores
+the original wallpaper and macOS appearance where Macarchy's values are still
+present; appearance is compared with the active theme, not the setup-time theme.
+Enabled macOS-look controls use their own recorded applied values.
+User-changed values are kept and named in the report, as are missing original
+wallpaper images and disconnected displays. A canonical theme that already existed
+before setup remains external and is not retired.
+
+A concurrent theme switch after teardown planning stops retirement with a retry
+message. Run `macarchy setup teardown` again to validate the current theme and
+finish any remaining restoration. Teardown does not reconnect absent default
+consumers when it is about to retire its own canonical theme.
+
+It does not cover clipboard history: if you enabled
 clearing, run `macarchy clipboard disable` first. That removes the hourly
 automatic-clear job, restores Maccy's two settings and keeps its history. It also
 does not cover the idle screensaver: if you turned it on, run

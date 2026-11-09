@@ -1,12 +1,32 @@
 import AppKit
 import Foundation
 import Synchronization
+import TestSafety
 import TestSupport
 import Testing
 
 @testable import ThemeCore
 
 struct WallpaperOriginalsTests {
+  /// Bounded guest gate: the lean profile cannot select wallpaper without yabai. The driver
+  /// calls the real adapter here, then switches/undoes themes and uses PUBLIC setup teardown.
+  /// No fabricated originals receipt and no claim of public wallpaper-provider qualification.
+  @Test(
+    .enabled(if: ProcessInfo.processInfo.environment["MACARCHY_TEST_WALLPAPER_STATE_ROOT"] != nil))
+  func guestApplyActiveWallpaperForTeardownGate() async throws {
+    let path = try #require(
+      ProcessInfo.processInfo.environment["MACARCHY_TEST_WALLPAPER_STATE_ROOT"])
+    let root = URL(filePath: path)
+    try IsolatedTestEnvironment.requireLocalDirectory(root)
+    let active = try ThemeGenerationReader(root: root).activeManifest()
+    #expect(active.artifacts[WallpaperAdapter.outputPath] != nil)
+    let url = active.artifactURL(root: root, path: WallpaperAdapter.outputPath)
+    let result = try await WallpaperAdapter(root: root, control: .live)
+      .reconciliation(desiredWallpaperURL: { url }).run()
+    #expect(result.status == .applied, "\(result.message ?? "")")
+    #expect(!(try WallpaperOriginalStore(root: root).load()).isEmpty)
+  }
+
   @Test func reconciliationRecordsEachOriginalBeforeTheFirstChangeOnly() async throws {
     try await withTemporaryRoot(named: "macarchy-wallpaper-originals") { root in
       let displays = FakeDisplays([
