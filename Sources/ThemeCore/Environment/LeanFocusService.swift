@@ -237,16 +237,25 @@ package struct LeanFocusService: Sendable {
         parentDescriptor: directory, name: propertyListURL.lastPathComponent,
         url: propertyListURL, data: configuration.propertyList(), mode: 0o600)
     }
+    // Re-register an outdated exact-owned job so launchd derives fresh launch
+    // constraints for the new image. kickstart -k retains the old registration.
+    // Keep the plist and runtime record: this is an upgrade, not ownership removal.
+    if before.isRunning {
+      let stopped = try command(["bootout", job])
+      guard stopped.terminationStatus == 0 else {
+        throw LeanFocusServiceError("upgrade bootout failed: \(stopped.output)")
+      }
+      try settle(configuration: configuration, running: false)
+    }
     // A persisted attempt may resume an exact dormant registration, never an
-    // arbitrary plist. After an upgrade, restart only the exact owned label.
+    // arbitrary plist. A failed bootstrap stays explicit; do not fall back.
+    let kickstart = before.loaded && !before.isRunning
     let arguments =
-      before.isRunning
-      ? ["kickstart", "-k", job]
-      : before.loaded ? ["kickstart", job] : ["bootstrap", domain.target, propertyListURL.path]
+      kickstart ? ["kickstart", job] : ["bootstrap", domain.target, propertyListURL.path]
     // A kickstart can wait for launchd's 30-second throttle after a recent
     // normal exit. Keep inspection bounded at 5 s, but allow this one owned
     // launch request to complete without killing it while launchd is waiting.
-    let result = try command(arguments, timeout: before.loaded ? 35 : 5)
+    let result = try command(arguments, timeout: kickstart ? 35 : 5)
     guard result.terminationStatus == 0 else {
       throw LeanFocusServiceError("launch failed: \(result.output)")
     }

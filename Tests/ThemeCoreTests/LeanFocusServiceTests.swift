@@ -157,6 +157,8 @@ struct LeanFocusServiceTests {
     "retained", "deleted", "replaced", "start-mismatch", "start-unavailable", "pid-mismatch",
     "foreign-label", "foreign-root", "missing-record", "malformed-record", "current-record",
     "missing-new-helper", "changed-plist", "changed-arguments", "extra-process",
+    "bootout-failed", "bootout-unsettled", "bootstrap-failed", "bootstrap-unsettled",
+    "plist-changed-after-bootout",
   ])
   func stablePathSurvivesUpgradeAndRestartsOnlyTheExactOwnedLabel(condition: String) throws {
     #expect(
@@ -204,20 +206,40 @@ struct LeanFocusServiceTests {
       }
       if condition == "missing-new-helper" { try FileManager.default.removeItem(at: next) }
       if condition == "changed-plist" { try Data("foreign".utf8).write(to: plist) }
-      let state = Mutex((restarted: false, calls: [[String]]()))
+      let state = Mutex((loaded: true, restarted: false, calls: [[String]]()))
       let service = LeanFocusService(
         homeDirectory: root,
         runner: ProcessRunner { request in
-          state.withLock { value in
+          try state.withLock { value in
             value.calls.append(request.arguments)
-            if request.arguments.first == "kickstart" {
-              #expect(request.timeout == 35)
+            if request.arguments.first == "bootout" {
+              #expect(request.timeout == 5)
               #expect(
-                request.arguments == [
-                  "kickstart", "-k", "gui/\(getuid())/\(LeanFocusService.label)",
-                ])
-              value.restarted = true
+                request.arguments == ["bootout", "gui/\(getuid())/\(LeanFocusService.label)"])
+              if condition == "bootout-failed" {
+                return ProcessResult(terminationStatus: 5, output: "bootout refused")
+              }
+              value.loaded = condition == "bootout-unsettled"
+              if condition == "plist-changed-after-bootout" {
+                try Data("foreign".utf8).write(to: plist)
+              }
               return ProcessResult(terminationStatus: 0, output: "")
+            }
+            if request.arguments.first == "bootstrap" {
+              #expect(request.timeout == 5)
+              #expect(request.arguments == ["bootstrap", "gui/\(getuid())", plist.path])
+              #expect(!value.loaded)
+              if condition == "bootstrap-failed" {
+                return ProcessResult(terminationStatus: 5, output: "bootstrap refused")
+              }
+              value.loaded = condition != "bootstrap-unsettled"
+              value.restarted = value.loaded
+              return ProcessResult(terminationStatus: 0, output: "")
+            }
+            if !value.loaded {
+              return ProcessResult(
+                terminationStatus: request.executableURL.lastPathComponent == "pgrep" ? 1 : 113,
+                output: "")
             }
             let pid = value.restarted ? 124 : 123
             if request.executableURL.lastPathComponent == "pgrep" {
@@ -250,7 +272,11 @@ struct LeanFocusServiceTests {
           condition == "start-unavailable" ? nil : condition == "start-mismatch" ? 1001 : 1000
         },
         wait: {}, currentHomeDirectory: root)
-      guard ["retained", "deleted", "replaced"].contains(condition) else {
+      let upgradeFailure = [
+        "bootout-failed", "bootout-unsettled", "bootstrap-failed", "bootstrap-unsettled",
+        "plist-changed-after-bootout",
+      ].contains(condition)
+      guard ["retained", "deleted", "replaced"].contains(condition) || upgradeFailure else {
         #expect(throws: (any Error).self) { try service.inspect(configuration: configuration) }
         #expect(throws: (any Error).self) { try service.start(configuration) }
         #expect(state.withLock { $0.calls.allSatisfy { $0.first == "print" || $0.first == "-a" } })
@@ -258,11 +284,38 @@ struct LeanFocusServiceTests {
       }
       #expect(try !service.inspect(configuration: configuration).executableIsCurrent)
       #expect(state.withLock { $0.calls.allSatisfy { $0.first == "print" || $0.first == "-a" } })
+      let bootout = ["bootout", "gui/\(getuid())/\(LeanFocusService.label)"]
+      let bootstrap = ["bootstrap", "gui/\(getuid())", plist.path]
+      if upgradeFailure {
+        do {
+          try service.start(configuration)
+          Issue.record("failed upgrade was reported as successful")
+        } catch {
+          let expected =
+            condition == "bootout-failed"
+            ? "upgrade bootout failed: bootout refused"
+            : condition == "bootstrap-failed"
+              ? "launch failed: bootstrap refused"
+              : "service did not settle:"
+          #expect(String(describing: error).contains(expected))
+        }
+        let expected = condition.hasPrefix("bootstrap-") ? [bootout, bootstrap] : [bootout]
+        #expect(
+          state.withLock { $0.calls.filter { $0.first != "print" && $0.first != "-a" } }
+            == expected)
+        #expect(
+          try Data(contentsOf: plist)
+            == (condition == "plist-changed-after-bootout" ? Data("foreign".utf8) : bytes))
+        #expect(try LeanFocusRuntime.read(configuration: configuration) == record)
+        return
+      }
       try service.start(configuration)
       #expect(try service.inspect(configuration: configuration).processID == 124)
       #expect(try service.inspect(configuration: configuration).executableIsCurrent)
       #expect(try Data(contentsOf: plist) == bytes)
-      #expect(state.withLock { $0.calls.filter { $0.first == "kickstart" }.count } == 1)
+      #expect(
+        state.withLock { $0.calls.filter { $0.first != "print" && $0.first != "-a" } }
+          == [bootout, bootstrap])
       #expect(
         LeanFocusServiceConfiguration.physicalPath(stable.path)
           == LeanFocusServiceConfiguration.physicalPath(next.path))
