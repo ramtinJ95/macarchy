@@ -2033,3 +2033,29 @@ HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
 ```
 
 Uninstalling does not purge your Macarchy state directory.
+
+
+### Herdr desktop app
+
+Herdr app 0.1.14 or newer is a separate opt-in consumer from terminal Herdr:
+
+```toml
+[presets]
+herdr_app = true
+```
+
+Install `Herdr.app` in `/Applications` or `~/Applications` and open it once.
+Review `macarchy environment plan` before applying: setup adopts only the
+`theme` member in `~/.config/herdr-app/settings.json` and creates the watched
+regular `themes/macarchy-current.json` palette. Keybindings, mods, fonts,
+sizes, sessions and other settings remain user-owned. Disable the preset to
+restore the original member; unowned existing palettes and owned-file drift
+are refused, not overwritten.
+
+`macarchy reconcile herdr-app` refreshes the palette from the active theme,
+including older sealed generations; subsequent theme selections do this
+automatically. Panels and terminal colors reload live, without app or core
+restart. Layout-specific themes/colors and Herdr's theme-picker overrides
+still take precedence over settings: use the standard Herdr layout without
+such overrides to follow Macarchy. Macarchy never rewrites custom layouts.
+The supported configuration home is `~/.config/herdr-app`.

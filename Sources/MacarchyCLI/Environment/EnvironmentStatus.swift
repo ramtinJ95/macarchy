@@ -488,6 +488,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
   let ghosttyVersion: @Sendable () throws -> [Int]
   let vscodeDiscover: @Sendable (VSCodeEditor) throws -> VSCodeEditor.Installation
   let vscodeRunner: ProcessRunner
+  let herdrAppVersion: @Sendable () throws -> [Int]
   let zedVersion: @Sendable () throws -> [Int]
 
   static let live = Self(prerequisites: .live, theme: .live, verifier: .live)
@@ -503,6 +504,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
       try $0.discover()
     },
     vscodeRunner: ProcessRunner = .live,
+    herdrAppVersion: @escaping @Sendable () throws -> [Int] = HerdrAppAdapter.installedVersion,
     zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion
   ) {
     self.prerequisites = prerequisites
@@ -513,6 +515,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
     self.ghosttyVersion = ghosttyVersion
     self.vscodeDiscover = vscodeDiscover
     self.vscodeRunner = vscodeRunner
+    self.herdrAppVersion = herdrAppVersion
     self.zedVersion = zedVersion
   }
 
@@ -632,7 +635,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
     let provider = EnvironmentProviderInspector(
       alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion,
       vscodeDiscover: vscodeDiscover, vscodeRunner: vscodeRunner,
-      zedVersion: zedVersion
+      herdrAppVersion: herdrAppVersion, zedVersion: zedVersion
     )
     .inspectIncludingBordersRuntime(
       composition: composition,

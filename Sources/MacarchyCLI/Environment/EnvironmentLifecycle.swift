@@ -443,6 +443,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
               || inspection.proposedVSCodeOwnership?.values.contains(where: {
                 $0.path.hasPrefix(directory + "/")
               }) == true
+              || inspection.proposedHerdrAppOwnership?.path.hasPrefix(directory + "/") == true
+              || inspection.proposedHerdrAppPaletteOwnership?.path.hasPrefix(directory + "/")
+                == true
               || inspection.proposedZedOwnership?.path.hasPrefix(directory + "/") == true
               || inspection.proposedZedFamilyOwnership?.path.hasPrefix(directory + "/") == true
           }
@@ -457,7 +460,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
       spicetify: inspection.proposedSpicetifyOwnership,
       ghostty: inspection.proposedGhosttyOwnership,
       vscodeEditors: inspection.proposedVSCodeOwnership,
+      herdrApp: inspection.proposedHerdrAppOwnership,
       zed: inspection.proposedZedOwnership,
+      herdrAppPalette: inspection.proposedHerdrAppPaletteOwnership,
       zedFamily: inspection.proposedZedFamilyOwnership,
       alacritty: inspection.proposedAlacrittyOwnership,
       tuicr: inspection.proposedTuicrOwnership,
@@ -483,6 +488,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
       || previous?.spicetify != proposed.spicetify
       || previous?.ghostty != proposed.ghostty
       || previous?.vscodeEditors != proposed.vscodeEditors
+      || previous?.herdrApp != proposed.herdrApp
+      || previous?.herdrAppPalette != proposed.herdrAppPalette
       || previous?.zed != proposed.zed || previous?.zedFamily != proposed.zedFamily
       || previous?.alacritty != proposed.alacritty
       || previous?.tuicr != proposed.tuicr
@@ -893,6 +900,16 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try VSCodeAdapter.uninstall(
           installation: previous.installation, runner: inspector.vscodeRunner)
       }
+    case .herdrApp:
+      try EnvironmentPresetFileTransaction<EnvironmentHerdrAppOwnership>(
+        homeDirectory: homeDirectory
+      )
+      .transition(from: old, to: new, replacementName: replacementName)
+    case .herdrAppPalette:
+      try EnvironmentPresetFileTransaction<EnvironmentHerdrAppPaletteOwnership>(
+        homeDirectory: homeDirectory
+      )
+      .transition(from: old, to: new, replacementName: replacementName)
     case .zed:
       try EnvironmentPresetFileTransaction<EnvironmentZedOwnership>(homeDirectory: homeDirectory)
         .transition(from: old, to: new, replacementName: replacementName)
@@ -945,6 +962,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
   private func validate(_ ownership: EnvironmentOwnership?) throws {
     guard let ownership else { return }
     guard ownership.hasValidShape,
+      ownership.herdrAppPalette == nil || ownership.herdrAppPalette?.stateRoot == stateRoot.path,
       ownership.zedFamily == nil || ownership.zedFamily?.stateRoot == stateRoot.path,
       ownership.alacritty == nil
         || ownership.alacritty?.edit.themePath
@@ -1013,6 +1031,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
         }
         + [
           homeDirectory.appending(path: ".config").path,
+          homeDirectory.appending(path: ".config/herdr-app").path,
+          homeDirectory.appending(path: ".config/herdr-app/themes").path,
           homeDirectory.appending(path: ".config/zed").path,
           homeDirectory.appending(path: ".config/zed/themes").path,
           homeDirectory.appending(path: ConsumerHomePath.herdrDirectory).path,
@@ -1149,6 +1169,17 @@ struct EnvironmentTransactionCoordinator: Sendable {
           version: VSCodeAdapter.installedVersion(
             cli: owner.installation.cli, runner: inspector.vscodeRunner),
           installation: owner.installation, initialVersion: owner.initialVersion)
+    }
+    if let herdrApp = ownership.herdrApp {
+      try EnvironmentPresetFileTransaction<EnvironmentHerdrAppOwnership>(
+        homeDirectory: homeDirectory
+      )
+      .preflight(herdrApp)
+    }
+    if let family = ownership.herdrAppPalette {
+      try EnvironmentPresetFileTransaction<EnvironmentHerdrAppPaletteOwnership>(
+        homeDirectory: homeDirectory
+      ).preflight(family)
     }
     if let zed = ownership.zed {
       try EnvironmentPresetFileTransaction<EnvironmentZedOwnership>(homeDirectory: homeDirectory)

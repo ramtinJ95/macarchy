@@ -27,6 +27,8 @@ struct EnvironmentProviderInspection: Sendable {
   var proposedSpicetifyOwnership: EnvironmentSpicetifyOwnership? = nil
   var proposedGhosttyOwnership: EnvironmentGhosttyOwnership? = nil
   var proposedVSCodeOwnership: [String: EnvironmentVSCodeOwnership]? = nil
+  var proposedHerdrAppOwnership: EnvironmentHerdrAppOwnership? = nil
+  var proposedHerdrAppPaletteOwnership: EnvironmentHerdrAppPaletteOwnership? = nil
   var proposedZedOwnership: EnvironmentZedOwnership? = nil
   var proposedZedFamilyOwnership: EnvironmentZedFamilyOwnership? = nil
   var proposedAlacrittyOwnership: EnvironmentAlacrittyOwnership? = nil
@@ -55,6 +57,8 @@ struct EnvironmentProviderInspection: Sendable {
     case .spicetify: proposedSpicetifyOwnership != nil
     case .ghostty: proposedGhosttyOwnership != nil
     case .vscode, .cursor, .vscodium, .windsurf: proposedVSCodeOwnership?[file.rawValue] != nil
+    case .herdrApp: proposedHerdrAppOwnership != nil
+    case .herdrAppPalette: proposedHerdrAppPaletteOwnership != nil
     case .zed: proposedZedOwnership != nil
     case .zedFamily: proposedZedFamilyOwnership != nil
     case .alacritty: proposedAlacrittyOwnership != nil
@@ -74,6 +78,7 @@ struct EnvironmentProviderInspector: Sendable {
   let ghosttyVersion: @Sendable () throws -> [Int]
   let vscodeDiscover: @Sendable (VSCodeEditor) throws -> VSCodeEditor.Installation
   let vscodeRunner: ProcessRunner
+  let herdrAppVersion: @Sendable () throws -> [Int]
   let zedVersion: @Sendable () throws -> [Int]
   let slackPreset: EnvironmentSlackPreset
   /// Only unified first-install planning supplies a rendered, not-yet-active theme.
@@ -91,12 +96,14 @@ struct EnvironmentProviderInspector: Sendable {
       try $0.discover()
     },
     vscodeRunner: ProcessRunner = .live,
+    herdrAppVersion: @escaping @Sendable () throws -> [Int] = HerdrAppAdapter.installedVersion,
     zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion
   ) {
     self.alacrittyVersion = alacrittyVersion
     self.ghosttyVersion = ghosttyVersion
     self.vscodeDiscover = vscodeDiscover
     self.vscodeRunner = vscodeRunner
+    self.herdrAppVersion = herdrAppVersion
     self.zedVersion = zedVersion
     self.slackPreset = slackPreset
     self.bootstrapTheme = bootstrapTheme
@@ -567,6 +574,19 @@ struct EnvironmentProviderInspector: Sendable {
           vscodeEvidence[EnvironmentKeyOwnedFile(rawValue: editor.rawValue)!] = evidence
         }
       }
+      let herdrApp = try inspectHerdrApp(
+        enabled: composition.profile.presets.herdrApp, ownership: ownership?.herdrApp,
+        home: homeDirectory)
+      let herdrAppPalette = try inspectHerdrAppPalette(
+        enabled: composition.profile.presets.herdrApp, ownership: ownership?.herdrAppPalette,
+        home: homeDirectory, root: stateRoot)
+      for entry in [herdrApp.entry, herdrAppPalette.entry].compactMap({ $0 }) {
+        inspections.append(entry)
+      }
+      for path in [herdrApp.proposedOwnership?.path, herdrAppPalette.proposedOwnership?.path]
+        .compactMap({ $0 }
+        )
+      { try recordMissingParents(of: URL(filePath: path)) }
       let zed = try inspectZed(
         enabled: composition.profile.presets.zed, ownership: ownership?.zed, home: homeDirectory)
       let zedFamily = try inspectZedFamily(
@@ -659,6 +679,8 @@ struct EnvironmentProviderInspector: Sendable {
               .pi: pi.proposedOwnership?.path,
               .spicetify: spicetify.proposedOwnership?.path,
               .ghostty: ghostty.proposedOwnership?.path,
+              .herdrApp: herdrApp.proposedOwnership?.path,
+              .herdrAppPalette: herdrAppPalette.proposedOwnership?.path,
               .zed: zed.proposedOwnership?.path, .zedFamily: zedFamily.proposedOwnership?.path,
               .alacritty: alacritty.proposedOwnership?.path,
               .tuicr: tuicr.proposedOwnership?.path,
@@ -681,6 +703,8 @@ struct EnvironmentProviderInspector: Sendable {
         proposedSpicetifyOwnership: spicetify.proposedOwnership,
         proposedGhosttyOwnership: ghostty.proposedOwnership,
         proposedVSCodeOwnership: vscode.isEmpty ? nil : vscode,
+        proposedHerdrAppOwnership: herdrApp.proposedOwnership,
+        proposedHerdrAppPaletteOwnership: herdrAppPalette.proposedOwnership,
         proposedZedOwnership: zed.proposedOwnership,
         proposedZedFamilyOwnership: zedFamily.proposedOwnership,
         proposedAlacrittyOwnership: alacritty.proposedOwnership,
@@ -692,6 +716,7 @@ struct EnvironmentProviderInspector: Sendable {
           .pi: pi.externalEvidence,
           .spicetify: spicetify.externalEvidence,
           .ghostty: ghostty.externalEvidence,
+          .herdrApp: herdrApp.externalEvidence, .herdrAppPalette: herdrAppPalette.externalEvidence,
           .zed: zed.externalEvidence, .zedFamily: zedFamily.externalEvidence,
           .alacritty: alacritty.externalEvidence,
           .tuicr: tuicr.externalEvidence,

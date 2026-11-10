@@ -254,6 +254,27 @@ enum ThemeRuntimeSelection {
         version: VSCodeAdapter.installedVersion(cli: owner.installation.cli),
         installation: owner.installation, initialVersion: owner.initialVersion)
     }
+    if let herdrApp = ownership.herdrApp, let family = ownership.herdrAppPalette {
+      paths.herdrAppValidateOwnership = { target in
+        guard target.standardizedFileURL.path == family.path,
+          herdrApp.path
+            == ThemeConsumerPaths.herdrAppConfigurationDirectory(home: homeDirectory).appending(
+              path: "settings.json"
+            ).path,
+          family.path
+            == ThemeConsumerPaths.herdrAppConfigurationDirectory(home: homeDirectory).appending(
+              path: "themes/macarchy-current.json"
+            ).path,
+          family.stateRoot == stateRoot.path,
+          try EnvironmentHerdrAppOwnership.matchesManaged(
+            PinnedFilesystem.readRegularFile(at: URL(filePath: herdrApp.path)).data,
+            at: URL(filePath: herdrApp.path)),
+          try family.matchesManaged(
+            PinnedFilesystem.readRegularFile(at: URL(filePath: family.path)).data,
+            at: URL(filePath: family.path))
+        else { throw HerdrAppAdapter.Failure.drift }
+      }
+    }
     if let zed = ownership.zed, let family = ownership.zedFamily {
       paths.zedValidateOwnership = { target in
         guard target.standardizedFileURL.path == family.path,

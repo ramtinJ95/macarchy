@@ -15,6 +15,6 @@ Plan for theme 'catppuccin-mocha' with background 'default':
   tuicr: tuicr palette (generated/tuicr.toml); fresh session; ready
   wallpaper: desktop wallpaper on every display (generated/wallpaper.png); live; ready
   yazi: Yazi flavor (generated/yazi-flavor.toml, generated/yazi.tmTheme); reloads; ready
-Disabled in the profile: borders, lean-focus-ring, vscode, cursor, vscodium, windsurf, zed, alacritty, ghostty, macos-accent, macos-icon-style, user-scripts
+Disabled in the profile: borders, lean-focus-ring, vscode, cursor, vscodium, windsurf, herdr-app, zed, alacritty, ghostty, macos-accent, macos-icon-style, user-scripts
 Canonical state: unchanged (dry run). No files written.
-Apply exactly this plan: macarchy theme set catppuccin-mocha --reviewed sha256:fdce6aec25006b7e64e1b60b0ba97801961a8db6e4af6baf57fca7eddaae8573
+Apply exactly this plan: macarchy theme set catppuccin-mocha --reviewed sha256:9cbeeccb598a76c1b006dc13e3eff4b65241d01b19095480be7f509698f0bc6d

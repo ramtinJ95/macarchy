@@ -5,6 +5,12 @@ package struct ThemeConsumerPaths: Sendable {
   package var vscodeValidateOwnership: @Sendable (VSCodeEditor, URL) throws -> Void = { _, _ in
     throw VSCodeAdapter.Failure.drift
   }
+  package var herdrAppValidateOwnership: @Sendable (URL) throws -> Void = { _ in
+    throw HerdrAppAdapter.Failure.drift
+  }
+  package static func herdrAppConfigurationDirectory(home: URL) -> URL {
+    home.appending(path: ".config/herdr-app").standardizedFileURL
+  }
   package var zedValidateOwnership: @Sendable (URL) throws -> Void = { _ in
     throw ZedAdapter.Failure.drift
   }

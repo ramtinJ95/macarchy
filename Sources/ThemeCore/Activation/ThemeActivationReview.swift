@@ -48,6 +48,7 @@ extension RuntimeAdapterKind {
     case .alacritty:
       "Alacritty colors (automatic reload when enabled; first connection may require next launch)"
     case .ghostty: "Ghostty colors (live since 1.2.0; older versions reload manually)"
+    case .herdrApp: "Herdr app terminal and panel palette (live)"
     case .zed: "Zed theme member and family (live)"
     case .vscode, .cursor, .vscodium, .windsurf:
       "Macarchy theme extension and default-profile color-theme settings"
@@ -74,7 +75,8 @@ extension RuntimeAdapterKind {
   /// whose current ownership delivers it later reports its own boundary to the review.
   package var repaint: ThemeRepaintBoundary {
     switch self {
-    case .zed, .macOSAccent, .macOSIconStyle, .alacritty, .ghostty, .macOSAppearance, .borders,
+    case .herdrApp, .zed, .macOSAccent, .macOSIconStyle, .alacritty, .ghostty, .macOSAppearance,
+      .borders,
       .leanFocus, .neovim,
       .pi,
       .sketchyBar,

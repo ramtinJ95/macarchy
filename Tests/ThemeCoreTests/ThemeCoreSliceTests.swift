@@ -201,7 +201,7 @@ struct ThemeCoreSliceTests {
           "generated/btop.theme",
           "generated/capabilities.json", "generated/eza.yml", "generated/ghostty.conf",
           "generated/zed.json", "generated/vscode-package.json", "generated/vscode-theme.json",
-          "generated/herdr.txt",
+          "generated/herdr-app.json", "generated/herdr.txt",
           "generated/kitty.conf", "generated/neovim.lua", "generated/pi.json",
           "generated/sketchybar.lua", "generated/sketchybar.sh", "generated/slack.txt",
           "generated/spicetify.ini",

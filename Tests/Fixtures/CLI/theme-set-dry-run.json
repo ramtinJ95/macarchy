@@ -169,7 +169,7 @@
         "requirement" : "required"
       }
     ],
-    "digest" : "sha256:fdce6aec25006b7e64e1b60b0ba97801961a8db6e4af6baf57fca7eddaae8573",
+    "digest" : "sha256:9cbeeccb598a76c1b006dc13e3eff4b65241d01b19095480be7f509698f0bc6d",
     "disabled_consumers" : [
       "borders",
       "lean-focus-ring",
@@ -177,6 +177,7 @@
       "cursor",
       "vscodium",
       "windsurf",
+      "herdr-app",
       "zed",
       "alacritty",
       "ghostty",
