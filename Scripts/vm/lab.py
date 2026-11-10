@@ -383,7 +383,7 @@ def validate_action(request):
         raise LabError("Only the run-local guest-password reference is supported.")
     if action == "key" and request["key"] not in (
             "space", "return", "tab", "backtab", "escape", "up", "down", "left", "right",
-            "keyboard-navigation", "spotlight"):
+            "keyboard-navigation", "spotlight", "f1"):
         raise LabError("Unsupported key; no arbitrary host shortcuts.")
     if action == "click" and any(
             type(request[key]) not in (int, float) or not math.isfinite(request[key])

@@ -73,6 +73,10 @@ password field and hides `Enter Password`. If that placeholder is visible in an
 empty field, run `verify.py login` directly. This succeeded on the prepared test
 baseline during M6.7.3b verification; no wake input was needed.
 
+The PID-targeted keyboard controller also exposes F1 (`key: f1`) for application
+command palettes such as VS Code's. It uses the same owned-window and unchanged
+host-focus checks; it does not activate the Tart window or post global input.
+
 Only a black, sleeping display needs waking. Prefer a supported PID-targeted,
 non-typing input, such as a standalone modifier or pointer move, then capture and
 inspect again. Check the controller's supported actions first; the current

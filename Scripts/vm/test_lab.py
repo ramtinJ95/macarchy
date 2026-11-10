@@ -150,6 +150,7 @@ class SessionTests(unittest.TestCase):
                         {"action": "key", "key": "backtab"},
                         {"action": "key", "key": "keyboard-navigation"},
                         {"action": "key", "key": "spotlight"},
+                        {"action": "key", "key": "f1"},
                         {"action": "wait", "seconds": 10},
                         {"action": "click-text", "text": "English"},
                         {"action": "expect-text", "text": "English"},
