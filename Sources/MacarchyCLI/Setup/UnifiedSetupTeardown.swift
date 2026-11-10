@@ -434,9 +434,8 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       return result
     }
 
-    // A resumed teardown is a new attempt. Without an in-memory preflight observation,
-    // the theme stage validates and pins the current generation when it resumes. A stale
-    // observation must not trap a forward-recovery journal forever after a theme-set race.
+    // Before retirement starts a retry may observe afresh. Once its write-ahead target or
+    // commit is durable, the theme stage must not adopt a new canonical lifecycle.
     var result = UnifiedSetupRecoveryResult()
     var remaining = transaction.stages
     for stageID in transaction.stages {
@@ -455,9 +454,9 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       result.record(execution, for: stageID)
       try faultInjector(stageID.tornDownCheckpoint)
       remaining.removeAll { $0 == stageID }
-      try store.write(transaction.replacing(stages: remaining))
+      try store.write((try store.read() ?? transaction).replacing(stages: remaining))
     }
-    try store.write(transaction.replacing(phase: .committing, stages: []))
+    try store.write((try store.read() ?? transaction).replacing(phase: .committing, stages: []))
     try store.remove()
     return result
   }

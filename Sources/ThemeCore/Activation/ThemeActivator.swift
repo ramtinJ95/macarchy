@@ -158,7 +158,8 @@ public struct ThemeActivator: Sendable {
   package func deactivate(
     expectedGenerationID: String,
     dryRun: Bool,
-    beforeRetiringLocked: () throws -> Void = {}
+    beforeRetiringLocked: () throws -> Void = {},
+    afterRetiringLocked: () throws -> Void = {}
   ) throws -> String? {
     let cleanupError: String? = try activationLock.withLock {
       let manifest = try ThemeGenerationReader(root: root).activeManifest()
@@ -232,6 +233,9 @@ public struct ThemeActivator: Sendable {
         if statusClaimed { try FileManager.default.removeItem(at: statusClaim) }
         makeWritableForRemoval(generationClaim)
         try FileManager.default.removeItem(at: generationClaim)
+        // The caller's write-ahead target already makes an interruption recoverable.
+        // Complete its receipt and native ownership cleanup before releasing the lock.
+        try afterRetiringLocked()
         return nil
       } catch {
         return String(describing: error)

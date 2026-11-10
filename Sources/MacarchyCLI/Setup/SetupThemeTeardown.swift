@@ -31,6 +31,9 @@ struct SetupThemeTeardown: Sendable {
   var iconStyle: @Sendable (URL) -> MacOSIconStyleAdapter = { MacOSIconStyleAdapter(root: $0) }
   var accent: @Sendable (URL) -> MacOSAccentAdapter = { MacOSAccentAdapter(root: $0) }
 
+  /// Test interruption at the durable retirement boundary, before receipt cleanup.
+  var retirementCheckpoint: @Sendable () throws -> Void = {}
+
   static let live = Self(
     appearance: { SetupAppearanceControl(MacOSAppearanceAdapter.live(root: $0)) },
     wallpaper: { WallpaperOriginalRestorer.live(root: $0) }
@@ -46,6 +49,34 @@ struct SetupThemeTeardown: Sendable {
     expectedGenerationID: String? = nil,
     dryRun: Bool
   ) async throws -> UnifiedSetupTeardownStage {
+    let transactionStore = UnifiedSetupTransactionStore(stateRoot: stateRoot)
+    let retirement = try transactionStore.read()?.themeRetirement
+    if let retirement {
+      let recovered: UnifiedSetupTeardownStage? = try ActivationLock(root: stateRoot).withLock {
+        let active = try ThemeGenerationReader(root: stateRoot).activeManifestIfPresent()
+        guard retirement.committed || active?.generationID != retirement.generationID else {
+          return nil  // The write-ahead target still exists; finish only that retirement.
+        }
+        if !dryRun {
+          if active == nil {
+            let accents = MacOSAccentStore(root: stateRoot)
+            if try accents.load() != nil { try accents.remove() }
+            let icons = MacOSIconStyleStore(root: stateRoot)
+            if try icons.load() != nil { try icons.remove() }
+            try WallpaperOriginalStore(root: stateRoot).remove()
+          }
+          try SetupCoreOwnershipStore(stateRoot: stateRoot).remove()
+        }
+        let message =
+          active.map {
+            " Preserved the new canonical lifecycle '\($0.generationID)' and its native values."
+          } ?? ""
+        return UnifiedSetupTeardownStage(
+          succeeded: true, mutated: !dryRun, outcome: dryRun ? "planned" : "restored",
+          message: "Finished cleanup of the previously retired setup theme." + message)
+      }
+      if let recovered { return recovered }
+    }
     guard let ownership else {
       // Look receipts also have ownership when setup preserved an external canonical theme.
       var reports: [MacOSLookRestore] = []
@@ -83,7 +114,7 @@ struct SetupThemeTeardown: Sendable {
     }
     let activator = ThemeActivator(root: stateRoot)
     let active = try ThemeGenerationReader(root: stateRoot).activeManifest()
-    let expected = expectedGenerationID ?? active.generationID
+    let expected = retirement?.generationID ?? expectedGenerationID ?? active.generationID
     guard active.generationID == expected else {
       throw ThemeDeactivationError.activeGenerationChanged(
         expected: expected, active: active.generationID)
@@ -180,6 +211,31 @@ struct SetupThemeTeardown: Sendable {
           accentReport = try accent.restoreHoldingActivationLock()
           iconReport = try iconStyle.restoreHoldingActivationLock()
           wallpaperReport = wallpaper.restoreHoldingActivationLock()
+          if let transaction = try transactionStore.read(), transaction.operation == .teardown {
+            try transactionStore.write(
+              transaction.replacing(
+                themeRetirement: .init(generationID: expected, committed: false)))
+          }
+        },
+        afterRetiringLocked: {
+          if let transaction = try transactionStore.read(), transaction.operation == .teardown {
+            try transactionStore.write(
+              transaction.replacing(
+                themeRetirement: .init(generationID: expected, committed: true)))
+          }
+          try retirementCheckpoint()
+          // Keep cleanup in the lock too: a fresh activation must not inherit these originals,
+          // nor may delayed teardown cleanup delete records belonging to that new lifecycle.
+          if let report = wallpaperReport {
+            wallpaperReport = wallpaper.removeRecord(after: report)
+          }
+          if accentReport?.consumesRecord == true {
+            try MacOSAccentStore(root: stateRoot).remove()
+          }
+          if iconReport?.consumesRecord == true {
+            try MacOSIconStyleStore(root: stateRoot).remove()
+          }
+          try SetupCoreOwnershipStore(stateRoot: stateRoot).remove()
         }
       )
     } catch {
@@ -195,7 +251,7 @@ struct SetupThemeTeardown: Sendable {
     if let message = accentReport?.message { notes.append(message) }
     if let message = iconReport?.message { notes.append(message) }
     if let report = wallpaperReport {
-      notes += wallpaper.removeRecord(after: report).lines
+      notes += report.lines
     }
     if let cleanupError {
       return UnifiedSetupTeardownStage(
@@ -205,35 +261,6 @@ struct SetupThemeTeardown: Sendable {
         message: Self.message(
           "Canonical theme was removed, but cleanup remains: \(cleanupError).", notes)
       )
-    }
-    do {
-      try SetupCoreOwnershipStore(stateRoot: stateRoot).remove()
-    } catch {
-      return UnifiedSetupTeardownStage(
-        succeeded: false,
-        mutated: true,
-        outcome: "recovery_required",
-        message: Self.message(
-          "Canonical theme was removed, but setup ownership cleanup failed: \(error)", notes)
-      )
-    }
-    if let report = accentReport {
-      if report.consumesRecord {
-        do { try MacOSAccentStore(root: stateRoot).remove() } catch {
-          return UnifiedSetupTeardownStage(
-            succeeded: false, mutated: true, outcome: "recovery_required",
-            message: "Accent restoration record cleanup failed: \(error)")
-        }
-      }
-    }
-    if let report = iconReport {
-      if report.consumesRecord {
-        do { try MacOSIconStyleStore(root: stateRoot).remove() } catch {
-          return UnifiedSetupTeardownStage(
-            succeeded: false, mutated: true, outcome: "recovery_required",
-            message: "Icon style restoration record cleanup failed: \(error)")
-        }
-      }
     }
     let summary =
       restoresAppearance

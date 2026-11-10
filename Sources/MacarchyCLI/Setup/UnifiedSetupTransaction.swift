@@ -33,6 +33,16 @@ enum SetupStage: String, Codable, CaseIterable, Hashable, Sendable {
   }
 }
 
+struct UnifiedSetupThemeRetirement: Codable, Equatable, Sendable {
+  let generationID: String
+  let committed: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case generationID = "generation_id"
+    case committed
+  }
+}
+
 struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
   static let schemaVersion = 1
 
@@ -44,6 +54,8 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
   let contextDigest: String
   /// Applied paths retained before environment teardown removes its ownership.
   let userScripts: [String]?
+  /// Write-ahead retirement target, then a durable commit before lock release.
+  let themeRetirement: UnifiedSetupThemeRetirement?
 
   init(
     operation: UnifiedSetupTransactionOperation,
@@ -51,7 +63,8 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
     stages: [SetupStage],
     desiredAppearance: ThemeAppearance,
     contextDigest: String,
-    userScripts: [String]? = nil
+    userScripts: [String]? = nil,
+    themeRetirement: UnifiedSetupThemeRetirement? = nil
   ) {
     schemaVersion = Self.schemaVersion
     self.operation = operation
@@ -60,11 +73,13 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
     self.desiredAppearance = desiredAppearance
     self.contextDigest = contextDigest
     self.userScripts = userScripts
+    self.themeRetirement = themeRetirement
   }
 
   func replacing(
     phase: UnifiedSetupTransactionPhase? = nil,
-    stages: [SetupStage]? = nil
+    stages: [SetupStage]? = nil,
+    themeRetirement: UnifiedSetupThemeRetirement? = nil
   ) -> Self {
     Self(
       operation: operation,
@@ -72,7 +87,8 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
       stages: stages ?? self.stages,
       desiredAppearance: desiredAppearance,
       contextDigest: contextDigest,
-      userScripts: userScripts
+      userScripts: userScripts,
+      themeRetirement: themeRetirement ?? self.themeRetirement
     )
   }
 
@@ -81,6 +97,7 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
       (userScripts ?? []).count <= 8,
       Set(userScripts ?? []).count == (userScripts ?? []).count,
       (userScripts ?? []).allSatisfy({ NSString(string: $0).isAbsolutePath && !$0.contains("\0") }),
+      themeRetirement.map { operation == .teardown && isGenerationID($0.generationID) } ?? true,
       schemaVersion == Self.schemaVersion,
       isSHA256Digest(contextDigest),
       Set(stages).count == stages.count
@@ -95,6 +112,7 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
     case desiredAppearance = "desired_appearance"
     case contextDigest = "context_digest"
     case userScripts = "user_scripts"
+    case themeRetirement = "theme_retirement"
   }
 }
 
@@ -118,12 +136,20 @@ struct UnifiedSetupTransactionStore: Sendable {
       let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
       guard
         let object,
-        Set(object.keys).subtracting(["user_scripts"])
+        Set(object.keys).subtracting(["user_scripts", "theme_retirement"])
           == Set(UnifiedSetupTransaction.CodingKeys.allCases.map(\.rawValue)).subtracting([
-            "user_scripts"
+            "user_scripts", "theme_retirement",
           ])
       else {
         throw UnifiedSetupTransactionError.invalid("contains unknown or missing fields")
+      }
+      if let retirement = object["theme_retirement"] {
+        guard let fields = retirement as? [String: Any],
+          Set(fields.keys) == ["generation_id", "committed"]
+        else {
+          throw UnifiedSetupTransactionError.invalid(
+            "theme retirement contains unknown or missing fields")
+        }
       }
       let transaction = try JSONDecoder().decode(UnifiedSetupTransaction.self, from: data)
       guard transaction.hasValidShape else {
