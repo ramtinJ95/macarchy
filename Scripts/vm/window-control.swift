@@ -305,7 +305,7 @@ do {
         payload = value
       }
       let keys: [String: CGKeyCode] = [
-        "space": 49, "return": 36, "tab": 48, "backtab": 48, "escape": 53,
+        "space": 49, "return": 36, "tab": 48, "backtab": 48, "escape": 53, "f1": 122,
         "keyboard-navigation": 98, "spotlight": 49,
         "up": 126, "down": 125, "left": 123, "right": 124,
       ]
