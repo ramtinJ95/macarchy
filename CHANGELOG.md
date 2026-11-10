@@ -7,6 +7,14 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-10
+
+### Added
+
+- An opt-in `presets.herdr_app` theme adapter keeps the Herdr desktop app's
+  panels and terminal palette in sync with Macarchy, using live reload while
+  preserving keybindings, mods and unrelated settings (#341).
+
 ## [0.16.1] - 2026-11-10
 
 ### Fixed
