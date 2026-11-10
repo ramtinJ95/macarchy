@@ -360,7 +360,7 @@ struct SetupThemeTeardownTests {
             executableURL: URL(filePath: "/usr/bin/true"), processRunner: fake.runner))
       })
     let result = try await teardown.run(
-      stateRoot: fixture.state, ownership: nil, desiredAppearance: .dark, dryRun: false)
+      stateRoot: fixture.state, ownership: nil, dryRun: false)
     #expect(result.succeeded)
     #expect(result.message.contains("external theme is preserved"))
     #expect(try store.load() == nil)
@@ -388,7 +388,7 @@ struct SetupThemeTeardownTests {
           root: root, helper: MacOSLookHelper(executableURL: root.appending(path: "missing")))
       })
     let result = try await teardown.run(
-      stateRoot: fixture.state, ownership: ownership, desiredAppearance: .dark, dryRun: dryRun)
+      stateRoot: fixture.state, ownership: ownership, dryRun: dryRun)
     #expect(!result.succeeded)
     #expect(result.message.contains("macOS look helper is missing"))
     #expect(try store.load() != nil)
@@ -407,6 +407,10 @@ struct SetupThemeTeardownTests {
     let fixture = try ApplyFixture()
     let manifest = try fixture.activateSetupOwnedTheme()
     defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    let switched = try ThemeActivator(root: fixture.state).activate(
+      package: ThemePackageLoader().load(
+        packageURL: repositoryRoot.appending(path: "Themes/tokyo-night")))
+
     let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
     let store = MacOSIconStyleStore(root: fixture.state)
     try store.persist(
@@ -427,7 +431,7 @@ struct SetupThemeTeardownTests {
     let runner = ProcessRunner { request in
       #expect(
         try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
-          == manifest.generationID)
+          == switched.generationID)
       #expect(try store.load() != nil)
       return try fake.runner.run(request)
     }
@@ -441,7 +445,7 @@ struct SetupThemeTeardownTests {
             executableURL: URL(filePath: "/usr/bin/true"), processRunner: runner))
       })
     let result = try await teardown.run(
-      stateRoot: fixture.state, ownership: ownership, desiredAppearance: .dark, dryRun: false)
+      stateRoot: fixture.state, ownership: ownership, dryRun: false)
     #expect(result.succeeded, "\(result.message)")
     #expect(try store.load() == nil)
     #expect(
@@ -491,7 +495,7 @@ struct SetupThemeTeardownTests {
       })
     let result = try await teardown.run(
       stateRoot: fixture.state,
-      ownership: owned ? ownership : nil, desiredAppearance: .dark, dryRun: false)
+      ownership: owned ? ownership : nil, dryRun: false)
     #expect(!result.succeeded)
     #expect(result.mutated)
     #expect(result.message.contains("macOS look helper is missing"))
