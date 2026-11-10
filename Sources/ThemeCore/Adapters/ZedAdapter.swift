@@ -15,14 +15,12 @@ package struct ZedAdapter: Sendable {
   package enum Failure: Error, CustomStringConvertible {
     case unsupported(String)
     case drift
-    case invalidPublicationReceipt
 
     package var description: String {
       switch self {
       case .unsupported(let version):
         "Zed requires version 0.122.2 or newer for watched user themes; found \(version)."
       case .drift: "The owned Zed theme member or theme family drifted."
-      case .invalidPublicationReceipt: "The Zed family publication receipt is invalid."
       }
     }
   }
@@ -105,52 +103,20 @@ package struct ZedAdapter: Sendable {
     }
   }
 
-  private struct PublicationReceipt: Codable {
-    let path: String
-    let digest: String
-  }
-
   static func publicationReceiptURL(root: URL) -> URL {
     root.appending(path: "state/zed-family.json")
   }
 
-  /// Persist only after the family rename/readback, and before reporting success. Unlike
-  /// generation artifacts, this evidence survives collection after interrupted activation.
   private static func recordPublication(_ data: Data, at target: URL, root: URL) throws {
-    let parent = try PinnedFilesystem.openDirectory(at: root)
-    defer { Darwin.close(parent) }
-    let url = publicationReceiptURL(root: root)
-    let state = try PinnedFilesystem.openOrCreateChildDirectory(
-      parentDescriptor: parent, name: "state", url: url.deletingLastPathComponent(), mode: 0o700)
-    defer { Darwin.close(state) }
-    try StateFile.write(
-      PublicationReceipt(path: target.standardizedFileURL.path, digest: sha256Digest(data)),
-      parentDescriptor: state, name: url.lastPathComponent, url: url)
+    try WatchedThemePublication.recordPublication(
+      data, at: target, root: root, receiptURL: publicationReceiptURL(root: root))
   }
 
-  /// A last-published digest is authority for exactly that owned destination. The active
-  /// render also permits retry if publication succeeded but receipt persistence failed.
   package static func matchesPublishedFamily(_ data: Data, at target: URL, root: URL) throws -> Bool
   {
-    let receiptData: Data?
-    do {
-      receiptData = try PinnedFilesystem.readRegularFile(at: publicationReceiptURL(root: root)).data
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      receiptData = nil
-    }
-    if let receiptData {
-      guard let receipt = try? JSONDecoder().decode(PublicationReceipt.self, from: receiptData),
-        receipt.path.hasPrefix("/"), isSHA256Digest(receipt.digest)
-      else { throw Failure.invalidPublicationReceipt }
-      if receipt.path == target.standardizedFileURL.path, receipt.digest == sha256Digest(data) {
-        return true
-      }
-    }
-    do {
-      return try data == activeFamily(root: root)
-    } catch ReconciliationStatusError.noActiveGeneration {
-      return false
-    }
+    try WatchedThemePublication.matchesPublished(
+      data, at: target, receiptURL: publicationReceiptURL(root: root),
+      active: { try activeFamily(root: root) })
   }
 
   /// Older sealed generations have no Zed artifact. Derive it from their validated
