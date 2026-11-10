@@ -120,15 +120,28 @@ struct LeanFocusLifecycleTests {
       at: plist.deletingLastPathComponent(), withIntermediateDirectories: true)
     let plistBytes = try configuration.propertyList()
     try plistBytes.write(to: plist)
-    let state = Mutex((restarted: false, mutations: [[String]](), acknowledgements: 0))
+    let state = Mutex(
+      (loaded: true, restarted: false, mutations: [[String]](), acknowledgements: 0))
     let service = LeanFocusService(
       homeDirectory: fixture.home,
       runner: ProcessRunner { request in
         state.withLock { value in
-          if request.arguments.first == "kickstart" {
+          if request.arguments.first == "bootout" {
             value.mutations.append(request.arguments)
+            value.loaded = false
+            return ProcessResult(terminationStatus: 0, output: "")
+          }
+          if request.arguments.first == "bootstrap" {
+            value.mutations.append(request.arguments)
+            #expect(!value.loaded)
+            value.loaded = true
             value.restarted = true
             return ProcessResult(terminationStatus: 0, output: "")
+          }
+          if !value.loaded {
+            return ProcessResult(
+              terminationStatus: request.executableURL.lastPathComponent == "pgrep" ? 1 : 113,
+              output: "")
           }
           let pid = value.restarted ? getpid() : 123
           if request.executableURL.lastPathComponent == "pgrep" {
@@ -214,7 +227,8 @@ struct LeanFocusLifecycleTests {
     #expect(applied.succeeded, "\(applied.output)")
     #expect(
       state.withLock { $0.mutations } == [
-        ["kickstart", "-k", "gui/\(getuid())/\(LeanFocusService.label)"]
+        ["bootout", "gui/\(getuid())/\(LeanFocusService.label)"],
+        ["bootstrap", "gui/\(getuid())", plist.path],
       ])
     #expect(state.withLock { $0.acknowledgements } == 1)
     #expect(try Data(contentsOf: plist) == plistBytes)

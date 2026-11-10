@@ -22,9 +22,12 @@ physical/display/Spaces/real-app/soak or visual-parity qualification.
   failures are not retried. No idle publication or heartbeat is introduced.
 - Theme reconciliation starts a stopped exact-owned job once and reports the
   repair plus palette acknowledgement. It does not create an absent registration.
-  Any start while the job is loaded (`kickstart`/`kickstart -k`) has a 35 s bound
+  Starting a loaded stopped job (`kickstart`) has a 35 s bound
   to accommodate launchd's configured 30 s throttle after a recent exit; bootstrap
   and `launchctl print` stay at 5 s and the `pgrep` inspection at 2 s.
+  An outdated running exact-owned helper is instead booted out, verified stopped,
+  and bootstrapped from the unchanged owned plist. This refreshes its registration;
+  failures remain explicit. Managed-host LWCR enforcement is not reproduced here.
 - Managed Borders handoff/rollback and unmanaged refusal have injected lifecycle
   tests; this journey does not install Borders or claim native handoff evidence.
 
