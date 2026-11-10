@@ -100,6 +100,7 @@ package struct LeanFocusService: Sendable {
   let homeDirectory: URL
   let runner: ProcessRunner
   let processPath: @Sendable (Int32) throws -> String
+  let processStarted: @Sendable (Int32) -> UInt64?
   let wait: @Sendable () -> Void
   let currentHomeDirectory: URL
 
@@ -107,12 +108,14 @@ package struct LeanFocusService: Sendable {
     homeDirectory: URL,
     runner: ProcessRunner = .live,
     processPath: @escaping @Sendable (Int32) throws -> String = BordersService.nativeProcessPath,
+    processStarted: @escaping @Sendable (Int32) -> UInt64? = processStartTime,
     wait: @escaping @Sendable () -> Void = { Thread.sleep(forTimeInterval: 0.1) },
     currentHomeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
   ) {
     self.homeDirectory = homeDirectory
     self.runner = runner
     self.processPath = processPath
+    self.processStarted = processStarted
     self.wait = wait
     self.currentHomeDirectory = currentHomeDirectory
   }
@@ -188,7 +191,15 @@ package struct LeanFocusService: Sendable {
       else { throw LeanFocusServiceError("helper process and owned launchd job disagree") }
       // The label, exact plist and arguments above establish ownership. A changed
       // stable-path target makes this owned PID stale, not a foreign process.
-      let actual = LeanFocusServiceConfiguration.physicalPath(try processPath(pid))
+      let actual: String?
+      do {
+        actual = LeanFocusServiceConfiguration.physicalPath(try processPath(pid))
+      } catch {
+        // Homebrew cleanup can unlink the still-running old image, making
+        // proc_pidpath fail. Never infer ownership from that failure alone.
+        guard try recordedOutdatedProcess(pid, configuration: configuration) else { throw error }
+        actual = nil
+      }
       executableIsCurrent = actual != nil && actual == configuration.currentExecutablePath
     } else if processes.terminationStatus != 1 {
       throw LeanFocusServiceError("a helper process exists outside the owned launchd job")
@@ -240,6 +251,25 @@ package struct LeanFocusService: Sendable {
       throw LeanFocusServiceError("launch failed: \(result.output)")
     }
     try settle(configuration: configuration, running: true)
+  }
+
+  private func recordedOutdatedProcess(
+    _ pid: Int32, configuration: LeanFocusServiceConfiguration
+  ) throws -> Bool {
+    guard let started = processStarted(pid),
+      let current = configuration.currentExecutablePath,
+      FileManager.default.isExecutableFile(atPath: configuration.executablePath)
+    else { return false }
+    let record = try LeanFocusRuntime.read(configuration: configuration)
+    // The exact owned job was authenticated above. This record only bridges an
+    // unavailable kernel path; it cannot authorize PID reuse or a missing new image.
+    return record.label == Self.label && record.stateRoot == configuration.stateRoot
+      && record.pid == pid && record.started == started && processStarted(pid) == started
+      && record.executablePath.hasPrefix("/") && !record.executablePath.contains("\0")
+      && URL(filePath: record.executablePath).standardizedFileURL.path == record.executablePath
+      && URL(filePath: record.executablePath).lastPathComponent
+        == FocusRingHelperCommand.executableName
+      && record.executablePath != current
   }
 
   package func stop(_ configuration: LeanFocusServiceConfiguration) throws {

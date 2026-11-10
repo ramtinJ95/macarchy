@@ -84,6 +84,145 @@ struct LeanFocusLifecycleTests {
     #expect(try store.readTransaction() == nil)
   }
 
+  @Test func deletedHelperPlansAndAppliesThroughOwnedServiceWithFreshAcknowledgement() async throws
+  {
+    var (fixture, _) = try makeFixture()
+    defer { fixture.remove() }
+    let old = fixture.directory.appending(path: "old/macarchy-focus-ring")
+    let stable = fixture.directory.appending(path: "macarchy-focus-ring")
+    try FileManager.default.createDirectory(
+      at: old.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("old helper".utf8).write(to: old)
+    try FileManager.default.createSymbolicLink(at: stable, withDestinationURL: old)
+    let configuration = LeanFocusServiceConfiguration(
+      stateRoot: fixture.root, executableURL: stable)
+    let stub = fixture.runtime.lean
+    fixture.runtime.lean = EnvironmentLeanRuntime(
+      configuration: { _ in configuration }, inspect: stub.inspect, start: stub.start,
+      stop: stub.stop, acknowledge: stub.acknowledge)
+    #expect(try await fixture.apply().succeeded)
+    let originalOwnership = try EnvironmentStateStore(stateRoot: fixture.root).readOwnership()
+    let oldRecord = LeanFocusRuntime(
+      label: LeanFocusService.label, stateRoot: configuration.stateRoot, pid: 123, started: 1000,
+      executablePath: try #require(LeanFocusServiceConfiguration.physicalPath(old.path)),
+      generationID: "old", accent: "#abcdef")
+    let recordBytes = try JSONEncoder().encode(oldRecord)
+    try recordBytes.write(to: configuration.runtimeURL)
+    // Use the test process as the replacement image so the production runtime
+    // acknowledgement checks real kernel PID/start/path, without launching a helper.
+    let replacement = try #require(processExecutablePath(getpid()))
+    try FileManager.default.removeItem(at: stable)
+    try FileManager.default.createSymbolicLink(
+      atPath: stable.path, withDestinationPath: replacement)
+    try FileManager.default.removeItem(at: old)
+    let plist = fixture.home.appending(path: "Library/LaunchAgents/\(LeanFocusService.label).plist")
+    try FileManager.default.createDirectory(
+      at: plist.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let plistBytes = try configuration.propertyList()
+    try plistBytes.write(to: plist)
+    let state = Mutex((restarted: false, mutations: [[String]](), acknowledgements: 0))
+    let service = LeanFocusService(
+      homeDirectory: fixture.home,
+      runner: ProcessRunner { request in
+        state.withLock { value in
+          if request.arguments.first == "kickstart" {
+            value.mutations.append(request.arguments)
+            value.restarted = true
+            return ProcessResult(terminationStatus: 0, output: "")
+          }
+          let pid = value.restarted ? getpid() : 123
+          if request.executableURL.lastPathComponent == "pgrep" {
+            return ProcessResult(terminationStatus: 0, output: "\(pid)\n")
+          }
+          #expect(request.arguments.first == "print")
+          return ProcessResult(
+            terminationStatus: 0,
+            output: """
+              path = \(plist.path)
+              program = \(configuration.executablePath)
+              state = running
+              pid = \(pid)
+              arguments = {
+              \(configuration.arguments.joined(separator: "\n"))
+              }
+              """)
+        }
+      },
+      processPath: { pid in
+        guard state.withLock({ $0.restarted }) else {
+          throw BordersServiceError.blocked("cannot resolve PID \(pid)")
+        }
+        return replacement
+      },
+      processStarted: { pid in pid == 123 ? 1000 : processStartTime(pid) },
+      wait: {}, currentHomeDirectory: fixture.home)
+    fixture.runtime.lean = EnvironmentLeanRuntime(
+      configuration: { _ in configuration },
+      inspect: { _, known in
+        #expect(known == [configuration])
+        return (try service.inspect(configuration: configuration), configuration)
+      },
+      start: { _, config in
+        try service.start(config)
+        let palette = try BordersPalette.read(root: URL(filePath: config.stateRoot))
+        // An old record must not count as acknowledgement after restart, but it
+        // must not prevent the replacement helper from publishing its identity.
+        #expect(!oldRecord.matches(configuration: config, processID: getpid(), palette: palette))
+        try LeanFocusRuntime.publish(
+          configuration: config, generationID: palette.generationID, accent: palette.accent)
+      },
+      stop: { _, _ in Issue.record("repair unexpectedly stopped/unregistered the owned job") },
+      acknowledge: { _, config, _ in
+        let inspection = try service.inspect(configuration: config)
+        let palette = try BordersPalette.read(root: URL(filePath: config.stateRoot))
+        let report = try LeanFocusRuntime.read(configuration: config)
+        guard inspection.executableIsCurrent,
+          report.matches(
+            configuration: config, processID: try #require(inspection.processID), palette: palette)
+        else { throw EnvironmentLifecycleError.drift("stale runtime acknowledgement") }
+        state.withLock { $0.acknowledgements += 1 }
+        return "Verified replacement PID/start and palette"
+      })
+    let runtime = fixture.runtime
+    var planner = UnifiedSetupPlanCommandRunner(
+      capabilityIsAvailable: { _ in true }, desktopPlanner: { _, _ in desktopPlanStub() },
+      environmentPlanner: { context, profile, bootstrap in
+        try SetupComponentPlan(
+          EnvironmentPlanCommandRunner(prerequisites: .assumed, bordersRuntime: runtime).report(
+            resourcesRoot: context.environmentResourcesRoot, profileURL: context.profileURL,
+            profileRequired: true, stateRoot: context.stateRoot,
+            homeDirectory: context.homeDirectory,
+            profile: profile, bootstrapTheme: bootstrap))
+      })
+    planner.packageInventoryReader = { .init(packages: [], issues: []) }
+    let planned = try planner.prepare(
+      context: UnifiedSetupPlanContext(
+        themesRoot: repositoryRoot.appending(path: "Themes"),
+        keybindingsResourcesRoot: repositoryRoot.appending(path: "Keybindings"),
+        desktopResourcesRoot: repositoryRoot.appending(path: "Desktop"),
+        environmentResourcesRoot: repositoryRoot.appending(path: "Environment"),
+        profileURL: fixture.profile, profileRequired: true,
+        machineProfileURL: fixture.root.appending(path: "machine.toml"),
+        machineProfileRequired: false,
+        stateRoot: fixture.root, homeDirectory: fixture.home))
+    #expect(planned.succeeded)
+    #expect(planned.report.outcome == "ready")
+    #expect(planned.report.actions.contains { $0.stage == "environment" })
+    #expect(state.withLock { $0.mutations.isEmpty })
+    #expect(try Data(contentsOf: configuration.runtimeURL) == recordBytes)
+    let applied = try await fixture.apply()
+    #expect(applied.succeeded, "\(applied.output)")
+    #expect(
+      state.withLock { $0.mutations } == [
+        ["kickstart", "-k", "gui/\(getuid())/\(LeanFocusService.label)"]
+      ])
+    #expect(state.withLock { $0.acknowledgements } == 1)
+    #expect(try Data(contentsOf: plist) == plistBytes)
+    #expect(try EnvironmentStateStore(stateRoot: fixture.root).readOwnership() == originalOwnership)
+    #expect(try LeanFocusRuntime.read(configuration: configuration).pid == getpid())
+    #expect(try fixture.plan().succeeded)
+  }
+
   @Test(arguments: [false, true], [false, true])
   func removalIgnoresUnownedBorders(teardown: Bool, registered: Bool) async throws {
     var (fixture, state) = try makeFixture()
