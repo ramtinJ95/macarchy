@@ -274,6 +274,68 @@ struct WallpaperOriginalsTests {
     }
   }
 
+  @Test func restorerWaitsForAnOwnedWallpaperAfterATransientDefaultRead() throws {
+    try withTemporaryRoot(named: "macarchy-wallpaper-originals") { root in
+      let applied = generated(root, "g-before-undo")
+      let fallback = URL(filePath: "/System/Library/CoreServices/DefaultDesktop.heic")
+      let displays = FakeDisplays([
+        WallpaperDisplay(id: 1, name: "Built-in", wallpaperURL: applied)
+      ])
+      try WallpaperOriginalStore(root: root).persist([
+        original(uuid: "uuid-1", path: "/o/1.png", name: "Built-in")
+      ])
+      let waits = Mutex(0)
+      let restorer = WallpaperOriginalRestorer(
+        root: root, control: displays.control, originalExists: { _ in true },
+        waitForSettle: {
+          let count = waits.withLock {
+            $0 += 1
+            return $0
+          }
+          if count == 2 { displays.show(applied, on: 1) }
+        })
+
+      #expect(restorer.plan().lines == ["Would restore the original wallpaper on 'Built-in'."])
+      // Native reproduction: preflight saw the owned image; retirement briefly read the
+      // system-default fallback after native look restoration, on the same display UUID.
+      displays.show(fallback, on: 1)
+      let report = restorer.restoreHoldingActivationLock()
+
+      #expect(waits.withLock { $0 } == 2)
+      #expect(report.lines == ["Restored the original wallpaper on 'Built-in'."])
+      #expect(report.mutated)
+      #expect(displays.current(1) == URL(filePath: "/o/1.png"))
+    }
+  }
+
+  @Test func restorerKeepsAPersistentUserWallpaperAfterBoundedReadback() throws {
+    try withTemporaryRoot(named: "macarchy-wallpaper-originals") { root in
+      // The default image can also be a real user choice; never reclaim it unconditionally.
+      let chosen = URL(filePath: "/System/Library/CoreServices/DefaultDesktop.heic")
+      let displays = FakeDisplays([
+        WallpaperDisplay(id: 1, name: "Built-in", wallpaperURL: chosen)
+      ])
+      try WallpaperOriginalStore(root: root).persist([
+        original(uuid: "uuid-1", path: "/o/1.png", name: "Built-in")
+      ])
+      let waits = Mutex(0)
+      let restorer = WallpaperOriginalRestorer(
+        root: root, control: displays.control, originalExists: { _ in true },
+        waitForSettle: { waits.withLock { $0 += 1 } })
+
+      let report = restorer.restoreHoldingActivationLock()
+
+      #expect(waits.withLock { $0 } == 8)
+      #expect(
+        report.lines == [
+          "Kept the wallpaper on 'Built-in', which was changed after Macarchy set it."
+        ])
+      #expect(!report.mutated)
+      #expect(displays.restores().isEmpty)
+      #expect(displays.current(1) == chosen)
+    }
+  }
+
   @Test func restorerReportsFailedAndUnsettledRestores() throws {
     try withTemporaryRoot(named: "macarchy-wallpaper-originals") { root in
       let displays = FakeDisplays(
