@@ -414,6 +414,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
     // Later opt-in presets stay absent when disabled, preserving existing identities.
     for (name, enabled) in [
       "ghostty": options.presets.ghostty, "zed": options.presets.zed,
+      "herdr_app": options.presets.herdrApp,
       "alacritty": options.presets.alacritty, "vscode": options.presets.vscode,
       "cursor": options.presets.cursor, "vscodium": options.presets.vscodium,
       "windsurf": options.presets.windsurf,

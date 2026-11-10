@@ -418,6 +418,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
   let ghosttyVersion: @Sendable () throws -> [Int]
   let vscodeDiscover: @Sendable (VSCodeEditor) throws -> VSCodeEditor.Installation
   let vscodeRunner: ProcessRunner
+  let herdrAppVersion: @Sendable () throws -> [Int]
   let zedVersion: @Sendable () throws -> [Int]
   let iconStyle: @Sendable (URL) -> MacOSIconStyleAdapter
   let accent: @Sendable (URL) -> MacOSAccentAdapter
@@ -446,6 +447,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
       try $0.discover()
     },
     vscodeRunner: ProcessRunner = .live,
+    herdrAppVersion: @escaping @Sendable () throws -> [Int] = HerdrAppAdapter.installedVersion,
     zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion,
     iconStyle: @escaping @Sendable (URL) -> MacOSIconStyleAdapter = {
       MacOSIconStyleAdapter(root: $0)
@@ -466,6 +468,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     self.ghosttyVersion = ghosttyVersion
     self.vscodeDiscover = vscodeDiscover
     self.vscodeRunner = vscodeRunner
+    self.herdrAppVersion = herdrAppVersion
     self.zedVersion = zedVersion
     self.accent = accent
     self.iconStyle = iconStyle
@@ -605,7 +608,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     let providerInspector = EnvironmentProviderInspector(
       alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() },
       vscodeDiscover: vscodeDiscover,
-      vscodeRunner: vscodeRunner, zedVersion: zedVersion)
+      vscodeRunner: vscodeRunner, herdrAppVersion: herdrAppVersion, zedVersion: zedVersion)
     let coordinator = EnvironmentTransactionCoordinator(
       homeDirectory: homeDirectory,
       stateRoot: stateRoot,
@@ -1061,7 +1064,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
         verifier: verifier,
         bordersRuntime: runtimes.borders, alacrittyVersion: { try alacritty.get() },
         ghosttyVersion: { try version.get() },
-        vscodeDiscover: vscodeDiscover, vscodeRunner: vscodeRunner, zedVersion: zedVersion
+        vscodeDiscover: vscodeDiscover, vscodeRunner: vscodeRunner,
+        herdrAppVersion: herdrAppVersion, zedVersion: zedVersion
       ).reportAfterApply(
         EnvironmentApplyObservation(
           theme: appliedTheme,
@@ -1110,7 +1114,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     let inspector = EnvironmentProviderInspector(
       alacrittyVersion: { try alacritty.get() }, ghosttyVersion: { try version.get() },
       vscodeDiscover: vscodeDiscover,
-      vscodeRunner: vscodeRunner, zedVersion: zedVersion)
+      vscodeRunner: vscodeRunner, herdrAppVersion: herdrAppVersion, zedVersion: zedVersion)
     return try EnvironmentLifecycleLock(stateRoot: stateRoot).withLock {
       let store = EnvironmentStateStore(stateRoot: stateRoot)
       guard let transaction = try store.readTransaction() else { return (false, nil, nil) }

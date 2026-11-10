@@ -24,6 +24,7 @@ package struct ConsumerID: Hashable, RawRepresentable, Sendable {
   package static let cursor = ConsumerID(rawValue: "cursor")
   package static let vscodium = ConsumerID(rawValue: "vscodium")
   package static let windsurf = ConsumerID(rawValue: "windsurf")
+  package static let herdrApp = ConsumerID(rawValue: HerdrAppAdapter.id)
   package static let zed = ConsumerID(rawValue: ZedAdapter.id)
   package static let herdr = ConsumerID(rawValue: HerdrAdapter.id)
   package static let kitty = ConsumerID(rawValue: KittyAdapter.id)
@@ -56,6 +57,7 @@ package enum RuntimeAdapterKind: CaseIterable, Hashable, Sendable {
   case cursor
   case vscodium
   case windsurf
+  case herdrApp
   case zed
   case herdr
   case kitty
@@ -647,6 +649,17 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .windsurf, mode: .runtime(.windsurf, requirement: .required, enabledByDefault: false),
       dependencies: [.init(id: "windsurf", role: .requiredAdapter)]
+    ),
+    ConsumerCatalogEntry(
+      id: .herdrApp,
+      mode: .runtime(.herdrApp, requirement: .required, enabledByDefault: false),
+      renderer: .text(
+        id: HerdrAppAdapter.id, version: HerdrAppAdapter.rendererVersion,
+        path: HerdrAppAdapter.outputPath,
+        requirement: .requiredWhenRendererVersion(
+          renderer: .init(id: HerdrAppAdapter.id), minimumVersion: 1)
+      ) { package, _ in try HerdrAppAdapter.render(package: package) },
+      dependencies: [.init(id: HerdrAppAdapter.id, role: .requiredAdapter)]
     ),
     ConsumerCatalogEntry(
       id: .zed,

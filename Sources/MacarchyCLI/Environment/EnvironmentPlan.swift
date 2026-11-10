@@ -30,6 +30,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
   let ghosttyVersion: @Sendable () throws -> [Int]
   let vscodeDiscover: @Sendable (VSCodeEditor) throws -> VSCodeEditor.Installation
   let vscodeRunner: ProcessRunner
+  let herdrAppVersion: @Sendable () throws -> [Int]
   let zedVersion: @Sendable () throws -> [Int]
 
   init(
@@ -42,6 +43,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       try $0.discover()
     },
     vscodeRunner: ProcessRunner = .live,
+    herdrAppVersion: @escaping @Sendable () throws -> [Int] = HerdrAppAdapter.installedVersion,
     zedVersion: @escaping @Sendable () throws -> [Int] = ZedAdapter.installedVersion
   ) {
     self.prerequisites = prerequisites
@@ -51,6 +53,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     self.ghosttyVersion = ghosttyVersion
     self.vscodeDiscover = vscodeDiscover
     self.vscodeRunner = vscodeRunner
+    self.herdrAppVersion = herdrAppVersion
     self.zedVersion = zedVersion
   }
 
@@ -137,7 +140,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
         bootstrapTheme: bootstrapTheme,
         proposedNativeSources: Set(starterPlans.map(\.destination)),
         alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion,
-        vscodeDiscover: vscodeDiscover, vscodeRunner: vscodeRunner, zedVersion: zedVersion
+        vscodeDiscover: vscodeDiscover, vscodeRunner: vscodeRunner,
+        herdrAppVersion: herdrAppVersion, zedVersion: zedVersion
       ).inspectIncludingBordersRuntime(
         composition: composition,
         homeDirectory: $0,

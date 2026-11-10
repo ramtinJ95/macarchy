@@ -81,6 +81,7 @@ struct EnvironmentInspectionContractTests {
     let tools = ["bat": on, "btop": off, "eza": off, "yazi": on]
     let presets = [
       "vscode": "disabled", "cursor": "disabled", "vscodium": "disabled", "windsurf": "disabled",
+      "herdr_app": "disabled",
       "alacritty": on, "codex": on, "ghostty": on, "zed": on, "herdr": off, "pi": on, "slack": off,
       "spicetify": on,
       "tuicr": off,
@@ -100,6 +101,7 @@ struct EnvironmentInspectionContractTests {
     #expect(
       status == [
         "vscode": "disabled", "cursor": "disabled", "vscodium": "disabled", "windsurf": "disabled",
+        "herdr_app": "disabled",
         "focus_ring": "borders",
         "terminal": "kitty", "shell": "zsh", "prompt": "starship", "history": "atuin",
         "editor": "neovim", "bat": on, "btop": off, "eza": off, "yazi": on,

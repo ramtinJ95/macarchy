@@ -450,6 +450,12 @@ struct DependencyProfile: Sendable {
           remediation: .external("Install windsurf in /Applications; Macarchy only themes it.")
         ),
         consumerCapability(
+          .herdrApp,
+          probes: [.exists(HerdrAppAdapter.applicationURL)],
+          remediation: .external(
+            "Install Herdr.app in /Applications or ~/Applications; Macarchy only themes it.")
+        ),
+        consumerCapability(
           .zed,
           probes: [.exists(ZedAdapter.applicationURL)],
           remediation: .external("Install Zed.app in /Applications; Macarchy only themes it.")

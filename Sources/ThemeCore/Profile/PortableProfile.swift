@@ -307,6 +307,7 @@ package struct PresetsProfile: Equatable, Sendable {
   package var spicetify: Bool
   package var tuicr: Bool
   package var ghostty: Bool = false
+  package var herdrApp: Bool = false
   package var zed: Bool = false
   package var alacritty: Bool = false
   package var vscode: Bool = false
@@ -328,6 +329,7 @@ extension PresetsProfile: PortableProfileSection {
       .init("spicetify", \.spicetify),
       .init("tuicr", \.tuicr),
       .init("ghostty", \.ghostty),
+      .init("herdr_app", \.herdrApp),
       .init("zed", \.zed),
       .init("alacritty", \.alacritty),
       .init("vscode", \.vscode),
@@ -795,6 +797,7 @@ package struct PortableProfileLoader: Sendable {
         spicetify: document.presets?.spicetify ?? PresetsProfile.defaults.spicetify,
         tuicr: document.presets?.tuicr ?? PresetsProfile.defaults.tuicr,
         ghostty: document.presets?.ghostty ?? PresetsProfile.defaults.ghostty,
+        herdrApp: document.presets?.herdrApp ?? PresetsProfile.defaults.herdrApp,
         zed: document.presets?.zed ?? PresetsProfile.defaults.zed,
         alacritty: document.presets?.alacritty ?? PresetsProfile.defaults.alacritty,
         vscode: document.presets?.vscode ?? PresetsProfile.defaults.vscode,
@@ -1389,12 +1392,19 @@ private struct PresetsDocument: Decodable {
   let spicetify: Bool?
   let tuicr: Bool?
   let ghostty: Bool?
+  let herdrApp: Bool?
   let zed: Bool?
   let alacritty: Bool?
   let vscode: Bool?
   let cursor: Bool?
   let vscodium: Bool?
   let windsurf: Bool?
+  enum CodingKeys: String, CodingKey {
+    case codex, herdr, pi, slack, spicetify, tuicr, ghostty, zed, alacritty
+    case vscode, cursor, vscodium, windsurf
+    case herdrApp = "herdr_app"
+  }
+
 }
 
 private struct BtopDocument: Decodable {

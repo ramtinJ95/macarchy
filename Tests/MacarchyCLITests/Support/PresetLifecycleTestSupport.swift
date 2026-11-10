@@ -12,12 +12,13 @@ struct PresetLifecycleTestHarness {
   let home: URL
   var alacrittyVersion: @Sendable () throws -> [Int] = { [0, 17, 0] }
   var ghosttyVersion: @Sendable () throws -> [Int] = { [1, 4, 0] }
+  var herdrAppVersion: @Sendable () throws -> [Int] = { [0, 1, 14] }
   var zedVersion: @Sendable () throws -> [Int] = { [1, 27, 0] }
 
   func plan() throws -> (output: String, succeeded: Bool) {
     try EnvironmentPlanCommandRunner(
       prerequisites: .assumed, alacrittyVersion: alacrittyVersion, ghosttyVersion: ghosttyVersion,
-      zedVersion: zedVersion
+      herdrAppVersion: herdrAppVersion, zedVersion: zedVersion
     )
     .execute(
       resourcesRoot: repositoryRoot.appending(path: "Environment"),

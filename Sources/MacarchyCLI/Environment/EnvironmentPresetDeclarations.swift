@@ -78,6 +78,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
   case cursor
   case vscodium
   case windsurf
+  case herdrApp = "herdr_app"
   case zed
   case ghostty
   case alacritty
@@ -100,6 +101,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .cursor: presets.cursor
     case .vscodium: presets.vscodium
     case .windsurf: presets.windsurf
+    case .herdrApp: presets.herdrApp
     case .zed: presets.zed
     case .alacritty: presets.alacritty
     case .tuicr: presets.tuicr
@@ -118,6 +120,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .cursor: ownership.vscodeEditors?["cursor"] != nil
     case .vscodium: ownership.vscodeEditors?["vscodium"] != nil
     case .windsurf: ownership.vscodeEditors?["windsurf"] != nil
+    case .herdrApp: ownership.herdrApp != nil
     case .zed: ownership.zed != nil
     case .alacritty: ownership.alacritty != nil
     case .tuicr: ownership.tuicrEnabled
@@ -137,6 +140,7 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     case .cursor: "cursor"
     case .vscodium: "vscodium"
     case .windsurf: "windsurf"
+    case .herdrApp: HerdrAppAdapter.id
     case .zed: ZedAdapter.id
     case .alacritty: AlacrittyAdapter.id
     case .tuicr: TuicrAdapter.id
@@ -177,6 +181,10 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
         id: "configure_\(rawValue)",
         message:
           "Own the default-profile color-theme members and install a generated Macarchy extension.")
+    case .herdrApp:
+      PlanAction(
+        id: "configure_herdr_app", message: "Own only Herdr app’s theme member and watched palette."
+      )
     case .zed:
       PlanAction(
         id: "configure_zed", message: "Own Zed’s theme member and watched regular theme family.")
@@ -202,7 +210,8 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     switch self {
     case .herdr:
       UnifiedSetupService(id: "herdr", ownership: "external", lifecycle: "reload_if_running")
-    case .vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .ghostty, .codex, .pi, .slack,
+    case .vscode, .cursor, .vscodium, .windsurf, .herdrApp, .zed, .alacritty, .ghostty, .codex, .pi,
+      .slack,
       .spicetify,
       .tuicr:
       nil
@@ -218,7 +227,8 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
         kind: "application_ui",
         instruction: "Import the generated four-color theme in each Slack workspace."
       )
-    case .vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .ghostty, .codex, .herdr, .pi,
+    case .vscode, .cursor, .vscodium, .windsurf, .herdrApp, .zed, .alacritty, .ghostty, .codex,
+      .herdr, .pi,
       .spicetify,
       .tuicr:
       nil
@@ -331,11 +341,13 @@ enum EnvironmentLinkedPreset: CaseIterable, Sendable {
 /// A configuration file a daily tool or preset edits by key through a journaled replacement,
 /// in the order the lifecycle validates, revalidates, transitions and preflights them.
 enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
+  case herdrAppPalette = "herdr_app_palette"
   case zedFamily = "zed_family"
   case vscode
   case cursor
   case vscodium
   case windsurf
+  case herdrApp = "herdr_app"
   case zed
   case ghostty
   case alacritty
@@ -349,7 +361,8 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
   /// The linked preset whose enablement and external tuple also govern the file.
   var linkedPreset: EnvironmentLinkedPreset? {
     switch self {
-    case .vscode, .cursor, .vscodium, .windsurf, .zed, .alacritty, .zedFamily, .ghostty, .btop,
+    case .vscode, .cursor, .vscodium, .windsurf, .herdrApp, .zed, .alacritty, .herdrAppPalette,
+      .zedFamily, .ghostty, .btop,
       .herdr:
       nil
     case .codex: .codex
@@ -369,7 +382,9 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .spicetify: "Spicetify"
     case .ghostty: "Ghostty"
     case .vscode, .cursor, .vscodium, .windsurf: VSCodeEditor(rawValue: rawValue)!.label
+    case .herdrApp: "Herdr app"
     case .zed: "Zed"
+    case .herdrAppPalette: "Herdr app palette"
     case .zedFamily: "Zed theme family"
     case .alacritty: "Alacritty"
     case .tuicr: "tuicr"
@@ -387,7 +402,9 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .ghostty: preconditionFailure("Ghostty configuration paths require the selected home")
     case .vscode, .cursor, .vscodium, .windsurf:
       preconditionFailure("VS Code family paths require the selected installation")
+    case .herdrApp: ".config/herdr-app/settings.json"
     case .zed: ".config/zed/settings.json"
+    case .herdrAppPalette: ".config/herdr-app/themes/macarchy-current.json"
     case .zedFamily: ".config/zed/themes/macarchy.json"
     case .alacritty: preconditionFailure("Alacritty configuration paths require the selected home")
     case .tuicr: ConsumerHomePath.tuicrConfiguration
@@ -404,7 +421,9 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .spicetify: "spicetify_configuration"
     case .ghostty: "ghostty_configuration"
     case .vscode, .cursor, .vscodium, .windsurf: "\(rawValue)_configuration"
+    case .herdrApp: "herdr_app_configuration"
     case .zed: "zed_configuration"
+    case .herdrAppPalette: "herdr_app_palette"
     case .zedFamily: "zed_family"
     case .alacritty: "alacritty_configuration"
     case .tuicr: EnvironmentEntryID.tuicrConfiguration.rawValue
@@ -424,7 +443,9 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .spicetify: "Spicetify external tuple"
     case .ghostty: "Ghostty configuration"
     case .vscode, .cursor, .vscodium, .windsurf: "\(label) settings"
+    case .herdrApp: "Herdr app settings"
     case .zed: "Zed settings"
+    case .herdrAppPalette: "Herdr app palette"
     case .zedFamily: "Zed theme family"
     case .alacritty: "Alacritty configuration"
     case .tuicr: "tuicr configuration"
@@ -447,7 +468,9 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
     case .spicetify: ownership?.spicetify?.path
     case .ghostty: ownership?.ghostty?.path
     case .vscode, .cursor, .vscodium, .windsurf: ownership?.vscodeEditors?[rawValue]?.path
+    case .herdrApp: ownership?.herdrApp?.path
     case .zed: ownership?.zed?.path
+    case .herdrAppPalette: ownership?.herdrAppPalette?.path
     case .zedFamily: ownership?.zedFamily?.path
     case .alacritty: ownership?.alacritty?.path
     case .tuicr: ownership?.tuicr?.path

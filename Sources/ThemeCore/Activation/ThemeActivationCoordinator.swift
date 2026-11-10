@@ -352,6 +352,14 @@ package struct ThemeActivationCoordinator: Sendable {
             editor: VSCodeEditor(rawValue: kind.adapterID)!, root: root,
             home: consumerPaths.piDerivedHomeDirectoryURL, runner: processRunner,
             validateOwnership: consumerPaths.vscodeValidateOwnership))
+      case .herdrApp:
+        return RuntimeConsumer(
+          HerdrAppAdapter(
+            root: root,
+            configurationDirectory: ThemeConsumerPaths.herdrAppConfigurationDirectory(
+              home: consumerPaths.piDerivedHomeDirectoryURL),
+            version: HerdrAppAdapter.installedVersion,
+            validateOwnership: consumerPaths.herdrAppValidateOwnership))
       case .zed:
         return RuntimeConsumer(
           ZedAdapter(
@@ -987,6 +995,7 @@ extension AlacrittyAdapter: ContextFreeThemeAdapter {}
 
 extension GhosttyAdapter: ContextFreeThemeAdapter {}
 extension ZedAdapter: ContextFreeThemeAdapter {}
+extension HerdrAppAdapter: ContextFreeThemeAdapter {}
 extension VSCodeAdapter: ContextFreeThemeAdapter {}
 extension YaziAdapter: ContextFreeThemeAdapter {}
 

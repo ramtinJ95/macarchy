@@ -281,7 +281,9 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
   let spicetify: EnvironmentSpicetifyOwnership?
   let ghostty: EnvironmentGhosttyOwnership?
   let vscodeEditors: [String: EnvironmentVSCodeOwnership]?
+  let herdrApp: EnvironmentHerdrAppOwnership?
   let zed: EnvironmentZedOwnership?
+  let herdrAppPalette: EnvironmentHerdrAppPaletteOwnership?
   let zedFamily: EnvironmentZedFamilyOwnership?
   let alacritty: EnvironmentAlacrittyOwnership?
   let tuicr: EnvironmentTuicrOwnership?
@@ -309,7 +311,9 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     spicetify: EnvironmentSpicetifyOwnership? = nil,
     ghostty: EnvironmentGhosttyOwnership? = nil,
     vscodeEditors: [String: EnvironmentVSCodeOwnership]? = nil,
+    herdrApp: EnvironmentHerdrAppOwnership? = nil,
     zed: EnvironmentZedOwnership? = nil,
+    herdrAppPalette: EnvironmentHerdrAppPaletteOwnership? = nil,
     zedFamily: EnvironmentZedFamilyOwnership? = nil,
     alacritty: EnvironmentAlacrittyOwnership? = nil,
     tuicr: EnvironmentTuicrOwnership? = nil,
@@ -339,7 +343,9 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     self.spicetify = spicetify
     self.ghostty = ghostty
     self.vscodeEditors = vscodeEditors
+    self.herdrApp = herdrApp
     self.zed = zed
+    self.herdrAppPalette = herdrAppPalette
     self.zedFamily = zedFamily
     self.alacritty = alacritty
     self.tuicr = tuicr
@@ -372,8 +378,10 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       originalThemeBridges: base?.originalThemeBridges ?? [],
       btop: base?.btop, borders: base?.borders, codex: base?.codex, herdr: herdr, pi: base?.pi,
       spicetify: base?.spicetify, ghostty: base?.ghostty, vscodeEditors: base?.vscodeEditors,
+      herdrApp: base?.herdrApp,
       zed: base?.zed,
-      zedFamily: base?.zedFamily, alacritty: base?.alacritty, tuicr: base?.tuicr,
+      herdrAppPalette: base?.herdrAppPalette, zedFamily: base?.zedFamily,
+      alacritty: base?.alacritty, tuicr: base?.tuicr,
       codexEnabled: base?.codexEnabled ?? false, herdrEnabled: base?.herdrEnabled ?? false,
       piEnabled: base?.piEnabled ?? false, slackEnabled: base?.slackEnabled ?? false,
       spicetifyEnabled: base?.spicetifyEnabled ?? false,
@@ -397,7 +405,9 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     case spicetify
     case ghostty
     case vscodeEditors = "vscode_editors"
+    case herdrApp = "herdr_app"
     case zed
+    case herdrAppPalette = "herdr_app_palette"
     case zedFamily = "zed_family"
     case alacritty
     case tuicr
@@ -434,7 +444,10 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     ghostty = try container.decodeIfPresent(EnvironmentGhosttyOwnership.self, forKey: .ghostty)
     vscodeEditors = try container.decodeIfPresent(
       [String: EnvironmentVSCodeOwnership].self, forKey: .vscodeEditors)
+    herdrApp = try container.decodeIfPresent(EnvironmentHerdrAppOwnership.self, forKey: .herdrApp)
     zed = try container.decodeIfPresent(EnvironmentZedOwnership.self, forKey: .zed)
+    herdrAppPalette = try container.decodeIfPresent(
+      EnvironmentHerdrAppPaletteOwnership.self, forKey: .herdrAppPalette)
     zedFamily = try container.decodeIfPresent(
       EnvironmentZedFamilyOwnership.self, forKey: .zedFamily)
     tuicr = try container.decodeIfPresent(EnvironmentTuicrOwnership.self, forKey: .tuicr)
@@ -494,6 +507,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
         ?? true,
       zed?.hasValidShape ?? true, zedFamily?.hasValidShape ?? true,
       (zed == nil) == (zedFamily == nil),
+      herdrApp?.hasValidShape ?? true, herdrAppPalette?.hasValidShape ?? true,
+      (herdrApp == nil) == (herdrAppPalette == nil),
       alacritty?.hasValidShape ?? true,
       tuicr?.hasValidShape ?? true,
       hasValidThemeAdapterInventory

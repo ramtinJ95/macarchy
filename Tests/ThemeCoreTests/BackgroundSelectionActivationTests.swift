@@ -89,7 +89,8 @@ extension AdapterContractTests {
       enabledAdapterIDs: Set(ThemeActivationCoordinator.adapterRequirements.keys)
         .subtracting([
           "vscode", "cursor", "vscodium", "windsurf",
-          ZedAdapter.id, AlacrittyAdapter.id, GhosttyAdapter.id, BordersAdapter.id,
+          HerdrAppAdapter.id, ZedAdapter.id, AlacrittyAdapter.id, GhosttyAdapter.id,
+          BordersAdapter.id,
           BordersAdapter.leanID,
           UserScriptsAdapter.id, MacOSAccentAdapter.id, MacOSIconStyleAdapter.id,
           CodexAdapter.id,
@@ -396,7 +397,8 @@ extension AdapterContractTests {
       enabledAdapterIDs: enabledAdapterIDs
         ?? Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
           "vscode", "cursor", "vscodium", "windsurf",
-          ZedAdapter.id, AlacrittyAdapter.id, GhosttyAdapter.id, BordersAdapter.id,
+          HerdrAppAdapter.id, ZedAdapter.id, AlacrittyAdapter.id, GhosttyAdapter.id,
+          BordersAdapter.id,
           BordersAdapter.leanID,
           UserScriptsAdapter.id, MacOSAccentAdapter.id, MacOSIconStyleAdapter.id,
           CodexAdapter.id,
