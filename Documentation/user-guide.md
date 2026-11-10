@@ -2012,8 +2012,11 @@ before setup remains external and is not retired.
 
 A concurrent theme switch after teardown planning stops retirement with a retry
 message. Run `macarchy setup teardown` again to validate the current theme and
-finish any remaining restoration. Teardown does not reconnect absent default
-consumers when it is about to retire its own canonical theme.
+finish any remaining restoration. Once retirement is recorded, recovery only
+finishes that retirement and its cleanup: a fresh theme activation is a new
+lifecycle, preserved and reported without restoring its native values.
+Teardown does not reconnect absent default consumers when it is about to retire
+its own canonical theme.
 
 It does not cover clipboard history: if you enabled
 clearing, run `macarchy clipboard disable` first. That removes the hourly

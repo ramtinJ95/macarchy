@@ -369,6 +369,106 @@ struct SetupThemeTeardownTests {
         == manifest.generationID)
   }
 
+  @Test(arguments: [false, true], [false, true])
+  func recoveryAfterRetirementPreservesAFreshLifecycle(
+    interruptBeforeReceiptCleanup: Bool, activateNewLifecycle: Bool
+  ) async throws {
+    let fixture = try ApplyFixture()
+    let bootstrap = try fixture.activateSetupOwnedTheme()
+    defer { removeTemporaryRoot(fixture.root) }
+    let appearance = FakeAppearance(.dark)
+    let wallpaper = FakeWallpaper(showing: URL(filePath: "/user/original.png"))
+    let interrupted = Mutex(false)
+    let stage = SetupThemeTeardown(
+      appearance: { _ in appearance.control },
+      wallpaper: { root in WallpaperOriginalRestorer(root: root, control: wallpaper.control) },
+      retirementCheckpoint: {
+        if interruptBeforeReceiptCleanup,
+          interrupted.withLock({
+            if $0 { return false }
+            $0 = true
+            return true
+          })
+        {
+          throw UnifiedSetupInterruptionError.injected
+        }
+      })
+    let runner = UnifiedSetupTeardownCommandRunner(
+      planner: fixture.planner(),
+      environmentTeardown: { _, _, _ in environmentReportStub("no_change", mutated: false) },
+      desktopTeardown: { _, _, _ in desktopTeardownStub("no_change", message: "desktop") },
+      themeTeardown: { state, ownership, expected, dryRun in
+        try await stage.run(
+          stateRoot: state, ownership: ownership, expectedGenerationID: expected, dryRun: dryRun)
+      },
+      faultInjector: { checkpoint in
+        if !interruptBeforeReceiptCleanup, case .themeTornDown = checkpoint,
+          interrupted.withLock({
+            if $0 { return false }
+            $0 = true
+            return true
+          })
+        {
+          throw UnifiedSetupInterruptionError.injected
+        }
+      })
+    if interruptBeforeReceiptCleanup {
+      let first = try await runner.execute(
+        context: fixture.context, consumerPaths: testConsumerPaths(), dryRun: false, json: true)
+      #expect(!first.succeeded)
+    } else {
+      await #expect(throws: UnifiedSetupInterruptionError.self) {
+        try await runner.execute(
+          context: fixture.context, consumerPaths: testConsumerPaths(), dryRun: false, json: true)
+      }
+    }
+    let receipt = try #require(
+      try UnifiedSetupTransactionStore(stateRoot: fixture.state).read()?.themeRetirement)
+    #expect(receipt.generationID == bootstrap.generationID)
+    #expect(receipt.committed)
+    #expect(try ThemeGenerationReader(root: fixture.state).activeManifestIfPresent() == nil)
+
+    let fresh: GenerationManifest?
+    if activateNewLifecycle {
+      fresh = try ThemeActivator(root: fixture.state).activate(
+        package: ThemePackageLoader().load(
+          packageURL: repositoryRoot.appending(path: "Themes/tokyo-night")))
+      _ = try appearance.control.apply(.dark)
+      try wallpaper.control.set(URL(filePath: "/new-lifecycle/wallpaper.png"), 1)
+      try MacOSAccentStore(root: fixture.state).persist(.init(original: .green, applied: .red))
+      try MacOSIconStyleStore(root: fixture.state).persist(
+        .init(original: IconStyleFixtureValues.external, applied: IconStyleFixtureValues.applied))
+      try WallpaperOriginalStore(root: fixture.state).persist([
+        WallpaperOriginal(
+          displayUUID: "uuid-1", displayName: "Built-in", imagePath: "/new-lifecycle/original.png",
+          presentation: WallpaperPresentation(), recordedAt: "2026-11-10T00:00:00Z")
+      ])
+    } else {
+      fresh = nil
+    }
+    let accents = try MacOSAccentStore(root: fixture.state).load()
+    let icons = try MacOSIconStyleStore(root: fixture.state).load()
+    let wallpapers = try WallpaperOriginalStore(root: fixture.state).load()
+    let appearanceWrites = appearance.applied()
+    let currentWallpaper = wallpaper.current()
+    let retry = try await runner.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths(), dryRun: false, json: true)
+    #expect(retry.succeeded, "\(retry.output)")
+    #expect(try UnifiedSetupTransactionStore(stateRoot: fixture.state).read() == nil)
+    #expect(try SetupCoreOwnershipStore(stateRoot: fixture.state).read() == nil)
+    #expect(
+      try ThemeGenerationReader(root: fixture.state).activeManifestIfPresent()?.generationID
+        == fresh?.generationID)
+    #expect(appearance.applied() == appearanceWrites)
+    #expect(wallpaper.current() == currentWallpaper)
+    #expect(try MacOSAccentStore(root: fixture.state).load() == accents)
+    #expect(try MacOSIconStyleStore(root: fixture.state).load() == icons)
+    #expect(try WallpaperOriginalStore(root: fixture.state).load() == wallpapers)
+    if activateNewLifecycle {
+      #expect(retry.output.contains("Preserved the new canonical lifecycle"))
+    }
+  }
+
   @Test(arguments: [false, true])
   func iconStyleRestorationFailureBlocksRetirementAndKeepsEvidence(dryRun: Bool) async throws {
     let fixture = try ApplyFixture()

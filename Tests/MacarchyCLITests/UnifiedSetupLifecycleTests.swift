@@ -363,6 +363,45 @@ struct UnifiedSetupLifecycleTests {
     #expect(calls.withLock { $0 } == ["environment:true", "desktop:true"])
   }
 
+  @Test func themeRetirementReceiptIsOptionalStrictAndSurvivesStageUpdates() throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    let store = UnifiedSetupTransactionStore(stateRoot: fixture.state)
+    let old = UnifiedSetupTransaction(
+      operation: .teardown, stages: [.theme], desiredAppearance: .dark,
+      contextDigest: "sha256:" + String(repeating: "a", count: 64))
+    try store.write(old)
+    #expect(try store.read() == old)
+    #expect(
+      !String(decoding: try Data(contentsOf: store.url), as: UTF8.self).contains("theme_retirement")
+    )
+    let generation = "g-00000000-0000-0000-0000-000000000000"
+    let pending = old.replacing(themeRetirement: .init(generationID: generation, committed: false))
+    try store.write(pending)
+    #expect(try store.read() == pending)
+    let committed = pending.replacing(
+      themeRetirement: .init(generationID: generation, committed: true))
+    try store.write(committed.replacing(phase: .committing, stages: []))
+    #expect(try store.read()?.themeRetirement == committed.themeRetirement)
+    #expect(throws: UnifiedSetupTransactionError.self) {
+      try store.write(
+        old.replacing(themeRetirement: .init(generationID: "../bad", committed: true)))
+    }
+    #expect(throws: UnifiedSetupTransactionError.self) {
+      try store.write(
+        UnifiedSetupTransaction(
+          operation: .apply, stages: [.theme], desiredAppearance: .dark,
+          contextDigest: old.contextDigest, themeRetirement: committed.themeRetirement))
+    }
+    var object = try #require(
+      try JSONSerialization.jsonObject(with: Data(contentsOf: store.url)) as? [String: Any])
+    object["theme_retirement"] = [
+      "generation_id": generation, "committed": true, "unexpected": true,
+    ]
+    try JSONSerialization.data(withJSONObject: object).write(to: store.url)
+    #expect(throws: UnifiedSetupTransactionError.self) { try store.read() }
+  }
+
   @Test
   func setupCoreOwnershipIsStrictAndRemovable() throws {
     let fixture = try ApplyFixture()
