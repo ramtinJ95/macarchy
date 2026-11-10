@@ -7,6 +7,126 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-10
+
+### Added
+
+- Opt-in Alacritty theming through one owned TOML import, with byte-preserving
+  adoption and teardown, explicit reload boundaries, and reported user color overrides.
+- The theme browser stars favorite themes, lists them first, and adds or removes the
+  selected theme with Add Favorite or Command-D. The action menu shows favorite themes
+  under Appearance and finds any installed theme as you type; choosing one applies it.
+- Command-Z in the theme browser undoes the last theme or background change, like
+  `macarchy theme undo`. The browser's status panel reports the result, and an
+  alert explains a failure or a notice.
+- Opt-in Ghostty theming through one reviewed, owned `config-file` include, with
+  version-aware config selection, targeted GUI reload on Ghostty 1.2.0+, read-only
+  color override reporting and exact restoration of unchanged user configuration
+  at teardown. Redirected owned configuration is refused.
+- Opt in to a theme-matched macOS accent with `[macos_look] accent = true`.
+  The isolated `macarchy-look` helper only runs the control on tested builds;
+  disabling it or tearing down restores the original unless you changed it later.
+- Opt-in macOS icon and widget styling from a theme's optional
+  `[macos] icon_style` declaration: default, dark, clear or accent-tinted.
+  The isolated helper checks support, reads back native state and reverts
+  mismatches. Setup disable and teardown preserve later user changes and
+  retain pending writes for recovery.
+  Editing the style on an existing theme also invalidates its cached generation
+  and any earlier apply review; themes without macOS options keep their existing
+  generation digests.
+- `macarchy theme install` and its dry run report colors in the imported palette
+  that are hard to read: text, dim text, accent and terminal colors against the
+  background, text on the selection, and hues that look alike. The report never
+  blocks an install. The check is ported from Scene's palette check (MIT).
+- `macarchy setup teardown` now puts back each display's original wallpaper and its
+  presentation options, recorded the first time Macarchy changed that display. A
+  wallpaper you changed yourself since then is kept and reported, as is an original
+  image that no longer exists or a display that is not connected.
+- `macarchy theme set --dry-run` (and its `--json` output) now shows a plan for every
+  enabled consumer: what changes, the generated files it reads, when the change
+  shows (live, reload, next prompt, fresh session…) and its preflight result, plus
+  the consumers disabled in the profile. Every preflight failure is listed, not
+  just the first. `macarchy theme set <theme> --reviewed <digest>` applies exactly
+  that plan and is refused when the theme, its background, the enabled consumers or
+  the active theme changed since the review.
+- The theme browser's Review button (Command-R) shows what applying the selected theme
+  changes in each enabled consumer, when each change shows, and any preflight failure.
+  Apply Reviewed applies exactly that plan and is refused if the theme or its consumers
+  changed in the meantime. Reviewed applies reconcile every enabled consumer, even when
+  only the background changes or the generation is reused. Edit Profile opens the profile, where consumers are turned on
+  or off.
+- `macarchy theme favorite add|remove|list` marks favorite themes, which
+  `macarchy theme list` shows first. `macarchy theme list --search "tok ni"` lists
+  only themes where every word starts a word of the theme's name, identifier or
+  appearance, ignoring case and accents. Favorites of themes you removed are dropped
+  with a notice.
+- `macarchy theme undo` and the action menu's "Undo last theme change" return to the
+  theme and background that were active before the last change. Macarchy keeps the
+  last 50 committed changes in `state/theme-history.json`; there is no redo.
+- Profile `[scripts] run = [...]` lists your own executables to run after every
+  theme change and at teardown, with the active palette in `MACARCHY_*`
+  environment variables. Scripts run without a shell, for at most 10 seconds,
+  and only when their resolved paths have trusted ownership and no writable
+  ancestors or write-granting ACLs. Cancellation and termination signals stop
+  the script and its original process group before Macarchy exits.
+  Each script's result shows under the `user-scripts` consumer.
+- Opt-in VS Code, Cursor, VSCodium and Windsurf (Devin Desktop) theming through a
+  generated Macarchy extension and comment-preserving default-profile settings.
+  Teardown restores the owned settings and uninstalls the owned extension;
+  non-default profiles and workspace overrides remain user-controlled.
+  VS Code extension updates require the user's **Developer: Reload Window**;
+  Macarchy never reloads or restarts an editor.
+  Inherited CLI profile/extension redirects are removed, portable installations
+  are refused, and timed-out CLI wrappers stop their owned process groups.
+- Opt-in Zed theming through a comment-preserving settings member and a live-reloaded
+  Macarchy theme family, with drift protection and exact selector restoration.
+  Supports themes activated before Zed integration and retains published-file
+  ownership across interrupted activations and generation collection.
+
+### Changed
+
+- Theme browser search now matches when every word you type starts a word of a
+  theme's name, identifier or appearance, so `tok ni` finds Tokyo Night and `okyo`
+  no longer does.
+- The theme browser now covers every display with the selected theme's background,
+  blurred, and opens on the display with the pointer, also over full-screen apps,
+  without switching Spaces. Typing filters and selects the first match, Escape
+  clears the filter before closing, and after Apply a small panel reports the
+  result and closes itself.
+- The Kitty theme now sets every color option that Kitty's bundled themes set,
+  including the macOS title bar, tab bar margins, marks, URL, bell and cursor trail
+  colors and the full 256-color palette, so switching away from a `kitten themes`
+  theme leaves none of its colors behind. Kitty's `*-theme.auto.conf` files and color
+  lines or includes after Macarchy's theme include are reported with the colors they
+  override; Macarchy never edits them.
+- `macarchy setup teardown` no longer stops when you changed macOS Light or Dark
+  appearance after setup; it keeps your choice and reports it.
+- `macarchy theme list` now includes themes you installed, not only the built-in
+  ones, and accepts `--state-root` like the other theme commands.
+
+### Fixed
+
+- Fix Ghostty adoption when the active theme predates Ghostty support by including a stable, atomically refreshed theme bridge.
+- Report a missing or edited Ghostty theme bridge as drift during inspection; unsafe bridge paths fail explicitly.
+- Retain accent restoration ownership when a native write succeeds but its helper
+  reply or confirmation record fails. Setup apply now reports the restored or kept
+  accent after deferred commit, including interrupted-commit recovery.
+- Neovim keeps Macarchy's colorscheme when a plugin picks another one shortly after
+  startup, for example on LazyVim's VeryLazy event. A colorscheme your own
+  configuration sets, or one you pick after the first second, stays.
+- Let setup teardown restore the original desktop after theme switches and undo,
+  while preserving user changes and themes that existed before setup. Concurrent
+  switches refuse retirement with a retry message (#338).
+- Avoid reconciling absent default consumers during unified teardown when its
+  canonical theme is about to be retired (#338).
+- Keep a fresh theme activation and its native values when recovering teardown
+  after the previous canonical theme was already retired (#338).
+- Read back a transient system-default wallpaper response before teardown calls it
+  a user change; persistent user-selected wallpapers remain untouched (#338).
+- User-script interruption now stops children and re-sends the default signal to
+  Macarchy's process without returning to application work, avoiding an intermittent
+  swallowed interrupt on macOS worker threads.
+
 ## [0.15.0] - 2026-11-08
 
 ### Removed
