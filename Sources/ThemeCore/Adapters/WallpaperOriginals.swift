@@ -422,21 +422,38 @@ package struct WallpaperOriginalRestorer: Sendable {
   private func steps() -> Planning {
     do {
       let originals = try WallpaperOriginalStore(root: root).load()
-      let displays = try control.inspect().map { display in
-        WallpaperConnectedDisplay(
-          id: display.id,
-          uuid: try control.displayUUID(display.id),
-          name: display.name,
-          wallpaperURL: display.wallpaperURL
-        )
-      }
-      return .planned(
-        WallpaperOriginals.restorationPlan(
+      func inspectPlan() throws -> [WallpaperRestoreStep] {
+        let displays = try control.inspect().map { display in
+          WallpaperConnectedDisplay(
+            id: display.id,
+            uuid: try control.displayUUID(display.id),
+            name: display.name,
+            wallpaperURL: display.wallpaperURL
+          )
+        }
+        return WallpaperOriginals.restorationPlan(
           originals: originals,
           displays: displays,
           isMacarchyWallpaper: WallpaperOwnership(root: root).isMacarchyWallpaper,
           originalExists: originalExists
-        ))
+        )
+      }
+      var steps = try inspectPlan()
+      // NSWorkspace can briefly return DefaultDesktop rather than the displayed image after
+      // native look restoration. Give an owned/original image the same bounded readback budget
+      // as a set before treating an external path as a user change. A persistent user choice,
+      // including the system default, is still kept; no fallback path is claimed as owned.
+      for _ in 0..<8 {
+        guard
+          steps.contains(where: {
+            if case .keepUserChange = $0 { return true }
+            return false
+          })
+        else { break }
+        waitForSettle()
+        steps = try inspectPlan()
+      }
+      return .planned(steps)
     } catch {
       return .unreadable(
         Self.unchanged(
