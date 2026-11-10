@@ -153,7 +153,12 @@ struct LeanFocusServiceTests {
     #expect(!record.matches(configuration: otherRoot, processID: getpid(), palette: palette))
   }
 
-  @Test func stablePathSurvivesUpgradeAndRestartsOnlyTheExactOwnedLabel() throws {
+  @Test(arguments: [
+    "retained", "deleted", "replaced", "start-mismatch", "start-unavailable", "pid-mismatch",
+    "foreign-label", "foreign-root", "missing-record", "malformed-record", "current-record",
+    "missing-new-helper", "changed-plist", "changed-arguments", "extra-process",
+  ])
+  func stablePathSurvivesUpgradeAndRestartsOnlyTheExactOwnedLabel(condition: String) throws {
     #expect(
       LeanFocusServiceConfiguration(
         stateRoot: URL(filePath: "/state"),
@@ -179,6 +184,26 @@ struct LeanFocusServiceTests {
       try bytes.write(to: plist)
       try FileManager.default.removeItem(at: stable)
       try FileManager.default.createSymbolicLink(at: stable, withDestinationURL: next)
+      // Unlike the old retained-keg test, simulate proc_pidpath failing after
+      // cleanup. A changed stable target alone is not enough to excuse that failure.
+      if condition != "retained" && condition != "replaced" {
+        try FileManager.default.removeItem(at: old)
+      }
+      try FileManager.default.createDirectory(
+        at: configuration.runtimeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+      let record = LeanFocusRuntime(
+        label: condition == "foreign-label" ? "foreign" : LeanFocusService.label,
+        stateRoot: condition == "foreign-root" ? "/foreign" : configuration.stateRoot,
+        pid: condition == "pid-mismatch" ? 999 : 123, started: 1000,
+        executablePath: condition == "current-record"
+          ? try #require(configuration.currentExecutablePath) : old.path,
+        generationID: "old", accent: "#abcdef")
+      if condition != "missing-record" {
+        try (condition == "malformed-record" ? Data("invalid".utf8) : JSONEncoder().encode(record))
+          .write(to: configuration.runtimeURL)
+      }
+      if condition == "missing-new-helper" { try FileManager.default.removeItem(at: next) }
+      if condition == "changed-plist" { try Data("foreign".utf8).write(to: plist) }
       let state = Mutex((restarted: false, calls: [[String]]()))
       let service = LeanFocusService(
         homeDirectory: root,
@@ -196,7 +221,9 @@ struct LeanFocusServiceTests {
             }
             let pid = value.restarted ? 124 : 123
             if request.executableURL.lastPathComponent == "pgrep" {
-              return ProcessResult(terminationStatus: 0, output: "\(pid)\n")
+              return ProcessResult(
+                terminationStatus: 0,
+                output: condition == "extra-process" ? "\(pid)\n999\n" : "\(pid)\n")
             }
             return ProcessResult(
               terminationStatus: 0,
@@ -207,13 +234,30 @@ struct LeanFocusServiceTests {
                 pid = \(pid)
                 arguments = {
                 \(configuration.arguments.joined(separator: "\n"))
+                \(condition == "changed-arguments" ? "--foreign\n" : "")\
                 }
                 """)
           }
         },
-        processPath: { _ in state.withLock { $0.restarted ? next.path : old.path } },
+        processPath: { pid in
+          if state.withLock({ $0.restarted }) { return next.path }
+          guard condition == "retained" else {
+            throw BordersServiceError.blocked("cannot resolve PID \(pid)")
+          }
+          return old.path
+        },
+        processStarted: { _ in
+          condition == "start-unavailable" ? nil : condition == "start-mismatch" ? 1001 : 1000
+        },
         wait: {}, currentHomeDirectory: root)
+      guard ["retained", "deleted", "replaced"].contains(condition) else {
+        #expect(throws: (any Error).self) { try service.inspect(configuration: configuration) }
+        #expect(throws: (any Error).self) { try service.start(configuration) }
+        #expect(state.withLock { $0.calls.allSatisfy { $0.first == "print" || $0.first == "-a" } })
+        return
+      }
       #expect(try !service.inspect(configuration: configuration).executableIsCurrent)
+      #expect(state.withLock { $0.calls.allSatisfy { $0.first == "print" || $0.first == "-a" } })
       try service.start(configuration)
       #expect(try service.inspect(configuration: configuration).processID == 124)
       #expect(try service.inspect(configuration: configuration).executableIsCurrent)
