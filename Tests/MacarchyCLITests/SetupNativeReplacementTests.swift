@@ -221,6 +221,31 @@ struct SetupNativeReplacementTests {
     #expect(try SetupNativeReplacement.digest(fixture.original) == proposal.originalDigest)
   }
 
+  @Test(arguments: [false, true])
+  func replacementPreviewNeverCreatesAnOperationalLock(active: Bool) throws {
+    let fixture = try Fixture(kind: "file")
+    defer { fixture.cleanup() }
+    let proposal = try #require(try fixture.store.propose(.zsh))
+    if active {
+      var seed = fixture.seed
+      seed.replacement = proposal
+      try fixture.journal(proposal)
+      _ = try seed.seed(approval: seed.plan().approval)
+    }
+    let run = fixture.base.state.appending(path: "run")
+    if FileManager.default.fileExists(atPath: run.path) {
+      try FileManager.default.removeItem(at: run)
+    }
+    _ = try fixture.store.restore(active ? [proposal] : [], dryRun: true)
+    #expect(!FileManager.default.fileExists(atPath: run.path))
+    if active {
+      #expect(try fixture.store.read().records.first?.phase == .installed)
+      #expect(
+        try SetupNativeReplacement.digest(URL(filePath: proposal.backup)) == proposal.originalDigest
+      )
+    }
+  }
+
   private struct Interrupted: Error {}
 
   private struct Fixture {
