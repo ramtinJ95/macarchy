@@ -83,6 +83,52 @@ struct MacOSAppearanceEventsTests {
     #expect(!MacOSAppearanceEvents.Failure("target unavailable").description.contains("tccutil"))
   }
 
+  @Test func launchCompletionAloneDoesNotMakeAPendingTargetReady() throws {
+    var events = 0
+    let pid = try MacOSAppearanceEvents.awaitReadyTarget(
+      before: Date().addingTimeInterval(3),
+      observe: { events == 2 ? 42 : nil },
+      receiveEvent: { _ in
+        events += 1
+        return true
+      })
+    #expect(pid == 42)
+    #expect(events == 2)
+  }
+
+  @Test func readinessDeadlineIsNamedAndNeverReturnsAnUnreadyPID() {
+    do {
+      _ = try MacOSAppearanceEvents.awaitReadyTarget(
+        before: .distantPast,
+        observe: {
+          Issue.record("Expired resolution must not begin")
+          return 42
+        },
+        receiveEvent: { _ in
+          Issue.record("Expired resolution must not wait")
+          return true
+        })
+      Issue.record("An unready process is not an authorized target")
+    } catch let failure as MacOSAppearanceEvents.Failure {
+      #expect(failure.code == -1712)
+      #expect(failure.state == "timed_out")
+      #expect(failure.description.contains("target_readiness_timed_out"))
+    } catch { Issue.record("Unexpected error: \(error)") }
+  }
+
+  @Test func missingLaunchEventSourceFailsExplicitlyWithoutSpinning() {
+    var events = 0
+    #expect(throws: MacOSAppearanceEvents.Failure.self) {
+      try MacOSAppearanceEvents.awaitReadyTarget(
+        before: Date().addingTimeInterval(3), observe: { nil },
+        receiveEvent: { _ in
+          events += 1
+          return false
+        })
+    }
+    #expect(events == 1)
+  }
+
   @Test func missingProcessAfterConsentRechecksOnceWithoutPrompting() throws {
     var asks = [Bool]()
     let value = try MacOSAppearanceEvents.withTargetRecovery(ask: true) { ask in
