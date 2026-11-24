@@ -261,6 +261,23 @@ struct NativeGuidedSetupTests {
     #expect(repeated.succeeded, "\(repeated.output)")
     #expect(try store.read().records == records)
     #expect(try String(contentsOf: shell, encoding: .utf8) == edited)
+    // Removing an apply-only theme seam is a personal edit, not permission to
+    // block restoring the original or to discard these edited starter bytes.
+    let editedKitty = "font_size 31\n# personal starter edits, no managed include\n"
+    try editedKitty.write(to: kitty, atomically: true, encoding: .utf8)
+    #expect(!(try planner.prepare(context: context)).succeeded)
+    let teardownPlan = try planner.prepare(context: context, purpose: .teardown)
+    let teardownText = try teardownPlan.report.render(json: false)
+    #expect(teardownPlan.succeeded, "\(teardownText)")
+    for seed in try UnifiedSetupNativeStarters.prepare(
+      context: context,
+      profile: context.loadProfile().profile,
+      theme: ThemePackageLoader().load(
+        packageURL: context.themesRoot.appending(path: "catppuccin-mocha")),
+      forTeardown: true)
+    {
+      #expect(throws: (any Error).self) { try seed.seed(approval: seed.plan().approval) }
+    }
     let teardown = UnifiedSetupTeardownCommandRunner(
       planner: planner,
       environmentTeardown: { context, paths, dryRun in
@@ -285,6 +302,13 @@ struct NativeGuidedSetupTests {
       try String(contentsOfFile: #require(shellRecord.displacedStarter), encoding: .utf8) == edited)
     #expect(try String(contentsOfFile: shellRecord.proposal.backup, encoding: .utf8) == original)
     #expect(restored.output.contains(shellRecord.proposal.backup))
+    let kittyRecord = try #require(
+      try store.read().records.first { $0.proposal.provider == .kitty })
+    #expect(
+      try String(contentsOfFile: #require(kittyRecord.displacedStarter), encoding: .utf8)
+        == editedKitty)
+    // The declared standard source is now the original, without our theme seam.
+    #expect(try planner.prepare(context: context, purpose: .teardown).succeeded)
   }
 
   private func answers() -> GuidedSetupAnswers {

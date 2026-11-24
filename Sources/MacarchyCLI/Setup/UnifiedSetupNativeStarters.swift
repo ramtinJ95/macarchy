@@ -15,14 +15,32 @@ enum UnifiedSetupNativeStarters {
   }
 
   static func prepare(
-    context: UnifiedSetupPlanContext, profile: PortableProfile, theme: ThemePackage
+    context: UnifiedSetupPlanContext, profile: PortableProfile, theme: ThemePackage,
+    forTeardown: Bool = false
   ) throws -> [EnvironmentNativeSeed] {
-    guard !context.nativeStarterProviders.isEmpty else { return [] }
+    let providers: [EnvironmentNativeSeed.Provider]
+    if forTeardown {
+      // User-owned starter edits (or already-restored originals) need not still
+      // implement apply's theme seams. The real teardown preflights receipts and
+      // retained originals, and preserves the current entry before restoration.
+      let records = try SetupNativeReplacement(
+        homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
+      ).read().records
+      providers = EnvironmentNativeSeed.Provider.allCases.filter { provider in
+        records.contains { $0.proposal.provider == provider && $0.phase != .cancelled }
+          && provider.isEnabled(in: profile.environment)
+          && provider.source(in: profile.environment)?.path
+            == provider.standardURL(homeDirectory: context.homeDirectory).path
+      }
+    } else {
+      providers = context.nativeStarterProviders
+    }
+    guard !providers.isEmpty else { return [] }
     let ownership = try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership()
     let palette =
-      context.nativeStarterProviders.contains(.starship)
+      providers.contains(.starship)
       ? Data(StarshipAdapter.render(package: theme).utf8) : nil
-    return try context.nativeStarterProviders.map { provider in
+    return try providers.map { provider in
       let expected = reviewedDestination(provider, context: context, profile: profile)
       guard provider.isEnabled(in: profile.environment),
         provider.source(in: profile.environment)?.path == expected.path
@@ -39,8 +57,9 @@ enum UnifiedSetupNativeStarters {
       return EnvironmentNativeSeed(
         provider: provider, destination: expected, homeDirectory: context.homeDirectory,
         stateRoot: context.stateRoot, resourcesRoot: context.environmentResourcesRoot,
-        bootstrapPalette: palette, createParentDirectory: true,
-        replacement: context.nativeReplacementProposals[provider.rawValue])
+        bootstrapPalette: palette, createParentDirectory: !forTeardown,
+        replacement: forTeardown ? nil : context.nativeReplacementProposals[provider.rawValue],
+        restorationPreview: forTeardown)
     }
   }
 
