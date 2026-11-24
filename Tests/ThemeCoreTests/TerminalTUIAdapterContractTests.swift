@@ -76,7 +76,7 @@ extension AdapterContractTests {
           ProcessRequest(
             executableURL: URL(filePath: "/test/atuin"),
             arguments: ["config", "get", "theme.name"],
-            timeout: 1,
+            timeout: ReadOnlyThemeProbe.timeout,
             environmentOverrides: ["ATUIN_CONFIG_DIR": atuinDirectory.path]
           ),
         ]

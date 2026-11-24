@@ -284,6 +284,16 @@ struct EnvironmentVerification: Encodable, Equatable, Sendable {
   let message: String
 }
 
+func restoredSessionMessage(_ checks: [EnvironmentVerification]) -> String {
+  guard !checks.isEmpty else { return "" }
+  let failures = checks.filter { $0.status != "verified" }
+  if failures.isEmpty {
+    return " The restored fresh session was verified after unified restoration."
+  }
+  return " Configuration files were restored, but native startup still requires attention: "
+    + failures.map(\.message).joined(separator: "; ") + "."
+}
+
 struct EnvironmentSessionVerifier: Sendable {
   let verify: @Sendable (EnvironmentProfile, URL) -> [EnvironmentVerification]
   let verifyRestored: @Sendable (EnvironmentProfile, URL) -> [EnvironmentVerification]
@@ -399,7 +409,8 @@ struct EnvironmentLifecycleReport: CommandReport, Sendable {
   }
 
   var succeeded: Bool {
-    ["converged", "applied", "no_change", "ready", "restored", "absent"].contains(outcome)
+    ["converged", "applied", "applied_incomplete", "no_change", "ready", "restored", "absent"]
+      .contains(outcome)
   }
 
   func execution(json: Bool) throws -> CommandExecution {
@@ -711,10 +722,21 @@ struct EnvironmentStatusCommandRunner: Sendable {
       !missing && providerReady && generationReady && themeReady
       && verificationReady
       && (transactionStatus == "clear" || transactionStatus == "pending_commit")
+    // The apply's configuration commit and theme health are different results.
+    // Inspection never accepts a timeout as convergence, and other failures must
+    // not be hidden behind the apply-only incomplete outcome.
+    let retainedVerification =
+      applied != nil && !missing && providerReady && generationReady
+        && verificationReady && themeFailure == nil
+        && (transactionStatus == "clear" || transactionStatus == "pending_commit")
+        && permitsEnvironmentConfigurationCommit(themeState)
+      ? pendingEnvironmentThemeMessage(themeState) : nil
     let outcome =
       converged
       ? (applied?.outcome ?? "converged")
-      : transactionStatus == "clear" ? "drifted" : "blocked"
+      : retainedVerification != nil
+        ? "applied_incomplete"
+        : transactionStatus == "clear" ? "drifted" : "blocked"
     return EnvironmentLifecycleReport(
       operation: operation,
       outcome: outcome,
@@ -728,7 +750,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
       entries: provider.entries,
       theme: themeState,
       verification: verification,
-      message: themeFailure ?? provider.blockedMessage
+      message: themeFailure ?? provider.blockedMessage ?? retainedVerification
         ?? (converged
           ? (applied?.message ?? "The managed daily tool environment is converged.")
           : "The managed daily tool environment requires attention.")

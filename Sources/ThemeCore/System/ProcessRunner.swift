@@ -76,16 +76,28 @@ package struct ProcessRunner: Sendable {
       let capture = try OutputCapture(output.fileHandleForReading)
       let deadline = DispatchTime.now() + timeout
       if completion.wait(timeout: deadline) == .timedOut {
+        // A delayed termination callback must not turn a known error exit into
+        // a read-only verification timeout that configuration apply may retain.
+        let exitedWithError = !process.isRunning && process.terminationStatus != 0
+        let exitStatus = exitedWithError ? process.terminationStatus : nil
         process.terminate()
         if completion.wait(timeout: .now() + 1) == .timedOut {
           Darwin.kill(process.processIdentifier, SIGKILL)
           process.waitUntilExit()
         }
         capture.stop()
+        if let exitStatus {
+          throw ProcessRunnerError.exitedWithIncompleteOutput(
+            request.executableURL, timeout, exitStatus)
+        }
         throw ProcessRunnerError.timedOut(request.executableURL, timeout)
       }
       guard capture.drained.wait(timeout: deadline) == .success else {
         capture.stop()
+        if process.terminationStatus != 0 {
+          throw ProcessRunnerError.exitedWithIncompleteOutput(
+            request.executableURL, timeout, process.terminationStatus)
+        }
         throw ProcessRunnerError.timedOut(request.executableURL, timeout)
       }
       data = try capture.result()
@@ -141,6 +153,10 @@ package struct ProcessRunner: Sendable {
     // mutating the extension store after the command has returned.
     _ = Darwin.kill(-pid, SIGKILL)
     guard capture.drained.wait(timeout: deadline ?? .distantFuture) == .success else {
+      if info.si_code == CLD_EXITED && info.si_status != 0 {
+        throw ProcessRunnerError.exitedWithIncompleteOutput(
+          request.executableURL, request.timeout!, info.si_status)
+      }
       throw ProcessRunnerError.timedOut(request.executableURL, request.timeout!)
     }
     return ProcessResult(
@@ -207,11 +223,14 @@ private final class OutputCapture: Sendable {
 
 package enum ProcessRunnerError: Error, CustomStringConvertible, Equatable, Sendable {
   case timedOut(URL, TimeInterval)
+  case exitedWithIncompleteOutput(URL, TimeInterval, Int32)
 
   package var description: String {
     switch self {
     case .timedOut(let executableURL, let timeout):
       "Process \(executableURL.path) exceeded its \(timeout)-second timeout"
+    case .exitedWithIncompleteOutput(let executableURL, let timeout, let status):
+      "Process \(executableURL.path) exited with error \(status); output did not complete within \(timeout) seconds"
     }
   }
 }

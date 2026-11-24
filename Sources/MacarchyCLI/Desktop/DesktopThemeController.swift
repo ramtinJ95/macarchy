@@ -56,7 +56,7 @@ struct DesktopThemeController: Sendable {
         )
       },
       inspect: { adapterIDs, stateRoot, consumerPaths in
-        return try ThemeRuntimeSelection.activationCoordinator(
+        let inspections = try ThemeRuntimeSelection.activationCoordinator(
           stateRoot: stateRoot,
           consumerPaths: consumerPaths,
           enabledAdapterIDs: enabledAdapterIDs
@@ -68,7 +68,27 @@ struct DesktopThemeController: Sendable {
             message: $0.message
           )
         }
+        guard case .current(let record) = try ReconciliationStatusStore(root: stateRoot).read()
+        else { return inspections }
+        return preservingUnfinishedThemeVerification(inspections, results: record.results)
       }
     )
+  }
+}
+
+/// Read-only seam inspection cannot retroactively prove a timed-out subprocess.
+/// Keep its correlated outcome visible until a real reconciliation completes.
+func preservingUnfinishedThemeVerification(
+  _ inspections: [DesktopThemeAdapterStatus], results: [AdapterResult]
+) -> [DesktopThemeAdapterStatus] {
+  inspections.map { inspection in
+    guard inspection.status == AdapterInspectionStatus.ready.rawValue,
+      let pending = results.first(where: {
+        $0.adapterID == inspection.adapterID && $0.status == .verificationTimedOut
+      })
+    else { return inspection }
+    return DesktopThemeAdapterStatus(
+      adapterID: inspection.adapterID, requirement: inspection.requirement,
+      status: pending.status.rawValue, message: pending.message)
   }
 }

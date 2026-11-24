@@ -34,6 +34,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   let desktopApply: ComponentApply<DesktopAggregateMutationReport>
   let environmentApply: ComponentApply<EnvironmentLifecycleReport>
   let transactionTeardown: UnifiedSetupTeardownCommandRunner
+  let restoredSessionVerifier: EnvironmentSessionVerifier
   let faultInjector: @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void
 
   init(
@@ -47,6 +48,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     desktopApply: @escaping ComponentApply<DesktopAggregateMutationReport>,
     environmentApply: @escaping ComponentApply<EnvironmentLifecycleReport>,
     transactionTeardown: UnifiedSetupTeardownCommandRunner = .live,
+    restoredSessionVerifier: EnvironmentSessionVerifier = .assumed,
     faultInjector: @escaping @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void = {
       _ in
     }
@@ -61,6 +63,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     self.desktopApply = desktopApply
     self.environmentApply = environmentApply
     self.transactionTeardown = transactionTeardown
+    self.restoredSessionVerifier = restoredSessionVerifier
     self.faultInjector = faultInjector
   }
 
@@ -199,7 +202,8 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         enabledThemeAdapterIDs: enabledThemeAdapterIDs,
         profile: profile
       )
-    }
+    },
+    restoredSessionVerifier: .live
   )
 
   func execute(
@@ -678,7 +682,8 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         }
 
         return try result(
-          outcome: mutated ? "applied" : "no_change",
+          outcome: environment.hasPendingThemeVerification
+            ? "applied_incomplete" : mutated ? "applied" : "no_change",
           mutated: mutated,
           plan: currentPlan,
           packages: packages,
@@ -686,9 +691,11 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           desktop: desktop,
           environment: environment,
           preferences: preferences,
-          message: mutated
-            ? "Reviewed configuration applied. Permission grants are not implied verified; use setup guided --resume for context-specific checks."
-            : "Reviewed configuration is already current. Permission grants are not implied verified; use setup guided --resume for context-specific checks.",
+          message: environment.hasPendingThemeVerification
+            ? "Reviewed configuration is applied; required theme verification remains incomplete. Run macarchy reconcile. Permission checks are separate."
+            : mutated
+              ? "Reviewed configuration applied. Permission grants are not implied verified; use setup guided --resume for context-specific checks."
+              : "Reviewed configuration is already current. Permission grants are not implied verified; use setup guided --resume for context-specific checks.",
           json: json
         )
       }
@@ -789,6 +796,16 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         context: context,
         consumerPaths: consumerPaths
       )
+      // Only now are native replacements and every component back in place.
+      let sessionMessage: String
+      do {
+        let restoredProfile = try context.loadProfile().profile.environment
+        sessionMessage = restoredSessionMessage(
+          restoredSessionVerifier.verifyRestored(restoredProfile, context.homeDirectory))
+      } catch {
+        sessionMessage =
+          " Configuration files were restored; native startup could not be verified because the profile could not be read: \(error)."
+      }
       return try result(
         outcome: "rolled_back",
         mutated: true,
@@ -798,7 +815,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         desktop: desktop,
         environment: environment,
         message:
-          "Configuration was rolled back. \(message) Installed packages and manual permission decisions remain. Resume: \(GuidedSetupPermissions.resumeCommand(context)). The current configuration plan must be reviewed again before retrying.",
+          "Configuration was rolled back. \(message)\(sessionMessage) Installed packages and manual permission decisions remain. Resume: \(GuidedSetupPermissions.resumeCommand(context)). The current configuration plan must be reviewed again before retrying.",
         json: json
       )
     } catch {
@@ -892,7 +909,8 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   ) -> UnifiedSetupApplyStage {
     stage(
       .environment(report), succeeded: report.succeeded, mutated: report.mutated,
-      failureMessage: report.message, successMessage: successMessage)
+      failureMessage: report.message,
+      successMessage: report.outcome == "applied_incomplete" ? report.message : successMessage)
   }
 
   private func stage(
@@ -986,6 +1004,11 @@ struct UnifiedSetupApplyStage: Encodable, Sendable {
   let details: SetupStageDetails?
   var finalization: UnifiedSetupTeardownStage? = nil
 
+  var hasPendingThemeVerification: Bool {
+    if case .environment(let report) = details { return report.outcome == "applied_incomplete" }
+    return false
+  }
+
   func finalized(by report: UnifiedSetupTeardownStage?) -> Self {
     guard let report else { return self }
     return Self(
@@ -1014,7 +1037,9 @@ private struct UnifiedSetupApplyReport: CommandReport {
   let preferences: UnifiedSetupApplyStage?
   let message: String
 
-  var succeeded: Bool { outcome == "applied" || outcome == "no_change" }
+  var succeeded: Bool {
+    outcome == "applied" || outcome == "applied_incomplete" || outcome == "no_change"
+  }
 
   func renderText() throws -> String {
     var lines = [
