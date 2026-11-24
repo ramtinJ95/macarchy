@@ -1,7 +1,8 @@
 # One-command installer
 
 Requires an interactive terminal on **Apple Silicon, macOS 26**, with working
-[Homebrew](https://brew.sh/) and Xcode Command Line Tools (`xcode-select --install`).
+[Homebrew](https://brew.sh/) at `/opt/homebrew` and Xcode Command Line Tools
+(`xcode-select --install`).
 The installer checks these prerequisites; it never installs them for you.
 
 Run this single command:
@@ -80,4 +81,6 @@ not persistently enable developer mode just because its test command was used.
   `macarchy setup guided --resume` once a profile has been saved; otherwise use
   `macarchy setup guided`. Re-running installation is not a permission repair.
 
-The README quickstart will adopt this entry point in the beta-documentation slice.
+Continue with the [README quickstart](../README.md#complete-guided-setup) or the
+[user guide](user-guide.md#permissions-and-resuming-setup) for configuration review,
+manual permissions, partial results and teardown.
