@@ -200,6 +200,93 @@ struct NativeGuidedSetupTests {
     }
   }
 
+  @Test(arguments: ["cancel", "keep", "apply"])
+  func existingConfigsCrossGuidedConsentReapplyAndUnifiedTeardown(choice: String) async throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    let context = context(fixture)
+    let planner = planner(fixture)
+    let apply = runner(
+      planner: planner,
+      neovim: .init { _, _ in
+        .init(id: "neovim_plugins", status: "verified", message: "fixture")
+      })
+    let shell = context.homeDirectory.appending(path: ".zshrc")
+    let kitty = context.homeDirectory.appending(path: ".config/kitty/kitty.conf")
+    let target = fixture.root.appending(path: "personal-kitty.conf")
+    try FileManager.default.createDirectory(
+      at: kitty.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let original = "export PERSONAL_ORIGINAL=1\n"
+    try original.write(to: shell, atomically: true, encoding: .utf8)
+    try "font_size 17\n".write(to: target, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(atPath: kitty.path, withDestinationPath: target.path)
+    let transcript = Mutex("")
+    let calls = Mutex(0)
+    var guided = GuidedSetupCommandRunner(
+      packageTrust: .testAlreadyTrusted, planner: planner,
+      apply: { received, paths, packages, preferences, adoptions in
+        calls.withLock { $0 += 1 }
+        return try await apply.execute(
+          context: received, consumerPaths: paths,
+          packageApproval: packages, preferencesApproval: preferences, adoptions: adoptions,
+          json: true)
+      },
+      io: .init(
+        read: { choice == "cancel" ? "no" : "yes" },
+        write: { text in transcript.withLock { $0 += text } }))
+    guided.selectReplacements = { proposals in
+      #expect(Set(proposals.map { $0.provider.rawValue }) == ["zsh", "kitty"])
+      return choice == "keep" ? [] : Set(proposals.map { $0.provider.rawValue })
+    }
+    let result = try await guided.execute(
+      context: context, consumerPaths: testConsumerPaths(), answers: answers())
+    let store = SetupNativeReplacement(
+      homeDirectory: context.homeDirectory, stateRoot: context.stateRoot)
+    if choice != "apply" {
+      #expect(calls.withLock { $0 } == 0)
+      #expect(try store.read().records.isEmpty)
+      #expect(try String(contentsOf: shell, encoding: .utf8) == original)
+      #expect(try FileManager.default.destinationOfSymbolicLink(atPath: kitty.path) == target.path)
+      if choice == "keep" { #expect(transcript.withLock { $0 }.contains("connect/migrate")) }
+      return
+    }
+    #expect(result.succeeded, "\(result.output)\n\(transcript.withLock { $0 })")
+    let records = try store.read().records
+    #expect(records.count == 2)
+    #expect(transcript.withLock { $0 }.contains("Back up and replace"))
+    let edited = try String(contentsOf: shell, encoding: .utf8) + "export PERSONAL_EDIT=1\n"
+    try edited.write(to: shell, atomically: true, encoding: .utf8)
+    let repeated = try await apply.execute(
+      context: context, consumerPaths: testConsumerPaths(), json: true)
+    #expect(repeated.succeeded, "\(repeated.output)")
+    #expect(try store.read().records == records)
+    #expect(try String(contentsOf: shell, encoding: .utf8) == edited)
+    let teardown = UnifiedSetupTeardownCommandRunner(
+      planner: planner,
+      environmentTeardown: { context, paths, dryRun in
+        try await EnvironmentTeardownCommandRunner().report(
+          stateRoot: context.stateRoot,
+          homeDirectory: context.homeDirectory, consumerPaths: paths, dryRun: dryRun,
+          withinUnifiedSetup: true)
+      }, desktopTeardown: { _, _, dryRun in desktopTeardownStub(dryRun: dryRun, mutated: false) },
+      themeTeardown: { _, _, _, dryRun in
+        .init(
+          succeeded: true, mutated: !dryRun, outcome: dryRun ? "planned" : "restored",
+          message: "fixture", details: nil)
+      })
+    let restored = try await teardown.execute(
+      context: context, consumerPaths: testConsumerPaths(), dryRun: false, json: true)
+    #expect(restored.succeeded, "\(restored.output)")
+    #expect(try String(contentsOf: shell, encoding: .utf8) == original)
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: kitty.path) == target.path)
+    #expect(try String(contentsOf: target, encoding: .utf8) == "font_size 17\n")
+    let shellRecord = try #require(try store.read().records.first { $0.proposal.provider == .zsh })
+    #expect(
+      try String(contentsOfFile: #require(shellRecord.displacedStarter), encoding: .utf8) == edited)
+    #expect(try String(contentsOfFile: shellRecord.proposal.backup, encoding: .utf8) == original)
+    #expect(restored.output.contains(shellRecord.proposal.backup))
+  }
+
   private func answers() -> GuidedSetupAnswers {
     var answers = GuidedSetupAnswers()
     answers.desktop = false

@@ -14,6 +14,7 @@ struct UnifiedSetupPlanContext: Sendable {
   let homeDirectory: URL
   var nativeStarterProviders: [EnvironmentNativeSeed.Provider] = []
   var nativeStarterApprovals: [String: String] = [:]
+  var nativeReplacementProposals: [String: SetupNativeReplacement.Proposal] = [:]
   /// Prepared by this planner for its environment component, never persisted authority.
   var nativeStarters: [EnvironmentNativeSeed] = []
 
@@ -848,10 +849,15 @@ struct UnifiedSetupPlanReport: CommandReport {
       lines += fieldOrigins.sorted { $0.key < $1.key }.map { "- \($0.key): \($0.value)" }
     }
     if !nativeStarters.isEmpty {
-      lines.append("Writable native starters (absent-only; retained on failure and teardown):")
+      lines.append(
+        "Writable native starters (absent-only files are retained; approved replacements restore originals at teardown):"
+      )
       for starter in nativeStarters {
         if let parent = starter.parentDirectory {
           lines.append("- Ensure ordinary user directory: \(parent) (0700 when created)")
+        }
+        if let replacement = starter.replacement {
+          lines.append("- Back up and replace: " + replacement.summary)
         }
         lines.append("- \(starter.provider): \(starter.destination) — \(starter.approval)")
         lines.append(starter.contents)

@@ -224,6 +224,8 @@ struct GuidedSetupCommandRunner: Sendable {
       [HomebrewPackageIdentity], @escaping GuidedSetupSelectionMenu.Requirements
     ) throws -> GuidedSetupAnswers =
       GuidedSetupTerminal.collect
+  var selectReplacements: @Sendable ([SetupNativeReplacement.Proposal]) throws -> Set<String> =
+    GuidedSetupTerminal.replacements
   var permissions: GuidedSetupPermissions? = nil
   var requestAutomation: @Sendable (MacOSPreference) throws -> Void =
     NativePreferenceEvent.requestAutomation
@@ -257,7 +259,7 @@ struct GuidedSetupCommandRunner: Sendable {
         portableAt: context.profileURL, portableRequired: true,
         machineAt: context.machineProfileURL, machineRequired: context.machineProfileRequired)
       var context = context
-      context.nativeStarterProviders = UnifiedSetupNativeStarters.pendingProviders(
+      context.nativeStarterProviders = try UnifiedSetupNativeStarters.pendingProviders(
         context: context, profile: profile.profile)
       let portable = try PortableProfileLoader().load(at: context.profileURL, required: true)
       let exclusions = portable.packages.layers.flatMap { layer in
@@ -329,9 +331,42 @@ struct GuidedSetupCommandRunner: Sendable {
 
   private func reviewAndApply(
     context: UnifiedSetupPlanContext, consumerPaths: ThemeConsumerPaths,
-    packageExclusions: [HomebrewPackageIdentity], trustReviewed: Bool = false, resume: Bool = false
+    packageExclusions: [HomebrewPackageIdentity], trustReviewed: Bool = false, resume: Bool = false,
+    replacementChoicesReviewed: Bool = false
   ) async throws -> CommandExecution {
     var context = context
+    if !replacementChoicesReviewed {
+      let store = SetupNativeReplacement(
+        homeDirectory: context.homeDirectory, stateRoot: context.stateRoot)
+      let ownership = try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership()
+      let proposals = try context.nativeStarterProviders.compactMap {
+        provider -> SetupNativeReplacement.Proposal? in
+        guard ownership?.records.contains(where: { $0.id == provider.entryID }) != true,
+          ownership?.standardNativeEntries?.contains(provider.entryID) != true
+        else { return nil }
+        return try store.propose(provider)
+      }
+      if !proposals.isEmpty {
+        let selected = try selectReplacements(proposals)
+        guard selected.isSubset(of: Set(proposals.map { $0.provider.rawValue })) else {
+          throw EnvironmentLifecycleError.blocked("Unknown guided replacement choice")
+        }
+        context.nativeReplacementProposals = Dictionary(
+          uniqueKeysWithValues:
+            proposals.filter { selected.contains($0.provider.rawValue) }.map {
+              ($0.provider.rawValue, $0)
+            })
+        let declined = proposals.filter { !selected.contains($0.provider.rawValue) }
+        context.nativeStarterProviders.removeAll { provider in
+          declined.contains { $0.provider == provider }
+        }
+        for proposal in declined {
+          io.write(
+            "Keeping existing configuration untouched: \(proposal.destination). The existing native connect/migrate path remains available; required theme seams must already be prepared.\n"
+          )
+        }
+      }
+    }
     var preparation = try planner.prepare(context: context)
     var requested = Set<MacOSPreference>()
     while let key = preparation.report.preferencesAutomationPermission,
@@ -434,7 +469,7 @@ struct GuidedSetupCommandRunner: Sendable {
     if grantedTrust {
       return try await reviewAndApply(
         context: context, consumerPaths: consumerPaths, packageExclusions: packageExclusions,
-        trustReviewed: true, resume: resume)
+        trustReviewed: true, resume: resume, replacementChoicesReviewed: true)
     }
 
     let cancelled = (
@@ -463,8 +498,8 @@ struct GuidedSetupCommandRunner: Sendable {
       })
     io.write(
       "Confirmation authorizes the reviewed package installation, configuration adoptions, "
-        + "absent native starters, native preferences and provider/service changes, including desktop keybindings when selected.\n"
-        + "Native starters become user-owned and are retained on failure or teardown; existing files are never replaced.\n"
+        + "native starters and listed backup-and-replace operations, native preferences and provider/service changes, including desktop keybindings when selected.\n"
+        + "Absent-only starters remain user-owned and retained. Approved replacements are journaled; teardown restores originals and retains originals and displaced starters in sibling backups.\n"
         + "Homebrew effects are not rolled back with configuration. Permissions are never granted automatically.\n"
         + "Homebrew runs visibly in this terminal and may ask for your administrator password through sudo. Macarchy does not collect or store it.\n"
     )

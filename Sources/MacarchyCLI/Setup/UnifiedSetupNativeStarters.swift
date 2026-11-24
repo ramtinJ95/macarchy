@@ -39,18 +39,22 @@ enum UnifiedSetupNativeStarters {
       return EnvironmentNativeSeed(
         provider: provider, destination: expected, homeDirectory: context.homeDirectory,
         stateRoot: context.stateRoot, resourcesRoot: context.environmentResourcesRoot,
-        bootstrapPalette: palette, createParentDirectory: true)
+        bootstrapPalette: palette, createParentDirectory: true,
+        replacement: context.nativeReplacementProposals[provider.rawValue])
     }
   }
 
   static func pendingProviders(
     context: UnifiedSetupPlanContext, profile: PortableProfile
-  ) -> [EnvironmentNativeSeed.Provider] {
-    EnvironmentNativeSeed.Provider.allCases.filter { provider in
+  ) throws -> [EnvironmentNativeSeed.Provider] {
+    let ownership = try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership()
+    return EnvironmentNativeSeed.Provider.allCases.filter { provider in
       let expected = reviewedDestination(provider, context: context, profile: profile)
       return provider.isEnabled(in: profile.environment)
         && provider.source(in: profile.environment)?.path == expected.path
-        && !FileManager.default.fileExists(atPath: expected.path)
+        && !(ownership?.standardNativeEntries?.contains(provider.entryID) ?? false)
+        && (!FileManager.default.fileExists(atPath: expected.path)
+          || SetupNativeReplacement.providers.contains(provider))
     }
   }
 
