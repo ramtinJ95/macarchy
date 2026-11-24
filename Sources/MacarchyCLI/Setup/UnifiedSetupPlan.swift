@@ -120,11 +120,13 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
 
   func execute(
     context: UnifiedSetupPlanContext,
-    json: Bool
+    json: Bool, full: Bool = false
   ) throws -> CommandExecution {
     let preparation = try prepare(context: context)
     let report = inspectedReport(preparation.report, context: context)
-    return (try report.render(json: json), preparation.succeeded)
+    return (
+      try json || full ? report.render(json: json) : report.renderReview(), preparation.succeeded
+    )
   }
 
   func inspectedReport(
@@ -827,6 +829,120 @@ struct UnifiedSetupPlanReport: CommandReport {
         )
       ]
     )
+  }
+
+  /// Consent-oriented view only. JSON, approval inputs and status/doctor retain
+  /// the complete report and its original renderer.
+  func renderReview() -> String {
+    var lines = ["Macarchy setup plan [\(outcome)]:"]
+    lines += layers.filter { $0.status == "loaded" }.map { "Profile (\($0.kind)): \($0.path)" }
+    var selections = providers
+    if let environment = components?.environment.report {
+      selections.merge(environment.dailyTools) { _, value in value }
+      selections.merge(environment.presets) { _, value in value }
+    }
+    let enabled = selections.sorted { $0.key < $1.key }.filter { $0.value != "disabled" }
+    lines.append(
+      "Configure: "
+        + (enabled.isEmpty
+          ? "none"
+          : enabled.map { $0.value == "enabled" ? $0.key : "\($0.key)=\($0.value)" }.joined(
+            separator: ", ")))
+    if let theme { lines.append("Theme: \(theme.id) (\(theme.appearance); \(theme.status))") }
+    lines.append(
+      "Install formulae: "
+        + (packages.formulae.isEmpty ? "none" : packages.formulae.joined(separator: ", ")))
+    lines.append(
+      "Install casks: " + (packages.casks.isEmpty ? "none" : packages.casks.joined(separator: ", "))
+    )
+    if let installation = packageInstallation {
+      lines += installation.nativeEffects
+      lines.append(
+        "No package rollback or automatic adoption; Homebrew owns dependency effects.")
+    }
+    lines.append(
+      "Configuration: \(files.count) managed/native entries; existing user-owned native files stay user-owned except reviewed replacements."
+    )
+    if !nativeStarters.isEmpty { lines.append("Writable native starters:") }
+    for starter in nativeStarters {
+      if starter.restorationPreview == true {
+        lines.append(
+          "Restoration preview only: \(starter.provider) — edits preserved; not publication authority."
+        )
+      } else if let replacement = starter.replacement {
+        lines.append("Back up and replace: " + replacement.summary)
+      } else {
+        lines.append(
+          "Create writable starter: \(starter.destination) (\(starter.provider); absent-only, retained at teardown)"
+        )
+      }
+    }
+    if !adoption.isEmpty {
+      lines.append("Adopt existing configuration: " + adoption.map(\.id).joined(separator: ", "))
+      lines += adoption.map { "- \($0.id): \($0.digest)" }
+      lines += files.filter { $0.status == "adoption_required" }.map {
+        "- Adopt \($0.id): \($0.path)"
+      }
+    }
+    if !services.isEmpty {
+      lines.append(
+        "Services (start/reload/restart, with rollback/restoration): "
+          + services.map(\.id).joined(separator: ", "))
+    }
+    // Side effects which are not captured by the provider/service names.
+    lines += actions.filter {
+      $0.id == "prepare_fresh_neovim_plugins" || $0.id == "configure_borders"
+    }
+    .map { "- \($0.id): \($0.message)" }
+    if let preferences = components?.preferences.report, preferences.outcome != "disabled" {
+      lines.append(preferences.target)
+      lines += preferences.preferences.map {
+        "Preference: \($0.key.rawValue) \($0.current) → \($0.target) [\($0.action)]"
+      }
+    }
+    lines.append(
+      permissions.isEmpty ? "Permissions: none" : "Permissions: manual, separately verified")
+    lines += permissions.map { "- \($0.id) [\($0.status)]: \($0.message)" }
+    if services.contains(where: { $0.id == "skhd" }) {
+      lines.append(
+        "- skhd Accessibility: manual grant; verified at managed service startup, not by this terminal."
+      )
+    }
+    if capabilities.contains(where: { $0.id == "apple-menu-helper" }) {
+      lines.append(
+        "- Apple-menu Accessibility: manual native grant after bar installation; verified through SketchyBar. Its Automation read is informational, not a required grant."
+      )
+    }
+    for boundary in manualBoundaries {
+      lines.append("- \(boundary.id) [\(boundary.kind)]: \(boundary.instruction)")
+    }
+    let disabled = selections.filter { $0.value == "disabled" }.keys.sorted()
+    if !disabled.isEmpty {
+      lines.append("Skipped components (disabled by profile): " + disabled.joined(separator: ", "))
+    }
+    if let declarations = packageDeclarations, !declarations.exclusions.isEmpty {
+      // Keep opt-out names/reasons, but omit per-package provenance and Brewfile
+      // copies. Required-package conflicts remain diagnostics, never counts.
+      for layer in Set(declarations.exclusions.map { $0.source.layer }).sorted() {
+        let excluded = declarations.exclusions.filter { $0.source.layer == layer }
+        lines.append(
+          "Skipped \(excluded.count) optional packages excluded by \(layer) profile (no uninstall): "
+            + excluded.map { $0.identity.key }.joined(separator: ", "))
+      }
+    }
+    if let digest = packageInstallation?.approvalDigest {
+      lines.append("Homebrew installation approval: --approve-packages \(digest)")
+    }
+    if let digest = preferencesApprovalDigest {
+      lines.append("Native preference approval: --approve-preferences \(digest)")
+    }
+    // Never truncate failures or consent boundaries, even if this exceeds a screen.
+    lines += PlanDiagnostic.renderLines(diagnostics)
+    lines.append(
+      "Full inventory: macarchy setup plan --full (same profile/state options); guided --full also shows starter contents."
+    )
+    lines.append("This plan made no installation or configuration changes.")
+    return lines.joined(separator: "\n")
   }
 
   func renderText() throws -> String {

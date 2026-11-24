@@ -226,6 +226,7 @@ struct GuidedSetupCommandRunner: Sendable {
       GuidedSetupTerminal.collect
   var selectReplacements: @Sendable ([SetupNativeReplacement.Proposal]) throws -> Set<String> =
     GuidedSetupTerminal.replacements
+  var fullReview = false
   var permissions: GuidedSetupPermissions? = nil
   var requestAutomation: @Sendable (MacOSPreference) throws -> Void =
     NativePreferenceEvent.requestAutomation
@@ -332,7 +333,7 @@ struct GuidedSetupCommandRunner: Sendable {
   private func reviewAndApply(
     context: UnifiedSetupPlanContext, consumerPaths: ThemeConsumerPaths,
     packageExclusions: [HomebrewPackageIdentity], trustReviewed: Bool = false, resume: Bool = false,
-    replacementChoicesReviewed: Bool = false
+    replacementChoicesReviewed: Bool = false, previousReview: String? = nil
   ) async throws -> CommandExecution {
     var context = context
     if !replacementChoicesReviewed {
@@ -372,7 +373,9 @@ struct GuidedSetupCommandRunner: Sendable {
     while let key = preparation.report.preferencesAutomationPermission,
       requested.insert(key).inserted
     {
-      io.write("\(try preparation.report.render(json: false))\n")
+      io.write(
+        "\(try fullReview ? preparation.report.render(json: false) : preparation.report.renderReview())\n"
+      )
       let recipient = NativePreferenceEvent.application(for: key).url.deletingPathExtension()
         .lastPathComponent
       io.write(
@@ -398,7 +401,15 @@ struct GuidedSetupCommandRunner: Sendable {
       preparation = try planner.prepare(context: context)
     }
     let plan = planner.inspectedReport(preparation.report, context: context)
-    io.write("\(try plan.render(json: false))\n")
+    let review = try plan.approvalText()
+    if review == previousReview {
+      io.write("Rechecked after formula trust: the reviewed setup is unchanged.\n")
+    } else {
+      if previousReview != nil {
+        io.write("Setup changed after formula trust; review the updated scope below.\n")
+      }
+      io.write("\(try fullReview ? plan.render(json: false) : plan.renderReview())\n")
+    }
     guard case .ready(let model, _) = preparation else {
       return (
         "Guided setup is blocked. The profile was retained; no installation or configuration was applied. Resolve the reported diagnostics or external prerequisites, then continue with macarchy setup guided --resume and the same profile options.",
@@ -469,7 +480,8 @@ struct GuidedSetupCommandRunner: Sendable {
     if grantedTrust {
       return try await reviewAndApply(
         context: context, consumerPaths: consumerPaths, packageExclusions: packageExclusions,
-        trustReviewed: true, resume: resume, replacementChoicesReviewed: true)
+        trustReviewed: true, resume: resume, replacementChoicesReviewed: true,
+        previousReview: review)
     }
 
     let cancelled = (
@@ -480,18 +492,11 @@ struct GuidedSetupCommandRunner: Sendable {
     // Unified apply still revalidates them before mutation.
     var approved = [String: String]()
     for adoption in plan.adoption {
-      io.write("Configuration adoption: \(adoption.id) — \(adoption.digest)\n")
       approved[adoption.id] = adoption.digest
     }
     let adoptions = UnifiedSetupAdoptionApprovals(digests: approved)
     let packageApproval = plan.packageInstallation?.approvalDigest
     let preferencesApproval = plan.preferencesApprovalDigest
-    if let packageApproval {
-      io.write("Homebrew installation approval: \(packageApproval)\n")
-    }
-    if let preferencesApproval {
-      io.write("Native preference approval: \(preferencesApproval)\n")
-    }
     context.nativeStarterApprovals = Dictionary(
       uniqueKeysWithValues: plan.nativeStarters.map {
         ($0.provider, $0.approval)

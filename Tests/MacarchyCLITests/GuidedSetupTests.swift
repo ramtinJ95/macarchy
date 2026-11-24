@@ -101,11 +101,11 @@ struct GuidedSetupTests {
     #expect(inventory.proposed.contains { $0.identity.key == "formula:jq" } == machineRestoresJq)
     #expect(
       !inventory.proposed.contains { ["spotify", "docker-desktop"].contains($0.identity.name) })
-    #expect(transcript.withLock { $0.contains("Excluded cask:docker-desktop by machine") })
+    #expect(transcript.withLock { $0.contains("optional packages excluded by machine profile") })
     if machineRestoresJq {
       #expect(result.output.contains("override") && result.output.contains("formula:jq"))
     } else {
-      #expect(transcript.withLock { $0.contains("--approve-packages") })
+      #expect(transcript.withLock { $0.contains("Homebrew installation approval:") })
     }
   }
 
@@ -535,6 +535,11 @@ struct GuidedSetupTests {
     #expect(
       transcript.withLock { $0.contains("Install & apply the reviewed setup now?") }
         == ["approve", "cancelApply"].contains(mode))
+    let text = transcript.withLock { $0 }
+    #expect(text.components(separatedBy: "Macarchy setup plan [").count - 1 == 1)
+    if ["approve", "cancelApply", "unresolved"].contains(mode) {
+      #expect(text.contains("Rechecked after formula trust: the reviewed setup is unchanged."))
+    }
     if mode == "cancelApply" { #expect(result.output.contains("trust grants remain")) }
     #expect(FileManager.default.fileExists(atPath: context.profileURL.path))
   }
