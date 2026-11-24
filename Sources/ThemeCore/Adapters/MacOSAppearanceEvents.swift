@@ -1,4 +1,5 @@
 import AppKit
+import CoreFoundation
 import CoreServices
 import Darwin
 import Foundation
@@ -37,11 +38,43 @@ package enum MacOSAppearanceEvents {
     guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 else {
       throw Failure("Appearance Apple Events are supported on macOS 26 only.")
     }
-    // Resolve through Launch Services on every attempt, not a snapshot of running
-    // PIDs. System Events is on-demand and may exit while native consent is open.
-    // Completion runs on a concurrent queue; wait for registration, never sleep.
+    let deadline = Date().addingTimeInterval(3)
+    if Thread.isMainThread {
+      return .init(processIdentifier: try readyTarget(before: deadline))
+    }
     let resolved = Mutex<Result<pid_t, Failure>?>(nil)
     let completed = DispatchSemaphore(value: 0)
+    DispatchQueue.main.async {
+      let result: Result<pid_t, Failure>
+      do { result = .success(try readyTarget(before: deadline)) } catch let error as Failure {
+        result = .failure(error)
+      } catch { result = .failure(Failure("Cannot resolve System Events: \(error)")) }
+      resolved.withLock { $0 = result }
+      completed.signal()
+    }
+    guard completed.wait(timeout: .now() + 3) == .success,
+      let result = resolved.withLock({ $0 })
+    else { throw readinessTimeout() }
+    return .init(processIdentifier: try result.get())
+  }
+
+  /// Launch completion precedes Apple Events registration. NSRunningApplication's
+  /// changing properties only refresh when the MAIN run loop turns, even for
+  /// background callers. Service its launch notifications, never sleep/poll a
+  /// cached process list or block that loop on a semaphore.
+  private static func readyTarget(before deadline: Date) throws -> pid_t {
+    precondition(Thread.isMainThread)
+    guard Date() < deadline else { throw readinessTimeout() }
+    // A signallable input source both keeps a plain CLI's run loop alive and
+    // makes run(mode:before:) return when completion arrives. Merely scheduling
+    // a block/waking the loop can leave it waiting until its deadline.
+    let wakeup = try LaunchWakeup()
+    CFRunLoopAddSource(CFRunLoopGetMain(), wakeup.source, .defaultMode)
+    defer {
+      CFRunLoopRemoveSource(CFRunLoopGetMain(), wakeup.source, .defaultMode)
+      CFRunLoopSourceInvalidate(wakeup.source)
+    }
+    let resolved = Mutex<Result<pid_t, Failure>?>(nil)
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = false
     configuration.hides = true
@@ -50,7 +83,7 @@ package enum MacOSAppearanceEvents {
       app, error in
       let result: Result<pid_t, Failure>
       if let app, app.bundleIdentifier == "com.apple.systemevents",
-        app.bundleURL?.standardizedFileURL.path == applicationURL.path, !app.isTerminated
+        app.bundleURL?.standardizedFileURL.path == applicationURL.path
       {
         result = .success(app.processIdentifier)
       } else {
@@ -58,15 +91,73 @@ package enum MacOSAppearanceEvents {
           Failure("Cannot resolve Apple's System Events: \(String(describing: error))."))
       }
       resolved.withLock { $0 = result }
-      completed.signal()
+      wakeup.signal()
     }
-    guard completed.wait(timeout: .now() + 3) == .success else {
-      throw Failure("System Events launch_timed_out after 3 seconds.", code: -1712)
+    var application: NSRunningApplication?
+    var observations = [NSKeyValueObservation]()
+    defer {
+      for observation in observations { observation.invalidate() }
     }
-    guard let result = resolved.withLock({ $0 }) else {
-      throw Failure("System Events launch completed without a target.")
+    return try awaitReadyTarget(
+      before: deadline,
+      observe: {
+        guard let result = resolved.withLock({ $0 }) else { return nil }
+        let pid = try result.get()
+        if application == nil {
+          application = NSRunningApplication(processIdentifier: pid)
+          if let app = application {
+            observations = [
+              app.observe(\.isFinishedLaunching, options: [.new]) { _, _ in wakeup.signal() },
+              app.observe(\.isTerminated, options: [.new]) { _, _ in wakeup.signal() },
+            ]
+          }
+        }
+        guard let app = application, !app.isTerminated,
+          app.bundleIdentifier == "com.apple.systemevents",
+          app.bundleURL?.standardizedFileURL.path == applicationURL.path
+        else { throw Failure("System Events exited before registration.", code: -600) }
+        return app.isFinishedLaunching ? pid : nil
+      },
+      receiveEvent: { RunLoop.current.run(mode: .default, before: $0) })
+  }
+
+  /// Core Foundation documents these source signal/wakeup operations as
+  /// thread-safe. Fields are immutable; late completion can only signal an
+  /// invalidated source, never stop an unrelated enclosing application run loop.
+  private final class LaunchWakeup: @unchecked Sendable {
+    let source: CFRunLoopSource
+
+    init() throws {
+      var context = CFRunLoopSourceContext()
+      context.perform = { _ in }
+      guard let source = CFRunLoopSourceCreate(nil, 0, &context) else {
+        throw Failure("Cannot create the System Events launch-notification source.")
+      }
+      self.source = source
     }
-    return .init(processIdentifier: try result.get())
+
+    func signal() {
+      CFRunLoopSourceSignal(source)
+      CFRunLoopWakeUp(CFRunLoopGetMain())
+    }
+  }
+
+  /// The event source is injectable so readiness/deadline tests need no process
+  /// launches, timers, sleeps or activation locks.
+  static func awaitReadyTarget(
+    before deadline: Date, observe: () throws -> pid_t?, receiveEvent: (Date) -> Bool
+  ) throws -> pid_t {
+    while Date() < deadline {
+      if let pid = try observe() { return pid }
+      guard receiveEvent(deadline) else {
+        throw Failure("Cannot receive System Events launch notifications.")
+      }
+    }
+    throw readinessTimeout()
+  }
+
+  private static func readinessTimeout() -> Failure {
+    Failure("System Events target_readiness_timed_out after 3 seconds.", code: -1712)
   }
 
   /// A missing process is not a permission verdict. Re-resolve once, never ask
