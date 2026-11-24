@@ -27,6 +27,7 @@ while (( $# )); do
     *) print -u2 "Unknown guest-test option: $1"; exit 64 ;;
   esac
 done
+python3 -B Scripts/test-install.py
 /usr/bin/swift test --disable-xctest "${test_arguments[@]}"
 if [[ "$portability" == true ]]; then
   /usr/bin/swift build --product macarchy
