@@ -249,7 +249,9 @@ struct SketchyBarRuntimeTests {
     }
   }
 
-  @Test(arguments: ["valid", "permission", "position", "script", "event"])
+  @Test(arguments: [
+    "valid", "permission", "position", "script", "event", "permission-event", "updates",
+  ])
   func appleRequiresSuccessfulHelperPresentationAndOwnedInteraction(condition: String) throws {
     let fixture = try SketchyBarRuntimeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -262,7 +264,7 @@ struct SketchyBarRuntimeTests {
         output =
           #"{"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,"margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on","items":["macarchy.apple","macarchy.theme.ready"]}"#
       case ["--query", "events"]:
-        output = #"{"mouse.clicked":{"bit":1}}"#
+        output = #"{"mouse.clicked":{"bit":1},"macarchy_permission_check":{"bit":2}}"#
       case ["--query", "macarchy.apple"]:
         output = Self.itemJSON(
           name: "macarchy.apple", drawing: "on",
@@ -272,7 +274,8 @@ struct SketchyBarRuntimeTests {
           script: condition == "script"
             ? "/foreign"
             : fixture.state.appending(path: "desktop/sketchybar/current/plugins/apple.sh").path,
-          updateMask: condition == "event" ? 0 : 1)
+          updateMask: condition == "event" ? 0 : condition == "permission-event" ? 1 : 3,
+          updates: condition == "updates" ? "when_shown" : "on")
       default:
         output = Self.itemJSON(name: "macarchy.theme.ready", drawing: "off", position: "right")
       }

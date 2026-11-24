@@ -36,6 +36,7 @@ struct GuidedBarPermissionStageTests {
 
   @Test(arguments: [
     "slow-automation", "slow-ax", "stale", "query-error", "query-deadline", "service-change",
+    "updates",
   ])
   func stagesRemainIndependentAndTimeoutsHaveActionableNames(mode: String) throws {
     let fixture = try ApplyFixture()
@@ -94,7 +95,10 @@ struct GuidedBarPermissionStageTests {
             // Presentation deliberately disagrees: it must not be permission evidence.
             "label": ["value": marker ? prefix + ax : "Menu ERR", "drawing": "on"],
             "icon": ["value": prefix + automation, "drawing": "off"],
-            "scripting": ["script": expected, "click_script": "", "update_freq": 0],
+            "scripting": [
+              "script": expected, "click_script": "", "update_freq": 0,
+              "updates": mode == "updates" ? "when_shown" : "on",
+            ],
           ]
           return .init(
             terminationStatus: 0,
@@ -103,7 +107,7 @@ struct GuidedBarPermissionStageTests {
         }, generationInspection: { generation }, serviceInspection: service,
         wait: { clock.withLock { $0 += 0.5 } }, now: { clock.withLock { $0 } })
     }
-    if mode == "service-change" {
+    if mode == "service-change" || mode == "updates" {
       #expect(throws: (any Error).self) { try check() }
       return
     }

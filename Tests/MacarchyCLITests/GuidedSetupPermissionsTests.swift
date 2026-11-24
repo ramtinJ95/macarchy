@@ -279,7 +279,7 @@ struct GuidedSetupPermissionsTests {
           "geometry": ["drawing": "on", "position": "left", "associated_space_mask": 0],
           "label": ["value": label, "drawing": granted || marker ? "off" : "on"],
           "icon": ["value": stage, "drawing": "off"],
-          "scripting": ["script": expected, "click_script": "", "update_freq": 0],
+          "scripting": ["script": expected, "click_script": "", "update_freq": 0, "updates": "on"],
         ]
         return .init(
           terminationStatus: 0,

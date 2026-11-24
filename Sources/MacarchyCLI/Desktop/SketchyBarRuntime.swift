@@ -794,8 +794,11 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         apple.scripting.script
           == pluginPath("apple"),
         apple.scripting.updateFrequency == 0,
+        apple.scripting.updates == "on",
         let bit = events["mouse.clicked"]?.bit,
-        apple.scripting.updateMask.map({ $0 & bit == bit }) == true
+        let permissionBit = events["macarchy_permission_check"]?.bit,
+        apple.scripting.updateMask.map({ $0 & (bit | permissionBit) == (bit | permissionBit) })
+          == true
       else {
         return drift(
           "running SketchyBar Apple-menu helper failed or its script/subscription is incomplete")

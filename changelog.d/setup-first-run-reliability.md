@@ -8,4 +8,5 @@
   avoiding misleading missing-defaults warnings from an intermediate rollback.
 - SketchyBar permission checks report Accessibility and Automation independently,
   with stage timings and explicit timeout/recheck guidance instead of checking
-  indefinitely. Missing Automation is distinguished from a failed native probe.
+  indefinitely, even while the bar is hidden, without adding idle polling.
+  Missing Automation is distinguished from a failed native probe.
