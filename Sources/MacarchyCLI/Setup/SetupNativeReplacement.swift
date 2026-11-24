@@ -134,7 +134,14 @@ struct SetupNativeReplacement: Sendable {
       let staging = URL(filePath: proposal.staging)
       staged.destination =
         proposal.enclosesKittyFile ? staging.appending(path: "kitty.conf") : staging
-      staged.createParentDirectory = proposal.enclosesKittyFile
+      staged.createParentDirectory = false
+      if proposal.enclosesKittyFile {
+        let parent = try PinnedFilesystem.openDirectory(at: staging.deletingLastPathComponent())
+        defer { Darwin.close(parent) }
+        let directory = try PinnedFilesystem.createDirectory(
+          parentDescriptor: parent, name: staging.lastPathComponent, url: staging, mode: 0o700)
+        Darwin.close(directory)
+      }
       // The standard-path starter bytes must retain standard-path semantics while
       // being published to a private sibling. The publisher takes reviewed bytes.
       try staged.publish(plan)
