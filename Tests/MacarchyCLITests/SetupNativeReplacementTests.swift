@@ -246,6 +246,37 @@ struct SetupNativeReplacementTests {
     }
   }
 
+  @Test func kittyDirectoryStagingCollisionIsNeverAdoptedAndRecoveryPreservesIt() async throws {
+    let fixture = try Fixture(kind: "kitty-directory-link")
+    defer { fixture.cleanup() }
+    let proposal = try #require(try fixture.store.propose(.kitty))
+    var seed = fixture.seed
+    seed.replacement = proposal
+    let plan = try seed.plan()
+    try fixture.journal(proposal)
+    let staging = URL(filePath: proposal.staging)
+    var store = fixture.store
+    store.checkpoint = { checkpoint in
+      if checkpoint == .journaled {
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: false)
+        try "foreign files are not starter ownership".write(
+          to: staging.appending(path: "foreign"), atomically: true, encoding: .utf8)
+      }
+    }
+    #expect(throws: (any Error).self) { try store.install(seed, approval: plan.approval) }
+    #expect(try SetupNativeReplacement.kind(fixture.original) == S_IFLNK)
+    #expect(try SetupNativeReplacement.kind(URL(filePath: proposal.backup)) == nil)
+    let recovery = try await UnifiedSetupRecoveryCommandRunner.live.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths(),
+      acknowledgeUnverifiedSpicetify: false, json: true)
+    #expect(recovery.succeeded, "\(recovery.output)")
+    #expect(
+      try String(contentsOf: staging.appending(path: "foreign"), encoding: .utf8)
+        == "foreign files are not starter ownership")
+    #expect(try SetupNativeReplacement.digest(fixture.original) == proposal.originalDigest)
+    #expect(recovery.output.contains(proposal.staging))
+  }
+
   private struct Interrupted: Error {}
 
   private struct Fixture {
