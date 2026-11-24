@@ -219,7 +219,7 @@ struct GuidedSetupPermissionsTests {
       reconcile: { _, _ in events.withLock { $0.append("reconcile") } })
     let runner = GuidedSetupCommandRunner(
       packageTrust: .testAlreadyTrusted, planner: fixture.planner(),
-      apply: { _, _, _, _, _ in
+      apply: { _, _, _, _, _, _ in
         #expect(!resume)
         events.withLock { $0.append("apply") }
         return ("configuration applied", true)

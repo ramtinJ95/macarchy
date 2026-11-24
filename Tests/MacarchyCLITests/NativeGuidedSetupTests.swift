@@ -16,10 +16,11 @@ struct NativeGuidedSetupTests {
     let guided = GuidedSetupCommandRunner(
       packageTrust: .testAlreadyTrusted,
       planner: planner,
-      apply: { context, paths, packages, preferences, adoptions in
+      apply: { context, paths, packages, preferences, adoptions, reviewedPlan in
         try await apply.execute(
           context: context, consumerPaths: paths, packageApproval: packages,
-          preferencesApproval: preferences, adoptions: adoptions, json: true)
+          preferencesApproval: preferences, adoptions: adoptions, reviewedPlan: reviewedPlan,
+          json: true)
       },
       io: GuidedSetupIO(read: { "yes" }, write: { _ in }))
     let retained = """
@@ -83,10 +84,11 @@ struct NativeGuidedSetupTests {
     let guided = GuidedSetupCommandRunner(
       packageTrust: .testAlreadyTrusted,
       planner: planner,
-      apply: { context, paths, packages, preferences, adoptions in
+      apply: { context, paths, packages, preferences, adoptions, reviewedPlan in
         try await apply.execute(
           context: context, consumerPaths: paths, packageApproval: packages,
-          preferencesApproval: preferences, adoptions: adoptions, json: true)
+          preferencesApproval: preferences, adoptions: adoptions, reviewedPlan: reviewedPlan,
+          json: true)
       },
       io: GuidedSetupIO(
         read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } },
@@ -175,7 +177,7 @@ struct NativeGuidedSetupTests {
     let guided = GuidedSetupCommandRunner(
       packageTrust: .testAlreadyTrusted,
       planner: planner,
-      apply: { received, paths, packages, preferences, adoptions in
+      apply: { received, paths, packages, preferences, adoptions, reviewedPlan in
         var received = received
         if change == "approval" {
           received.nativeStarterApprovals["zsh"] = "stale"
@@ -184,7 +186,8 @@ struct NativeGuidedSetupTests {
         }
         return try await apply.execute(
           context: received, consumerPaths: paths, packageApproval: packages,
-          preferencesApproval: preferences, adoptions: adoptions, json: true)
+          preferencesApproval: preferences, adoptions: adoptions, reviewedPlan: reviewedPlan,
+          json: true)
       }, io: GuidedSetupIO(read: { "yes" }, write: { _ in }))
     let result = try await guided.execute(
       context: context, consumerPaths: testConsumerPaths(), answers: answers())
@@ -224,12 +227,12 @@ struct NativeGuidedSetupTests {
     let calls = Mutex(0)
     var guided = GuidedSetupCommandRunner(
       packageTrust: .testAlreadyTrusted, planner: planner,
-      apply: { received, paths, packages, preferences, adoptions in
+      apply: { received, paths, packages, preferences, adoptions, reviewedPlan in
         calls.withLock { $0 += 1 }
         return try await apply.execute(
           context: received, consumerPaths: paths,
           packageApproval: packages, preferencesApproval: preferences, adoptions: adoptions,
-          json: true)
+          reviewedPlan: reviewedPlan, json: true)
       },
       io: .init(
         read: { choice == "cancel" ? "no" : "yes" },

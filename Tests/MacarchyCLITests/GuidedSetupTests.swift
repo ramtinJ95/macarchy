@@ -78,7 +78,7 @@ struct GuidedSetupTests {
     let runner = GuidedSetupCommandRunner(
       packageTrust: .testAlreadyTrusted,
       planner: fixture.planner(),
-      apply: { _, _, packageApproval, preferencesApproval, adoptions in
+      apply: { _, _, packageApproval, preferencesApproval, adoptions, _ in
         applied.withLock { $0 = true }
         #expect(packageApproval?.hasPrefix("sha256:") == true)
         #expect(preferencesApproval == nil)
@@ -120,7 +120,7 @@ struct GuidedSetupTests {
     let runner = GuidedSetupCommandRunner(
       packageTrust: .testAlreadyTrusted,
       planner: fixture.planner(),
-      apply: { _, _, _, _, _ in
+      apply: { _, _, _, _, _, _ in
         Issue.record("A required-provider exclusion must block apply")
         return ("unexpected", false)
       },
@@ -149,7 +149,7 @@ struct GuidedSetupTests {
     let runner = GuidedSetupCommandRunner(
       packageTrust: .testAlreadyTrusted,
       planner: fixture.planner(),
-      apply: { _, _, _, _, _ in
+      apply: { _, _, _, _, _, _ in
         Issue.record("A closed menu must not apply")
         return ("unexpected", false)
       },
@@ -183,9 +183,14 @@ struct GuidedSetupTests {
           yabai: approval, keybindings: "sha256:reviewed-keys"),
         plannedStages: [.desktop]
       ),
-      apply: { receivedContext, _, packageApproval, preferencesApproval, adoptions in
+      apply: { receivedContext, _, packageApproval, preferencesApproval, adoptions, reviewedPlan in
         events.withLock { $0.append("apply") }
         #expect(receivedContext.profileURL == context.profileURL)
+        let reviewed =
+          try JSONSerialization.jsonObject(with: Data(reviewedPlan.utf8)) as? [String: Any]
+        #expect(reviewed?["operation"] as? String == "setup_plan")
+        #expect((reviewed?["adoption"] as? [Any])?.count == 2)
+        #expect(reviewed?["package_inventory"] == nil)
         #expect(packageApproval?.hasPrefix("sha256:") == true)
         #expect(preferencesApproval == nil)
         #expect(
@@ -265,7 +270,7 @@ struct GuidedSetupTests {
     let runner = GuidedSetupCommandRunner(
       packageTrust: .testAlreadyTrusted,
       planner: fixture.planner(available: { _ in false }),
-      apply: { _, _, _, _, _ in
+      apply: { _, _, _, _, _, _ in
         Issue.record("Apply must not run with an external prerequisite")
         return ("unexpected", false)
       },
@@ -304,7 +309,7 @@ struct GuidedSetupTests {
       planner: fixture.planner(
         requiredAdoptions: .init(
           yabai: "sha256:reviewed-yabai", keybindings: "sha256:reviewed-keys")),
-      apply: { _, _, _, _, _ in
+      apply: { _, _, _, _, _, _ in
         Issue.record("Apply must not run without final confirmation")
         return ("unexpected", false)
       },
@@ -358,7 +363,7 @@ struct GuidedSetupTests {
     let runner = GuidedSetupCommandRunner(
       packageTrust: .testAlreadyTrusted,
       planner: planner,
-      apply: { received, _, _, preferencesApproval, _ in
+      apply: { received, _, _, preferencesApproval, _, _ in
         applied.withLock { $0 = true }
         let expected = try planner.prepare(context: received).report.preferencesApprovalDigest
         #expect(preferencesApproval == expected)
@@ -388,7 +393,7 @@ struct GuidedSetupTests {
     let runner = GuidedSetupCommandRunner(
       packageTrust: .testAlreadyTrusted,
       planner: fixture.planner(),
-      apply: { context, _, packageApproval, _, _ in
+      apply: { context, _, packageApproval, _, _, _ in
         #expect(packageApproval == nil)
         let saved = try String(contentsOf: context.profileURL, encoding: .utf8)
         #expect(saved.hasPrefix("schema_version = 1\n"))
@@ -459,7 +464,7 @@ struct GuidedSetupTests {
     let runner = GuidedSetupCommandRunner(
       packageTrust: .testAlreadyTrusted,
       planner: planner,
-      apply: { received, _, _, approval, _ in
+      apply: { received, _, _, approval, _, _ in
         #expect(allowed.withLock { $0.count } == 2)
         #expect(approval != nil)
         let expected = try planner.prepare(context: received).report.preferencesApprovalDigest
@@ -516,7 +521,7 @@ struct GuidedSetupTests {
           if mode == "fail" { throw SetupPackageAdoptionError("native trust refusal") }
         }),
       planner: fixture.planner(),
-      apply: { _, _, _, _, _ in
+      apply: { _, _, _, _, _, _ in
         #expect(grants.withLock { $0 } == 1)
         applied.withLock { $0 = true }
         return ("applied", true)
