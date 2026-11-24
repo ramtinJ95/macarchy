@@ -268,7 +268,8 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     let starterPlans: [EnvironmentNativeSeed.Plan]
     do {
       nativeStarters = try UnifiedSetupNativeStarters.prepare(
-        context: context, profile: profile, theme: themeSelection.package)
+        context: context, profile: profile, theme: themeSelection.package,
+        forTeardown: purpose == .teardown)
       starterPlans = try nativeStarters.map { try $0.plan() }
     } catch {
       return inputBlocked(error)
@@ -853,6 +854,12 @@ struct UnifiedSetupPlanReport: CommandReport {
         "Writable native starters (absent-only files are retained; approved replacements restore originals at teardown):"
       )
       for starter in nativeStarters {
+        if starter.restorationPreview == true {
+          lines.append(
+            "- Restoration source preview only: \(starter.provider) — personal edits are preserved; these bytes cannot authorize publication."
+          )
+          continue
+        }
         if let parent = starter.parentDirectory {
           lines.append("- Ensure ordinary user directory: \(parent) (0700 when created)")
         }

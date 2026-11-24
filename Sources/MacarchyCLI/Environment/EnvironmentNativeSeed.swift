@@ -71,6 +71,7 @@ struct EnvironmentNativeSeed: Sendable {
     var files: [String: Data] = [:]
     var parentDirectory: String? = nil
     var replacement: SetupNativeReplacement.Proposal? = nil
+    var restorationPreview: Bool? = nil
   }
 
   let provider: Provider
@@ -82,6 +83,8 @@ struct EnvironmentNativeSeed: Sendable {
   /// Guided setup reviews this one directory as well as each absent starter.
   var createParentDirectory = false
   var replacement: SetupNativeReplacement.Proposal? = nil
+  /// Receipt-bound source bytes for teardown planning only, never seed authority.
+  var restorationPreview = false
 
   func plan() throws -> Plan {
     let destination = destination.standardizedFileURL
@@ -100,7 +103,16 @@ struct EnvironmentNativeSeed: Sendable {
       throw EnvironmentLifecycleError.blocked(
         "Neovim starter must not contain managed entry points or state")
     }
-    if let replacement {
+    if restorationPreview {
+      let records = try SetupNativeReplacement(homeDirectory: homeDirectory, stateRoot: stateRoot)
+        .read().records
+      guard destination.path == provider.standardURL(homeDirectory: homeDirectory).path,
+        records.contains(where: { $0.proposal.provider == provider && $0.phase != .cancelled })
+      else {
+        throw EnvironmentLifecycleError.blocked(
+          "Restoration preview requires recorded standard replacement ownership")
+      }
+    } else if let replacement {
       try SetupNativeReplacement(homeDirectory: homeDirectory, stateRoot: stateRoot)
         .validateReviewed(replacement)
     } else {
@@ -177,19 +189,25 @@ struct EnvironmentNativeSeed: Sendable {
       try sortedKeysJSON([
         provider.rawValue, destination.path, stateRoot.standardizedFileURL.path, contents,
         createParentDirectory ? destination.deletingLastPathComponent().path : "",
-      ]) + sortedKeysJSON(files) + sortedKeysJSON(replacement))
+      ]) + sortedKeysJSON(files) + sortedKeysJSON(replacement)
+        + (restorationPreview ? Data("restoration-preview".utf8) : Data()))
     return Plan(
       provider: provider.rawValue, destination: destination.path, contents: contents,
       approval: approval,
-      message:
-        "Creates only this writable starter. Set \(provider.rawValue).\(provider.profileKey) in your profile, then review environment plan/apply. No active entry or profile is changed.",
+      message: restorationPreview
+        ? "Read-only restoration source preview; personal edits are preserved and these bytes cannot authorize publication."
+        : "Creates only this writable starter. Set \(provider.rawValue).\(provider.profileKey) in your profile, then review environment plan/apply. No active entry or profile is changed.",
       files: files,
       parentDirectory: createParentDirectory ? destination.deletingLastPathComponent().path : nil,
-      replacement: replacement
+      replacement: replacement, restorationPreview: restorationPreview ? true : nil
     )
   }
 
   func seed(approval: String) throws -> Plan {
+    guard !restorationPreview else {
+      throw EnvironmentLifecycleError.blocked(
+        "Read-only restoration source bytes cannot authorize starter publication")
+    }
     if replacement != nil {
       return try SetupNativeReplacement(homeDirectory: homeDirectory, stateRoot: stateRoot)
         .install(self, approval: approval)
