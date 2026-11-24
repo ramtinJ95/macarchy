@@ -163,7 +163,8 @@ struct SetupNativeReplacement: Sendable {
   /// Called only after provider rollback/teardown, with the owning setup journal
   /// still durable. A recorded ID cannot acquire a newer replacement lifecycle.
   func restore(_ proposals: [Proposal], dryRun: Bool = false) throws -> [String] {
-    try EnvironmentLifecycleLock(stateRoot: stateRoot).withLock {
+    guard !proposals.isEmpty else { return [] }
+    func operation() throws -> [String] {
       var messages = [String]()
       for proposal in proposals.reversed() {
         try validate(proposal)
@@ -271,6 +272,10 @@ struct SetupNativeReplacement: Sendable {
       }
       return messages
     }
+    // Like unified dry-run, preview must neither create operational state nor
+    // acquire a mutating lifecycle lock. Apply revalidates under both owners.
+    return try dryRun
+      ? operation() : EnvironmentLifecycleLock(stateRoot: stateRoot).withLock(operation)
   }
 
   func activeProposals() throws -> [Proposal] {
