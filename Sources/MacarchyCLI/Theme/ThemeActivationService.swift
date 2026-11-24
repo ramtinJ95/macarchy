@@ -17,13 +17,19 @@ struct ThemeActivationService: Sendable {
   /// Records committed activations for `theme undo`; nil keeps no history.
   var history: ThemeHistoryRecorder? = nil
 
-  static let live = coordinator(
-    enabledAdapterIDs: nil,
-    onCommittedLocked: { _ in },
-    slackIsEnabled: { stateRoot in
-      try ThemeRuntimeSelection.slackIsEnabled(stateRoot: stateRoot)
-    }
-  )
+  static let live = standard(allowAutomationConsent: false)
+  static let interactive = standard(allowAutomationConsent: true)
+
+  private static func standard(allowAutomationConsent: Bool) -> Self {
+    coordinator(
+      enabledAdapterIDs: nil,
+      allowAutomationConsent: allowAutomationConsent,
+      onCommittedLocked: { _ in },
+      slackIsEnabled: { stateRoot in
+        try ThemeRuntimeSelection.slackIsEnabled(stateRoot: stateRoot)
+      }
+    )
+  }
 
   /// Setup's theme refresh: reconciles only `enabledAdapterIDs`, runs `onCommittedLocked` under
   /// the activation lock right after the pointer swap, and never renders the Slack payload.
@@ -40,6 +46,7 @@ struct ThemeActivationService: Sendable {
 
   private static func coordinator(
     enabledAdapterIDs: Set<String>?,
+    allowAutomationConsent: Bool = false,
     onCommittedLocked: @escaping @Sendable (GenerationManifest) throws -> Void,
     slackIsEnabled: @escaping @Sendable (URL) throws -> Bool
   ) -> Self {
@@ -57,7 +64,8 @@ struct ThemeActivationService: Sendable {
         try await ThemeRuntimeSelection.activationCoordinator(
           stateRoot: stateRoot,
           consumerPaths: consumerPaths,
-          enabledAdapterIDs: enabledAdapterIDs
+          enabledAdapterIDs: enabledAdapterIDs,
+          allowAutomationConsent: allowAutomationConsent
         ).activate(
           package: package,
           expectedActiveGenerationID: expectedActiveGenerationID,

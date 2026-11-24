@@ -60,7 +60,8 @@ enum ThemeRuntimeSelection {
     consumerPaths: ThemeConsumerPaths,
     herdrRuntime: EnvironmentHerdrRuntimeReloader = .live,
     bordersRuntime: EnvironmentBordersRuntime = .live,
-    enabledAdapterIDs: Set<String>? = nil
+    enabledAdapterIDs: Set<String>? = nil,
+    allowAutomationConsent: Bool = false
   ) throws -> ThemeActivationCoordinator {
     let homeDirectory = consumerPaths.piDerivedHomeDirectoryURL
     let ownership = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
@@ -86,6 +87,7 @@ enum ThemeRuntimeSelection {
         ownership: ownership
       ),
       enabledAdapterIDs: enabledAdapterIDs,
+      allowAutomationConsent: allowAutomationConsent,
       herdrManagedMode: herdrManagedMode,
       bordersManagedMode: managedBordersMode(
         stateRoot: stateRoot, homeDirectory: homeDirectory, runtime: bordersRuntime),

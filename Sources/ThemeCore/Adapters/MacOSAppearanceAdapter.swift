@@ -7,7 +7,7 @@ package enum MacOSAppearanceAdapterError: Error, CustomStringConvertible, Sendab
   package var description: String {
     switch self {
     case .controlUnavailable:
-      "macOS appearance control is unavailable at /usr/bin/osascript"
+      "macOS appearance control is supported on macOS 26 only"
     case .unreadablePreference(let value):
       "Cannot interpret the macOS AppleInterfaceStyle preference '\(value)'"
     }
@@ -16,33 +16,41 @@ package enum MacOSAppearanceAdapterError: Error, CustomStringConvertible, Sendab
 
 package struct MacOSAppearanceAdapter: Sendable {
   package static let id = "macos-appearance"
-  private static let controlURL = URL(filePath: "/usr/bin/osascript")
 
   private let activationLock: ActivationLock
   let controlIsAvailable: @Sendable () -> Bool
   let currentAppearance: @Sendable () throws -> ThemeAppearance
-  let processRunner: ProcessRunner
+  let writeAppearance: @Sendable (ThemeAppearance) throws -> Void
+  let verifyAutomation: @Sendable () throws -> Void
+  let authorizeInteraction: (@Sendable () throws -> Void)?
 
   init(
     root: URL,
     controlIsAvailable: @escaping @Sendable () -> Bool,
     currentAppearance: @escaping @Sendable () throws -> ThemeAppearance,
-    processRunner: ProcessRunner
+    writeAppearance: @escaping @Sendable (ThemeAppearance) throws -> Void,
+    verifyAutomation: @escaping @Sendable () throws -> Void = {},
+    authorizeInteraction: (@Sendable () throws -> Void)? = nil
   ) {
     activationLock = ActivationLock(root: root)
     self.controlIsAvailable = controlIsAvailable
     self.currentAppearance = currentAppearance
-    self.processRunner = processRunner
+    self.writeAppearance = writeAppearance
+    self.verifyAutomation = verifyAutomation
+    self.authorizeInteraction = authorizeInteraction
   }
 
-  package static func live(root: URL, processRunner: ProcessRunner = .live) -> Self {
+  package static func live(root: URL, allowAutomationConsent: Bool = false) -> Self {
     Self(
       root: root,
       controlIsAvailable: {
-        FileManager.default.isExecutableFile(atPath: controlURL.path)
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26
       },
       currentAppearance: readCurrentAppearance,
-      processRunner: processRunner
+      writeAppearance: MacOSAppearanceEvents.write,
+      verifyAutomation: MacOSAppearanceEvents.verify,
+      authorizeInteraction: allowAutomationConsent
+        ? MacOSAppearanceEvents.requestInteractiveConsent : nil
     )
   }
 
@@ -67,6 +75,7 @@ package struct MacOSAppearanceAdapter: Sendable {
   package func inspection(desiredAppearance: ThemeAppearance?) -> AdapterInspection {
     do {
       let observed = try preflight()
+      try verifyAutomation()
       if let desiredAppearance, observed != desiredAppearance {
         return AdapterInspection(
           .macOSAppearance,
@@ -78,7 +87,7 @@ package struct MacOSAppearanceAdapter: Sendable {
       return AdapterInspection(
         .macOSAppearance,
         message:
-          "Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required"
+          "Appearance and System Events Automation are verified for this invocation only (\(MacOSAppearanceEvents.launchContext)); other launch contexts are not verified. Inspection may start Apple's System Events query helper; it never prompts."
       )
     } catch {
       return AdapterInspection(
@@ -93,7 +102,13 @@ package struct MacOSAppearanceAdapter: Sendable {
     desiredAppearance: @escaping @Sendable () throws -> ThemeAppearance
   ) -> AdapterReconciliation {
     AdapterReconciliation(.macOSAppearance) {
-      try activationLock.withLock {
+      // A human's native consent dialog must not hold the canonical activation lock.
+      // The candidate only decides whether consent is needed; current is re-read inside
+      // the lock after consent, so an older interactive request cannot set a stale theme.
+      if let authorizeInteraction, try preflight() != desiredAppearance() {
+        try authorizeInteraction()
+      }
+      return try activationLock.withLock {
         try applyAppearanceHoldingActivationLock(desiredAppearance())
       }
     }
@@ -122,20 +137,10 @@ package struct MacOSAppearanceAdapter: Sendable {
       return AdapterOutcome(status: .applied)
     }
 
-    let command = try processRunner.run(
-      ProcessRequest(
-        executableURL: Self.controlURL,
-        arguments: ["-e", Self.setAppearanceScript(desiredAppearance)],
-        timeout: 2
-      )
-    )
-    guard command.terminationStatus == 0 else {
-      return AdapterOutcome(
-        status: .failed,
-        message: command.output.isEmpty
-          ? "System Events rejected the appearance change"
-          : command.output
-      )
+    do {
+      try writeAppearance(desiredAppearance)
+    } catch {
+      return AdapterOutcome(status: .failed, message: String(describing: error))
     }
 
     let appliedAppearance = try currentAppearance()
@@ -147,12 +152,6 @@ package struct MacOSAppearanceAdapter: Sendable {
       )
     }
     return AdapterOutcome(status: .applied)
-  }
-
-  private static func setAppearanceScript(_ appearance: ThemeAppearance) -> String {
-    let enabled = appearance == .dark ? "true" : "false"
-    return
-      "tell application \"System Events\" to tell appearance preferences to set dark mode to \(enabled)"
   }
 
   private static func readCurrentAppearance() throws -> ThemeAppearance {

@@ -73,6 +73,7 @@ package struct ThemeActivationCoordinator: Sendable {
     root: URL,
     consumerPaths: ThemeConsumerPaths,
     enabledAdapterIDs: Set<String>? = nil,
+    allowAutomationConsent: Bool = false,
     herdrManagedMode: HerdrManagedMode? = nil,
     bordersManagedMode: BordersManagedMode? = nil,
     leanFocusManagedMode: BordersManagedMode? = nil,
@@ -81,7 +82,8 @@ package struct ThemeActivationCoordinator: Sendable {
     piThemeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true }
   ) {
     let root = root.standardizedFileURL
-    let appearance = MacOSAppearanceAdapter.live(root: root)
+    let appearance = MacOSAppearanceAdapter.live(
+      root: root, allowAutomationConsent: allowAutomationConsent)
     let controlIsAvailable: @Sendable (URL) -> Bool = {
       FileManager.default.isExecutableFile(atPath: $0.path)
     }
@@ -94,6 +96,9 @@ package struct ThemeActivationCoordinator: Sendable {
       wallpaperControl: .live,
       wallpaperSignal: .personal(macarchyExecutableURL: macarchyExecutableURL),
       currentAppearance: appearance.currentAppearance,
+      writeAppearance: appearance.writeAppearance,
+      verifyAppearanceAutomation: appearance.verifyAutomation,
+      authorizeAppearanceInteraction: appearance.authorizeInteraction,
       appearanceControlIsAvailable: appearance.controlIsAvailable,
       sketchyBarControlIsAvailable: {
         controlIsAvailable(SketchyBarAdapter.liveExecutableURL)
@@ -126,6 +131,9 @@ package struct ThemeActivationCoordinator: Sendable {
     wallpaperControl: WallpaperControl,
     wallpaperSignal: YabaiWallpaperSignal,
     currentAppearance: @escaping @Sendable () throws -> ThemeAppearance = { .dark },
+    writeAppearance: @escaping @Sendable (ThemeAppearance) throws -> Void = { _ in },
+    verifyAppearanceAutomation: @escaping @Sendable () throws -> Void = {},
+    authorizeAppearanceInteraction: (@Sendable () throws -> Void)? = nil,
     appearanceControlIsAvailable: @escaping @Sendable () -> Bool = { true },
     sketchyBarControlIsAvailable: @escaping @Sendable () -> Bool = { true },
     controlIsAvailable: @escaping @Sendable (URL) -> Bool = { _ in true },
@@ -169,7 +177,9 @@ package struct ThemeActivationCoordinator: Sendable {
           root: root,
           controlIsAvailable: appearanceControlIsAvailable,
           currentAppearance: currentAppearance,
-          processRunner: processRunner
+          writeAppearance: writeAppearance,
+          verifyAutomation: verifyAppearanceAutomation,
+          authorizeInteraction: authorizeAppearanceInteraction
         )
         return RuntimeConsumer(
           preflight: { _ in _ = try appearance.preflight() },

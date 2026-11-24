@@ -59,15 +59,13 @@ extension AdapterContractTests {
         typedPublished: false,
         darwinPublished: false,
         appearance: ThemeAppearance.light,
+        appearanceRequests: [ThemeAppearance](),
         requests: [ProcessRequest]()
       )
     )
     let runner = ProcessRunner { request in
       let published = state.withLock { state in
         state.requests.append(request)
-        if request.executableURL == URL(filePath: "/usr/bin/osascript") {
-          state.appearance = .dark
-        }
         return state.typedPublished && state.darwinPublished
       }
       if request.executableURL != PiAdapter.liveExecutableURL
@@ -76,9 +74,6 @@ extension AdapterContractTests {
         || request.arguments != ["--version"]
       {
         #expect(published)
-      }
-      if request.executableURL == URL(filePath: "/usr/bin/osascript") {
-        return ProcessResult(terminationStatus: 0, output: "")
       }
       if request.executableURL == BatAdapter.liveExecutableURL {
         return ProcessResult(terminationStatus: 0, output: BatAdapter.themeName)
@@ -144,6 +139,13 @@ extension AdapterContractTests {
       wallpaperControl: Self.wallpaperControl(),
       wallpaperSignal: try Self.wallpaperSignal(root: root),
       currentAppearance: { state.withLock { $0.appearance } },
+      writeAppearance: { appearance in
+        state.withLock { state in
+          #expect(state.typedPublished && state.darwinPublished)
+          state.appearanceRequests.append(appearance)
+          state.appearance = appearance
+        }
+      },
       onThemeChanged: { _ in state.withLock { $0.typedPublished = true } },
       postDarwinNotification: { _ in state.withLock { $0.darwinPublished = true } }
     )
@@ -158,12 +160,8 @@ extension AdapterContractTests {
     #expect(try Data(contentsOf: kittyBridge) == generatedKitty)
 
     let requests = state.withLock { $0.requests }
-    #expect(
-      requests.filter { $0.executableURL == URL(filePath: "/usr/bin/osascript") }
-        == [
-          Self.appearanceRequest(dark: true)
-        ]
-    )
+    #expect(state.withLock { $0.appearanceRequests } == [.dark])
+    #expect(!requests.contains { $0.executableURL == URL(filePath: "/usr/bin/osascript") })
     #expect(
       requests.filter { $0.executableURL == SketchyBarAdapter.liveExecutableURL }
         == [

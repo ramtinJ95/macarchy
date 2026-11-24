@@ -17,7 +17,7 @@ enum ThemeNextError: Error, CustomStringConvertible, Equatable {
 
 struct ThemeNextCommandRunner: Sendable {
   let activeManifest: @Sendable (URL) throws -> GenerationManifest
-  let activation: ThemeActivationService
+  var activation: ThemeActivationService
 
   static let live = ThemeNextCommandRunner(
     activeManifest: { root in
