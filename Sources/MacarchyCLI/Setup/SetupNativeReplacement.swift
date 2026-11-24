@@ -39,6 +39,11 @@ struct SetupNativeReplacement: Sendable {
     var records: [Record] = []
   }
 
+  struct Status: Sendable {
+    var lines = [String]()
+    var issues = [String]()
+  }
+
   enum Checkpoint: CaseIterable, Sendable {
     case journaled, staged, originalMoved, installed, restoreJournaled
     case starterRetained, restoreStaged, originalRestored, restorationRecorded
@@ -201,9 +206,7 @@ struct SetupNativeReplacement: Sendable {
           }
           continue
         }
-        guard try Self.digest(backup) == proposal.originalDigest else {
-          throw Self.blocked("Original backup changed; refusing restoration: \(proposal.backup)")
-        }
+        try validateOriginalBackup(proposal)
         if dryRun {
           if try Self.kind(destination) != nil { _ = try Self.digest(destination) }
           messages.append(
@@ -324,29 +327,76 @@ struct SetupNativeReplacement: Sendable {
     return ledger
   }
 
-  func status() throws -> [String] {
-    var lines = [String]()
+  func status() throws -> Status {
+    var status = Status()
     for record in try read().records {
-      lines += [
+      status.lines += [
         "\(record.proposal.provider.rawValue) [\(record.phase.rawValue)]: \(record.proposal.destination)",
         "Original backup\(record.phase == .cancelled ? " (not created)" : ""): \(record.proposal.backup)",
       ]
+      if record.phase != .cancelled {
+        do {
+          // Before the original move, absence is expected only while the
+          // original is still intact, just as in restoration recovery.
+          let backup = URL(filePath: record.proposal.backup)
+          if try Self.kind(backup) == nil, [.preparing, .staged].contains(record.phase),
+            try Self.digest(URL(filePath: record.proposal.destination))
+              == record.proposal.originalDigest
+          {
+            // The pending setup journal reports the interrupted operation.
+          } else {
+            try validateOriginalBackup(record.proposal)
+          }
+        } catch {
+          let issue =
+            "Backup drift at \(record.proposal.backup): \(error). Teardown cannot restore the original from this recorded backup; restore the reviewed backup before retrying teardown."
+          status.issues.append(issue)
+          status.lines.append("Backup drift: " + issue)
+        }
+      }
       if let target = record.proposal.linkTarget {
-        lines.append("Original link target: \(target) (target untouched)")
+        status.lines.append("Original link target: \(target) (target untouched)")
       }
       if let retained = record.displacedStarter, try Self.kind(URL(filePath: retained)) != nil {
-        lines.append("Retained starter: \(retained)")
+        status.lines.append("Retained starter: \(retained)")
       }
       for partial in record.partialRestorations ?? [] {
         if try Self.kind(URL(filePath: partial)) != nil {
-          lines.append("Retained partial restoration: \(partial)")
+          status.lines.append("Retained partial restoration: \(partial)")
         }
       }
       if try Self.kind(URL(filePath: record.proposal.staging)) != nil {
-        lines.append("Retained publication staging: \(record.proposal.staging)")
+        status.lines.append("Retained publication staging: \(record.proposal.staging)")
       }
     }
-    return lines
+    return status
+  }
+
+  /// Shared by inspection and restoration. A link's identity is its kind and
+  /// recorded target spelling, never the availability or contents of its target.
+  private func validateOriginalBackup(_ proposal: Proposal) throws {
+    let backup = URL(filePath: proposal.backup)
+    guard let kind = try Self.kind(backup) else {
+      throw Self.blocked("Original backup missing: \(proposal.backup)")
+    }
+    let expected: mode_t =
+      proposal.linkTarget != nil ? S_IFLNK : proposal.provider == .neovim ? S_IFDIR : S_IFREG
+    guard kind == expected else {
+      let expectedName =
+        expected == S_IFLNK ? "symbolic link" : expected == S_IFDIR ? "directory" : "regular file"
+      throw Self.blocked(
+        "Original backup kind changed (expected \(expectedName)): \(proposal.backup)")
+    }
+    if let target = proposal.linkTarget {
+      guard try FileManager.default.destinationOfSymbolicLink(atPath: proposal.backup) == target
+      else {
+        throw Self.blocked("Original backup link target changed: \(proposal.backup)")
+      }
+    }
+    guard try Self.digest(backup) == proposal.originalDigest else {
+      throw Self.blocked(
+        "Original backup contents changed; refusing restoration: \(proposal.backup)")
+    }
   }
 
   private func validate(_ proposal: Proposal) throws {

@@ -164,7 +164,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
             message: "Interrupted unified teardown completed in reverse apply order.\n"
               + (try SetupNativeReplacement(
                 homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
-              ).status()).joined(separator: "\n"),
+              ).status().lines).joined(separator: "\n"),
             json: json
           )
         }
@@ -368,7 +368,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         theme: recovery.theme ?? themePreview,
         message:
           "Restored the setup-owned core in reverse order; Homebrew packages were retained.\n"
-          + (try replacements.status()).joined(separator: "\n"),
+          + (try replacements.status().lines).joined(separator: "\n"),
         json: json
       )
     } catch let error as UnifiedSetupInterruptionError {
