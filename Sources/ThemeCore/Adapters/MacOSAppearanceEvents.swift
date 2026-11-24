@@ -179,8 +179,21 @@ package enum MacOSAppearanceEvents {
   }
 
   /// Guided setup only, after a separate default-no confirmation.
-  package static func requestConsent() throws {
-    try permission(ask: true)
+  package static func requestConsent(verify: () throws -> Void) throws {
+    try requestConsent(determine: permission, verify: verify)
+  }
+
+  /// A native request result is not proof of a visible grant. Guided setup
+  /// supplies a fresh, nonprompting verifier; never query this process again.
+  static func requestConsent(
+    determine: (Bool) throws -> Void, verify: () throws -> Void
+  ) throws {
+    do { try determine(true) } catch let error as Failure
+      where error.code == -600 || error.code == -1744
+    {
+      // Target loss/consent-required is inconclusive, NOT authorized.
+      // Only the independent verifier can establish success below.
+    }
     try verify()
   }
 

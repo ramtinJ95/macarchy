@@ -15,6 +15,7 @@ struct GuidedSetupPermissions: Sendable {
   let verifyBar: @Sendable (UnifiedSetupPlanContext) throws -> GuidedBarPermissions
   let requestBarAccessibility: @Sendable (UnifiedSetupPlanContext) throws -> Void
   let verifyAppearance: @Sendable () throws -> Void
+  // Returns only after authoritative fresh-process verification.
   let requestAppearance: @Sendable () throws -> Void
   let appearanceContext: @Sendable () -> String
   let reconcileAppearance:
@@ -47,7 +48,9 @@ struct GuidedSetupPermissions: Sendable {
       verifyBar: { try verifyBar(context: $0) },
       requestBarAccessibility: { _ = try verifyBar(context: $0, requestAccessibility: true) },
       verifyAppearance: MacOSAppearanceEvents.verify,
-      requestAppearance: MacOSAppearanceEvents.requestConsent,
+      requestAppearance: {
+        try MacOSAppearanceEvents.requestConsent { try FreshAppearanceVerification.verify() }
+      },
       appearanceContext: { MacOSAppearanceEvents.launchContext },
       reconcileAppearance: { context, paths in
         guard case .current = try ReconciliationStatusStore(root: context.stateRoot).read() else {
@@ -154,6 +157,9 @@ struct GuidedSetupPermissions: Sendable {
     }
 
     var appearanceVerified = false
+    var freshVerification = false
+    var appearanceFailure: String?
+    var appearanceHeading: String?
     do {
       try verifyAppearance()
       appearanceVerified = true
@@ -167,20 +173,36 @@ struct GuidedSetupPermissions: Sendable {
       if try confirm("Request macOS System Events Automation consent for this launch context?") {
         do {
           try requestAppearance()
-          try verifyAppearance()
           appearanceVerified = true
-        } catch { io.write("System Events consent/verification failed: \(error)\n") }
+          freshVerification = true
+        } catch {
+          appearanceFailure = String(describing: error)
+          if let failure = error as? FreshAppearanceVerification.Failure {
+            switch failure {
+            case .unconfirmed: appearanceHeading = "System Events consent is unconfirmed."
+            case .timedOut: appearanceHeading = "System Events verification timed_out."
+            case .invalidReply: appearanceHeading = "System Events verification failed."
+            }
+          }
+          io.write("System Events consent/verification failed: \(error)\n")
+        }
       }
     }
     if appearanceVerified {
-      io.write("System Events Automation verified for this invocation: \(appearanceContext()).\n")
+      io.write(
+        "System Events Automation verified "
+          + (freshVerification
+            ? "by a fresh read-only check in this invocation's launch chain: "
+            : "for this invocation: ")
+          + "\(appearanceContext()).\n")
       do { try await reconcileAppearance(context, consumerPaths) } catch {
         missing.append("Light/dark appearance reconciliation failed: \(error)")
       }
     } else {
       missing.append(
         "Light/dark appearance will not work in this invocation: \(appearanceContext()). "
-          + "Switch a light/dark theme interactively to request consent. After denial, enable System Events for the responsible app in Privacy & Security > Automation."
+          + (appearanceFailure
+            ?? "Switch a light/dark theme interactively to request consent. After denial, enable System Events for the responsible app in Privacy & Security > Automation.")
       )
     }
     if profile.desktop.provider == .yabaiSkhd {
@@ -192,7 +214,7 @@ struct GuidedSetupPermissions: Sendable {
     }
     if !missing.isEmpty {
       return (
-        "Configuration is applied; permissions are incomplete.\n"
+        "Configuration is applied; " + (appearanceHeading ?? "permissions are incomplete.") + "\n"
           + missing.map { "- " + $0 }.joined(separator: "\n")
           + "\nResume the checks without reinstalling satisfied packages: \(resume). "
           + (profile.desktop.provider == .yabaiSkhd
