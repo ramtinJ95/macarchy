@@ -7,6 +7,68 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-24
+
+### Added
+
+- A one-command installer checks Apple Silicon/macOS 26, Homebrew and developer
+  tools, offers exact-formula review and trust, installs and tests the existing
+  Homebrew release, then starts guided setup. Reruns verify healthy older releases
+  without implicit upgrades, independently of theme favorites and user packages,
+  and reject shadowing commands or unsupported Homebrew prefixes (#346).
+- Guided setup offers reviewed backups and replacement starters for existing zsh,
+  Kitty and Neovim configurations. Backups stay beside the originals and appear in
+  `setup status`. Teardown restores originals (including exact symlinks), retains
+  starter edits in sibling backups, and never automatically deletes backups.
+  Interrupted replacement or restoration continues through `setup recover` (#344).
+- Setup status and doctor flag missing, modified or retargeted original backups
+  as restoration-blocking drift only while restoration is still required. After
+  restoration, archives remain listed but user edits or deletion do not affect
+  health or hide other inspection results. Recorded ownership is unchanged (#344).
+
+### Changed
+
+- Guided setup installs selected components before Accessibility guidance and
+  checks the Apple-menu helper from the running SketchyBar context. Missing
+  post-configuration grants leave an explicit, resumable incomplete state (#343).
+- Teardown and interrupted-operation recovery do not require apply-only
+  external capabilities, such as native menu-bar auto-hide, to restore owned state (#343).
+- Setup status and doctor avoid a debug-build stack overflow during nested planning (#343).
+- Setup review and diagnostics distinguish saved profiles from applied
+  configuration, retain failing paths, and lead with recovery guidance (#343).
+- Setup proactively checks System Events Automation without changing appearance.
+  Appearance uses fixed public Apple Events with no osascript fallback.
+  Guided consent and explicit browser/menu choices can request native consent;
+  background operations never prompt. Custom interactive CLI bindings can opt
+  in with --allow-automation-consent (#343).
+- Automation results state their launch-context scope. A terminal grant does not
+  prove skhd or bar/menu access; an interactive light/dark change from the failing
+  context can request its own native consent (#343).
+- Known limitation: fresh-account TCC attribution and existing osascript-grant carry-over still
+  require real-hardware verification. Terminal setup cannot verify
+  keybinding-origin Automation through a read-only check. Terminal setup/status/doctor
+  report that context as unverified, even if access was granted elsewhere (#343).
+- The README now leads through one-command installation, guided configuration
+  replacement and permissions, actionable incomplete states, updates and removal.
+  The user guide explains retained backups and restored originals, and removes
+  obsolete advice that teardown cannot follow a theme switch.
+
+### Fixed
+
+- Guided setup gives freshly installed theme tools bounded cold-start headroom.
+  A read-only Atuin, eza or Starship verification timeout now retains configuration
+  with a named incomplete result and reconciliation command; real errors still
+  roll back, and required theme health remains unsuccessful until verified (#345).
+- Setup checks restored shell startup after unified configuration restoration,
+  avoiding misleading missing-defaults warnings from an intermediate rollback (#345).
+- SketchyBar permission checks report Accessibility and Automation independently,
+  with stage timings and explicit timeout/recheck guidance instead of checking
+  indefinitely, even while the bar is hidden, without adding idle polling.
+  Missing Automation is distinguished from a failed native probe (#345).
+- Yabai startup counts daemon instances rather than short-lived message clients
+  sent by its configuration script, while retaining daemon identity and singleton
+  checks (#345).
+
 ## [0.17.0] - 2026-11-10
 
 ### Added
