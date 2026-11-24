@@ -78,7 +78,9 @@ prefix=$(brew --prefix "$formula") || fail "Cannot locate the installed formula.
 [[ "$prefix" == /* && "$prefix" != *$'\n'* && -x "$prefix/bin/macarchy" ]] ||
   fail 'Installed Macarchy executable is missing or its prefix is invalid. Use the scoped repair in https://github.com/ramtinJ95/macarchy/blob/main/Documentation/install.md'
 printf '\nVerifying with the existing Homebrew formula test (version, ownership, platform, revision, helper and built-in themes).\n'
-brew test "$formula" || fail 'Installed-release verification failed. Macarchy remains installed; guided setup was not started. Use the scoped repair in https://github.com/ramtinJ95/macarchy/blob/main/Documentation/install.md'
+# Test is also a developer command. A command-local setting prevents Homebrew
+# from persisting developer mode in its git config; do not export it to setup.
+HOMEBREW_DEVELOPER=1 brew test "$formula" || fail 'Installed-release verification failed. Macarchy remains installed; guided setup was not started. Use the scoped repair in https://github.com/ramtinJ95/macarchy/blob/main/Documentation/install.md'
 "$prefix/bin/macarchy" version --json || fail 'Installed version reporting failed; guided setup was not started. Use the scoped repair in https://github.com/ramtinJ95/macarchy/blob/main/Documentation/install.md'
 printf '\nMacarchy installed and formula tests passed.\n'
 
