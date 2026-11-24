@@ -40,8 +40,7 @@ elif name == "brew":
     if stage == "list":
         if mode in ("existing", "broken-existing"): print("ramtinj95/tap/macarchy")
         elif mode == "foreign": print("other/tap/macarchy")
-    elif stage == "cat": print("FORMULA REVIEW: release URL + sha256 + install + tests")
-    elif stage == "--prefix": print(os.environ["PREFIX"])
+    elif stage in ("--prefix", "--repository"): print(os.environ["PREFIX"])
     elif stage == "test" and mode == "broken-existing": sys.exit(42)
 elif name == "macarchy":
     if args == ["version", "--json"]:
@@ -70,6 +69,8 @@ class InstallerTests(unittest.TestCase):
         self.bin.mkdir()
         self.prefix = self.root / "prefix with spaces"
         (self.prefix / "bin").mkdir(parents=True)
+        (self.prefix / "Formula").mkdir()
+        (self.prefix / "Formula/macarchy.rb").write_text("FORMULA REVIEW: release URL + sha256 + install + tests\n")
         for name in ("uname", "sw_vers", "brew", "xcode-select", "xcrun", "curl", "mktemp"):
             self.fixture(self.bin / name)
         self.fixture(self.prefix / "bin/macarchy")
@@ -122,7 +123,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(code, 0, output)
         commands = [args for name, args, _ in calls if name in ("brew", "macarchy")]
         self.assertEqual(commands, [["--version"], ["list", "--formula", "--full-name"],
-            ["tap", "ramtinj95/tap"], ["cat", "--formula", FORMULA],
+            ["tap", "ramtinj95/tap"], ["--repository", "ramtinj95/tap"],
             ["trust", "--formula", FORMULA], ["install", "--formula", "--no-ask", FORMULA],
             ["--prefix", FORMULA], ["test", FORMULA], ["version", "--json"], ["setup", "guided"]])
         self.assertLess(output.index("FORMULA REVIEW"), output.index("Trust and install"))
@@ -158,7 +159,7 @@ class InstallerTests(unittest.TestCase):
 
     def test_default_no_before_tap_and_after_review(self):
         for answers, allowed in ((b"\n", ["--version", "list"]),
-                                 (b"y\n\n", ["--version", "list", "tap", "cat"])):
+                                 (b"y\n\n", ["--version", "list", "tap", "--repository"])):
             with self.subTest(answers=answers):
                 self.calls.unlink(missing_ok=True)
                 code, output, calls = self.run_case(answers=answers)
@@ -167,7 +168,7 @@ class InstallerTests(unittest.TestCase):
                 self.assertEqual([a[0] for n, a, _ in calls if n == "brew"], allowed)
 
     def test_failures_stop_without_fallback_or_setup(self):
-        stages = ["list", "tap", "cat", "trust", "install", "--prefix", "test"]
+        stages = ["list", "tap", "--repository", "trust", "install", "--prefix", "test"]
         for stage in stages:
             with self.subTest(stage=stage):
                 self.calls.unlink(missing_ok=True)
@@ -179,6 +180,13 @@ class InstallerTests(unittest.TestCase):
                 if stage == "install":
                     self.assertIn("partial", output)
                     self.assertIn("No rollback", output)
+
+    def test_missing_review_file_cannot_authorize_trust(self):
+        (self.prefix / "Formula/macarchy.rb").unlink()
+        code, output, calls = self.run_case()
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("Formula review failed", output)
+        self.assertFalse(any(n == "brew" and a[0] in ("trust", "install", "cat") for n, a, _ in calls))
 
     def test_existing_install_never_trusts_installs_upgrades_or_starts_setup(self):
         code, output, calls = self.run_case("existing")
