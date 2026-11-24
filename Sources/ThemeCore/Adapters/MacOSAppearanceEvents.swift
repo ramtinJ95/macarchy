@@ -2,6 +2,7 @@ import AppKit
 import CoreServices
 import Darwin
 import Foundation
+import Synchronization
 
 /// One fixed public scripting-suite operation. Ordinary callers never request consent.
 package enum MacOSAppearanceEvents {
@@ -36,22 +37,48 @@ package enum MacOSAppearanceEvents {
     guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 else {
       throw Failure("Appearance Apple Events are supported on macOS 26 only.")
     }
-    let bundle = "com.apple.systemevents"
-    if NSRunningApplication.runningApplications(withBundleIdentifier: bundle).isEmpty {
-      let result = try ProcessRunner.live.run(
-        .init(
-          executableURL: URL(filePath: "/usr/bin/open"),
-          arguments: ["-g", "-j", applicationURL.path], timeout: 3))
-      guard result.terminationStatus == 0 else {
-        throw Failure("Cannot start \(applicationURL.path): \(result.output)")
+    // Resolve through Launch Services on every attempt, not a snapshot of running
+    // PIDs. System Events is on-demand and may exit while native consent is open.
+    // Completion runs on a concurrent queue; wait for registration, never sleep.
+    let resolved = Mutex<Result<pid_t, Failure>?>(nil)
+    let completed = DispatchSemaphore(value: 0)
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = false
+    configuration.hides = true
+    configuration.addsToRecentItems = false
+    NSWorkspace.shared.openApplication(at: applicationURL, configuration: configuration) {
+      app, error in
+      let result: Result<pid_t, Failure>
+      if let app, app.bundleIdentifier == "com.apple.systemevents",
+        app.bundleURL?.standardizedFileURL.path == applicationURL.path, !app.isTerminated
+      {
+        result = .success(app.processIdentifier)
+      } else {
+        result = .failure(
+          Failure("Cannot resolve Apple's System Events: \(String(describing: error))."))
       }
+      resolved.withLock { $0 = result }
+      completed.signal()
     }
-    let matches = NSRunningApplication.runningApplications(withBundleIdentifier: bundle)
-      .filter { $0.bundleURL?.standardizedFileURL.path == applicationURL.path }
-    guard matches.count == 1, let app = matches.first else {
-      throw Failure("Cannot identify Apple's System Events in this GUI session.")
+    guard completed.wait(timeout: .now() + 3) == .success else {
+      throw Failure("System Events launch_timed_out after 3 seconds.", code: -1712)
     }
-    return .init(processIdentifier: app.processIdentifier)
+    guard let result = resolved.withLock({ $0 }) else {
+      throw Failure("System Events launch completed without a target.")
+    }
+    return .init(processIdentifier: try result.get())
+  }
+
+  /// A missing process is not a permission verdict. Re-resolve once, never ask
+  /// twice (the first call may already have displayed and accepted consent).
+  /// Denial, consent-required and timeout are final; no delay or setter replay
+  /// for ambiguous delivery failures such as an Apple Event timeout.
+  static func withTargetRecovery<T>(
+    ask: Bool = false, operation: (Bool) throws -> T
+  ) throws -> T {
+    do { return try operation(ask) } catch let error as Failure where error.code == -600 {
+      return try operation(false)
+    }
   }
 
   /// Checks permission for the setter and verifies a Boolean getter without changing appearance.
@@ -67,12 +94,14 @@ package enum MacOSAppearanceEvents {
   }
 
   private static func permission(ask: Bool) throws {
-    let target = try target()
-    guard let descriptor = target.aeDesc else { throw Failure("Cannot address System Events.") }
-    let status = AEDeterminePermissionToAutomateTarget(
-      descriptor, AEEventClass(kAECoreSuite), AEEventID(kAESetData), ask)
-    guard status == noErr else {
-      throw Failure("System Events Automation is not verified (\(status)).", code: status)
+    try withTargetRecovery(ask: ask) { mayAsk in
+      let target = try target()
+      guard let descriptor = target.aeDesc else { throw Failure("Cannot address System Events.") }
+      let status = AEDeterminePermissionToAutomateTarget(
+        descriptor, AEEventClass(kAECoreSuite), AEEventID(kAESetData), mayAsk)
+      guard status == noErr else {
+        throw Failure("System Events Automation is not verified (\(status)).", code: status)
+      }
     }
   }
 
@@ -131,21 +160,23 @@ package enum MacOSAppearanceEvents {
   }
 
   private static func send(appearance: ThemeAppearance?) throws -> NSAppleEventDescriptor {
-    do {
-      let reply = try request(appearance: appearance, target: target())
-        .sendEvent(options: sendOptions, timeout: 2)
-      if let error = reply.paramDescriptor(forKeyword: AEKeyword(keyErrorNumber)),
-        error.int32Value != 0
-      {
+    try withTargetRecovery { _ in
+      do {
+        let reply = try request(appearance: appearance, target: target())
+          .sendEvent(options: sendOptions, timeout: 2)
+        if let error = reply.paramDescriptor(forKeyword: AEKeyword(keyErrorNumber)),
+          error.int32Value != 0
+        {
+          throw Failure(
+            "System Events rejected the appearance event (\(error.int32Value)).",
+            code: error.int32Value)
+        }
+        return reply
+      } catch let error as Failure { throw error } catch {
         throw Failure(
-          "System Events rejected the appearance event (\(error.int32Value)).",
-          code: error.int32Value)
+          "System Events appearance event failed: \(error)",
+          code: Int32(exactly: (error as NSError).code))
       }
-      return reply
-    } catch let error as Failure { throw error } catch {
-      throw Failure(
-        "System Events appearance event failed: \(error)",
-        code: Int32(exactly: (error as NSError).code))
     }
   }
 
@@ -174,9 +205,18 @@ package enum MacOSAppearanceEvents {
       self.reason = reason
       self.code = code
     }
+    var state: String {
+      switch code {
+      case -600: "target_unavailable"
+      case -1743: "denied"
+      case -1744: "consent_required"
+      case -1712: "timed_out"
+      default: "event_failed"
+      }
+    }
     package var description: String {
       var message =
-        "\(reason) Light/dark changes are blocked in this launch context: \(MacOSAppearanceEvents.launchContext). Recipient: \(MacOSAppearanceEvents.applicationURL.path). "
+        "[\(state)] \(reason) Light/dark changes are blocked in this launch context: \(MacOSAppearanceEvents.launchContext). Recipient: \(MacOSAppearanceEvents.applicationURL.path). "
       if code == -1743 || code == -1744 {
         message +=
           "To create a missing Automation entry, choose an opposite-appearance theme interactively from the failing menu/keybinding, or run macarchy setup guided --resume in the failing terminal app. "
