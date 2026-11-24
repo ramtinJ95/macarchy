@@ -71,24 +71,26 @@ package struct EzaAdapter: Sendable {
 
   func reconciliation() -> AdapterReconciliation {
     runtime.reconciliation {
-      let result = try processRunner.run(
-        ProcessRequest(
-          executableURL: executableURL,
-          arguments: ["--color=always", "--oneline", themeLink.url.path],
-          timeout: 1,
-          environmentOverrides: ["EZA_CONFIG_DIR": configurationDirectoryURL.path]
+      try ReadOnlyThemeProbe.verify(adapterID: Self.id) {
+        let result = try processRunner.run(
+          ProcessRequest(
+            executableURL: executableURL,
+            arguments: ["--color=always", "--oneline", themeLink.url.path],
+            timeout: ReadOnlyThemeProbe.timeout,
+            environmentOverrides: ["EZA_CONFIG_DIR": configurationDirectoryURL.path]
+          )
         )
-      )
-      guard result.terminationStatus == 0 else {
+        guard result.terminationStatus == 0 else {
+          return AdapterOutcome(
+            status: .failed,
+            message: result.output.isEmpty ? "eza rejected the active palette" : result.output
+          )
+        }
         return AdapterOutcome(
-          status: .failed,
-          message: result.output.isEmpty ? "eza rejected the active palette" : result.output
+          status: .applied,
+          message: "Fresh eza invocations use the active palette"
         )
       }
-      return AdapterOutcome(
-        status: .applied,
-        message: "Fresh eza invocations use the active palette"
-      )
     }
   }
 

@@ -70,24 +70,27 @@ package struct AtuinAdapter: Sendable {
 
   func reconciliation() -> AdapterReconciliation {
     runtime.reconciliation {
-      let result = try processRunner.run(
-        ProcessRequest(
-          executableURL: executableURL,
-          arguments: ["config", "get", "theme.name"],
-          timeout: 1,
-          environmentOverrides: ["ATUIN_CONFIG_DIR": configurationDirectoryURL.path]
+      try ReadOnlyThemeProbe.verify(adapterID: Self.id) {
+        let result = try processRunner.run(
+          ProcessRequest(
+            executableURL: executableURL,
+            arguments: ["config", "get", "theme.name"],
+            timeout: ReadOnlyThemeProbe.timeout,
+            environmentOverrides: ["ATUIN_CONFIG_DIR": configurationDirectoryURL.path]
+          )
         )
-      )
-      guard result.terminationStatus == 0, result.output == Self.themeName else {
+        guard result.terminationStatus == 0, result.output == Self.themeName else {
+          return AdapterOutcome(
+            status: .failed,
+            message: result.output.isEmpty
+              ? "Atuin rejected its theme configuration" : result.output
+          )
+        }
         return AdapterOutcome(
-          status: .failed,
-          message: result.output.isEmpty ? "Atuin rejected its theme configuration" : result.output
+          status: .applied,
+          message: "Fresh Atuin search interfaces use the active palette"
         )
       }
-      return AdapterOutcome(
-        status: .applied,
-        message: "Fresh Atuin search interfaces use the active palette"
-      )
     }
   }
 

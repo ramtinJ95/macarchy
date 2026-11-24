@@ -80,7 +80,7 @@ extension AdapterContractTests {
               "--color=always", "--oneline",
               paths.ezaConfigurationDirectoryURL.appending(path: "theme.yml").path,
             ],
-            timeout: 1,
+            timeout: ReadOnlyThemeProbe.timeout,
             environmentOverrides: [
               "EZA_CONFIG_DIR": paths.ezaConfigurationDirectoryURL.path
             ]

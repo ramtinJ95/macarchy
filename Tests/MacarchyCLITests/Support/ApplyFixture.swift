@@ -94,6 +94,7 @@ final class ApplyFixture: @unchecked Sendable {
         EnvironmentLifecycleReport
       >,
     transactionTeardown: UnifiedSetupTeardownCommandRunner? = nil,
+    restoredSessionVerifier: EnvironmentSessionVerifier = .assumed,
     faultInjector: @escaping @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void = {
       _ in
     }
@@ -128,6 +129,7 @@ final class ApplyFixture: @unchecked Sendable {
           },
           themeTeardown: { _, _, _, _ in .noChange("theme") }
         ),
+      restoredSessionVerifier: restoredSessionVerifier,
       faultInjector: faultInjector
     )
   }

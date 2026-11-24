@@ -60,3 +60,23 @@ func isAcceptedEnvironmentThemeStatus(_ adapter: DesktopThemeAdapterStatus) -> B
     return false
   }
 }
+
+/// Configuration apply may commit on a read-only verification deadline only.
+/// Required theme status/doctor/reconcile must continue to reject that result.
+func permitsEnvironmentConfigurationCommit(_ adapters: [DesktopThemeAdapterStatus]) -> Bool {
+  adapters.allSatisfy {
+    isAcceptedEnvironmentThemeStatus($0)
+      || $0.status == AdapterStatus.verificationTimedOut.rawValue
+  }
+}
+
+func pendingEnvironmentThemeMessage(_ adapters: [DesktopThemeAdapterStatus]) -> String? {
+  let pending = adapters.filter {
+    $0.requirement == AdapterRequirement.required.rawValue
+      && $0.status == AdapterStatus.verificationTimedOut.rawValue
+  }
+  guard !pending.isEmpty else { return nil }
+  return "Configuration is applied; required theme verification is not yet converged: "
+    + pending.map { "\($0.adapterID): \($0.message ?? $0.status)" }.joined(separator: "; ")
+    + " Required theme health remains incomplete. Run macarchy reconcile."
+}

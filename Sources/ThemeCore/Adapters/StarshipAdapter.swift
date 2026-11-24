@@ -131,26 +131,28 @@ package struct StarshipAdapter: Sendable {
       }
       if let bridgeOutcome { return bridgeOutcome }
 
-      let result = try processRunner.run(
-        ProcessRequest(
-          executableURL: executableURL,
-          arguments: ["print-config"],
-          timeout: 2,
-          environmentOverrides: ["STARSHIP_CONFIG": native?.url.path ?? bridgeURL.path]
+      return try ReadOnlyThemeProbe.verify(adapterID: Self.id) {
+        let result = try processRunner.run(
+          ProcessRequest(
+            executableURL: executableURL,
+            arguments: ["print-config"],
+            timeout: ReadOnlyThemeProbe.timeout,
+            environmentOverrides: ["STARSHIP_CONFIG": native?.url.path ?? bridgeURL.path]
+          )
         )
-      )
-      let selection = "palette = \"\(Self.paletteName)\""
-      guard result.terminationStatus == 0, result.output.contains(selection) else {
+        let selection = "palette = \"\(Self.paletteName)\""
+        guard result.terminationStatus == 0, result.output.contains(selection) else {
+          return AdapterOutcome(
+            status: .failed,
+            message: result.output.isEmpty
+              ? "Starship rejected the active palette configuration" : result.output
+          )
+        }
         return AdapterOutcome(
-          status: .failed,
-          message: result.output.isEmpty
-            ? "Starship rejected the active palette configuration" : result.output
+          status: .applied,
+          message: "Starship prompts use the active palette"
         )
       }
-      return AdapterOutcome(
-        status: .applied,
-        message: "Starship prompts use the active palette"
-      )
     }
   }
 

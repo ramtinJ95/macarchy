@@ -4,6 +4,8 @@ import Foundation
 public enum AdapterStatus: String, Codable, Sendable {
   case applied
   case pending
+  /// A read-only verification deadline, not a successful verification or rejection.
+  case verificationTimedOut = "verification_timed_out"
   case restartRequired = "restart_required"
   case unsupported
   case disabled

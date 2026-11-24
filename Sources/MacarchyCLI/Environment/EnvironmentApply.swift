@@ -958,7 +958,11 @@ struct EnvironmentApplyCommandRunner: Sendable {
               ownership: appliedOwnership
             )
           )
-          guard reconciliation.succeeded else {
+          guard
+            reconciliation.succeeded
+              || (pendingEnvironmentThemeMessage(reconciliation.results) != nil
+                && permitsEnvironmentConfigurationCommit(reconciliation.results))
+          else {
             let details = reconciliation.results.map {
               "\($0.adapterID) [\($0.requirement), \($0.status)]: \($0.message ?? "no detail reported")"
             }.joined(separator: "; ")
@@ -1034,7 +1038,12 @@ struct EnvironmentApplyCommandRunner: Sendable {
             transactionStatus: "recovery_required"
           )
         }
-        let restorationVerification = verifier.verifyRestored(profile.environment, homeDirectory)
+        // Unified setup has not restored its native starters/replacements yet.
+        // Verifying here would source an intentionally retired defaults.zsh and
+        // misreport that intermediate state as the final restored session.
+        let restorationVerification =
+          withinUnifiedSetup
+          ? [] : verifier.verifyRestored(profile.environment, homeDirectory)
         if let failed = restorationVerification.first(where: { $0.status != "verified" }) {
           return failure(
             profileURL: profileURL,
@@ -1053,7 +1062,9 @@ struct EnvironmentApplyCommandRunner: Sendable {
           prerequisites: prerequisiteState,
           message: neovimPluginPreparationRan
             ? "Environment configuration ownership was rolled back; provider-private Neovim plugin/cache changes may remain. Apply failed: \(error)"
-            : "Environment apply rolled back: \(error)",
+              + (withinUnifiedSetup ? " Native startup is checked after unified restoration." : "")
+            : "Environment apply rolled back: \(error)"
+              + (withinUnifiedSetup ? " Native startup is checked after unified restoration." : ""),
           mutated: applyResult.changed
         )
       }
