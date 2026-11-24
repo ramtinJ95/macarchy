@@ -20,8 +20,10 @@ to Bash, so prompts and guided setup retain terminal input.
 ## What it does
 
 1. Checks platform, Homebrew, developer tools and interactive input before mutation.
-2. Asks before downloading `ramtinj95/tap`, then displays the exact Macarchy formula
-   for review, including the archive URL, SHA-256, installation code and tests.
+2. Asks before downloading `ramtinj95/tap`, then reads its `Formula/macarchy.rb`
+   directly for review, including the archive URL, SHA-256, installation code and
+   tests. It avoids `brew cat`, which can enable persistent developer mode and
+   install a pager.
 3. Asks default-no consent to persist trust for **only**
    `ramtinj95/tap/macarchy` and install it. Trust covers future revisions of that
    formula, not the whole tap. Homebrew verifies the downloaded archive's checksum.
@@ -48,7 +50,7 @@ implicitly. To refresh metadata deliberately, use `brew update` separately.
   Use `macarchy update` for upgrades. A different/unmanaged installation is refused.
 - After failed or partial installation, inspect Homebrew's error and `brew doctor`.
   If Macarchy is absent, rerun the installer. If installed but verification fails,
-  review the formula (`brew cat --formula ramtinj95/tap/macarchy`) and deliberately
+  review the formula (`cat "$(brew --repository ramtinj95/tap)/Formula/macarchy.rb"`) and deliberately
   repair **only Macarchy**, with no automatic cleanup/dependent upgrades:
 
   ```sh

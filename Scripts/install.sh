@@ -57,7 +57,11 @@ if [[ "$existing" == false ]]; then
   confirm "Fetch $tap for formula review?" || { printf 'Cancelled; no tap, trust or packages changed.\n'; exit 0; }
   brew tap "$tap" || fail 'Tap download failed; Homebrew may retain tap/cache files. No formula trust or installation was requested. Fix the reported error and rerun this command.'
   printf '\nReview the exact executable formula (including its release URL, SHA-256 and tests):\n\n'
-  brew cat --formula "$formula" || fail 'Formula review failed; no formula trust or installation was requested. Fix the reported error and rerun this command.'
+  # `brew cat` enables persistent developer mode and may install an optional bat
+  # pager. Read the known tapped formula as inert bytes instead.
+  repository=$(brew --repository "$tap") || fail 'Cannot locate the tapped formula; no trust or installation requested.'
+  [[ "$repository" == /* && "$repository" != *$'\n'* ]] || fail 'Homebrew returned an invalid tap repository; no trust or installation requested.'
+  /bin/cat "$repository/Formula/macarchy.rb" || fail 'Formula review failed; no formula trust or installation was requested. Fix the reported error and rerun this command.'
   printf '\n%s\n' \
     'Approving persists Homebrew trust for this formula only (including future revisions), then installs it.' \
     'It does not trust the whole tap or approve configuration, permissions or other packages.' \
