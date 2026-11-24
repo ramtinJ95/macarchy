@@ -41,7 +41,10 @@ struct UnifiedSetupLifecycleTests {
     #expect(calls.withLock { $0 } == 0)
   }
 
-  @Test func terminalInspectionCannotClaimServiceContextAutomationIsHealthy() throws {
+  @Test(arguments: [UnifiedSetupInspectionOperation.status, .doctor], [false, true])
+  func terminalInspectionCannotClaimServiceContextAutomationIsHealthy(
+    operation: UnifiedSetupInspectionOperation, json: Bool
+  ) throws {
     let fixture = try ApplyFixture()
     let manifest = try fixture.activateSetupOwnedTheme()
     defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
@@ -58,12 +61,19 @@ struct UnifiedSetupLifecycleTests {
         ["/installed/skhd → macarchy → System Events is unverified; use the interactive keybinding"]
       })
     let result = try runner.execute(
-      operation: .doctor, context: fixture.context,
-      consumerPaths: testConsumerPaths(), json: false)
+      operation: operation, context: fixture.context,
+      consumerPaths: testConsumerPaths(), json: json)
     #expect(!result.succeeded)
-    #expect(result.output.contains("[permissions_unverified]"))
+    if json {
+      let report = try jsonObject(result.output)
+      #expect(report["outcome"] as? String == "permissions_unverified")
+      #expect((report["desktop"] as? [String: Any])?["succeeded"] as? Bool == true)
+      #expect((report["environment"] as? [String: Any])?["succeeded"] as? Bool == true)
+    } else {
+      #expect(result.output.contains("[permissions_unverified]"))
+      #expect(result.output.contains("Recovery:"))
+    }
     #expect(result.output.contains("/installed/skhd"))
-    #expect(result.output.contains("Recovery:"))
     #expect(result.output.contains("interactive keybinding"))
   }
 
@@ -121,17 +131,28 @@ struct UnifiedSetupLifecycleTests {
     #expect((report["theme"] as? [String: Any])?["status"] as? String == "managed")
   }
 
-  @Test
-  func teardownPreflightsThenRestoresComponentsInReverseApplyOrder() async throws {
+  @Test(arguments: [false, true], [false, true])
+  func teardownPreflightsThenRestoresComponentsInReverseApplyOrder(
+    missingApplyCapability: Bool, dryRun: Bool
+  ) async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     let generationID = "g-\(UUID().uuidString.lowercased())"
     try SetupCoreOwnershipStore(stateRoot: fixture.state).write(
       SetupCoreOwnership(themeGenerationID: generationID, originalAppearance: .light)
     )
+    let planner = fixture.planner(available: {
+      !missingApplyCapability || $0.id != "native-menu-toggle"
+    })
+    let applyPlan = try planner.prepare(context: fixture.context)
+    #expect(applyPlan.succeeded == !missingApplyCapability)
+    #expect(
+      applyPlan.report.diagnostics.contains {
+        $0.code == "external_prerequisite" && $0.source == "native-menu-toggle"
+      } == missingApplyCapability)
     let calls = Mutex([String]())
     let runner = UnifiedSetupTeardownCommandRunner(
-      planner: fixture.planner(),
+      planner: planner,
       environmentTeardown: { _, _, dryRun in
         calls.withLock { $0.append("environment:\(dryRun ? "preview" : "apply")") }
         return environmentTeardownStub(dryRun: dryRun, mutated: !dryRun)
@@ -156,25 +177,26 @@ struct UnifiedSetupLifecycleTests {
     let execution = try await runner.execute(
       context: fixture.context,
       consumerPaths: testConsumerPaths(),
-      dryRun: false,
+      dryRun: dryRun,
       json: true
     )
     let report = try jsonObject(execution.output)
 
     #expect(execution.succeeded)
-    #expect(report["outcome"] as? String == "restored")
+    #expect(report["outcome"] as? String == (dryRun ? "planned" : "restored"))
     #expect(report["packages"] as? String == "retained_external")
     #expect(
       calls.withLock { $0 }
         == [
           "environment:preview", "desktop:preview", "theme:preview",
-          "environment:apply", "desktop:apply", "theme:apply",
-        ]
+        ] + (dryRun ? [] : ["environment:apply", "desktop:apply", "theme:apply"])
     )
   }
 
-  @Test
-  func interruptedTeardownResumesForwardFromItsRecordedStage() async throws {
+  @Test(arguments: [false, true])
+  func interruptedTeardownResumesForwardFromItsRecordedStage(missingApplyCapability: Bool)
+    async throws
+  {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     let paths = testConsumerPaths()
@@ -183,9 +205,13 @@ struct UnifiedSetupLifecycleTests {
       SetupCoreOwnership(themeGenerationID: generationID, originalAppearance: .light)
     )
     let calls = Mutex([String]())
+    let capabilityProbes = Mutex(0)
     let didInterrupt = Mutex(false)
     let runner = UnifiedSetupTeardownCommandRunner(
-      planner: fixture.planner(),
+      planner: fixture.planner(available: {
+        capabilityProbes.withLock { $0 += 1 }
+        return !missingApplyCapability || $0.id != "native-menu-toggle"
+      }),
       environmentTeardown: { _, _, dryRun in
         calls.withLock { $0.append("environment:\(dryRun ? "preview" : "apply")") }
         if dryRun, didInterrupt.withLock({ $0 }) {
@@ -231,6 +257,7 @@ struct UnifiedSetupLifecycleTests {
         == [.environment, .desktop, .theme]
     )
 
+    let probesBeforeRecovery = capabilityProbes.withLock { $0 }
     let execution = try await runner.execute(
       context: fixture.context,
       consumerPaths: paths,
@@ -240,6 +267,7 @@ struct UnifiedSetupLifecycleTests {
     let report = try jsonObject(execution.output)
 
     #expect(execution.succeeded)
+    #expect(capabilityProbes.withLock { $0 } == probesBeforeRecovery)
     #expect(report["outcome"] as? String == "restored")
     #expect(
       calls.withLock { $0 }
@@ -250,6 +278,46 @@ struct UnifiedSetupLifecycleTests {
         ]
     )
     #expect(try UnifiedSetupTransactionStore(stateRoot: fixture.state).read() == nil)
+  }
+
+  @Test(arguments: [UnifiedSetupTransactionOperation.apply, .teardown])
+  func explicitRecoveryIgnoresApplyOnlyExternalCapabilities(
+    operation: UnifiedSetupTransactionOperation
+  ) async throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    let paths = testConsumerPaths()
+    let probes = Mutex(0)
+    let planner = fixture.planner(available: {
+      probes.withLock { $0 += 1 }
+      return $0.id != "native-menu-toggle"
+    })
+    #expect(try !planner.prepare(context: fixture.context).succeeded)
+    let probesBeforeRecovery = probes.withLock { $0 }
+    let transaction = UnifiedSetupTransaction(
+      operation: operation, stages: [.theme], desiredAppearance: .dark,
+      contextDigest: unifiedSetupContextDigest(context: fixture.context, consumerPaths: paths))
+    let store = UnifiedSetupTransactionStore(stateRoot: fixture.state)
+    try store.write(transaction)
+    let calls = Mutex(0)
+    let teardown = UnifiedSetupTeardownCommandRunner(
+      planner: planner,
+      environmentTeardown: { _, _, _ in throw UnexpectedComponentCall() },
+      desktopTeardown: { _, _, _ in throw UnexpectedComponentCall() },
+      themeTeardown: { _, _, _, dryRun in
+        #expect(!dryRun)
+        calls.withLock { $0 += 1 }
+        return .init(
+          succeeded: true, mutated: true, outcome: "restored", message: "theme", details: nil)
+      })
+    let result = try await UnifiedSetupRecoveryCommandRunner(teardown: teardown).execute(
+      context: fixture.context, consumerPaths: paths,
+      acknowledgeUnverifiedSpicetify: false, json: true)
+    #expect(result.succeeded, "\(result.output)")
+    #expect(try jsonObject(result.output)["outcome"] as? String == "recovered")
+    #expect(calls.withLock { $0 } == 1)
+    #expect(probes.withLock { $0 } == probesBeforeRecovery)
+    #expect(try store.read() == nil)
   }
 
   @Test
@@ -354,13 +422,15 @@ struct UnifiedSetupLifecycleTests {
     #expect(try store.read() == transaction)
   }
 
-  @Test
-  func blockedTeardownPreflightMakesNoChanges() async throws {
+  @Test(arguments: [false, true])
+  func blockedTeardownPreflightMakesNoChanges(missingApplyCapability: Bool) async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     let calls = Mutex([String]())
     let runner = UnifiedSetupTeardownCommandRunner(
-      planner: fixture.planner(),
+      planner: fixture.planner(available: {
+        !missingApplyCapability || $0.id != "native-menu-toggle"
+      }),
       environmentTeardown: { _, _, dryRun in
         calls.withLock { $0.append("environment:\(dryRun)") }
         return environmentTeardownStub(dryRun: dryRun, mutated: false)

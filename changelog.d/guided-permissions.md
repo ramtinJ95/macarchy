@@ -3,6 +3,9 @@
 - Guided setup installs selected components before Accessibility guidance and
   checks the Apple-menu helper from the running SketchyBar context. Missing
   post-configuration grants leave an explicit, resumable incomplete state.
+- Teardown and interrupted-operation recovery do not require apply-only
+  external capabilities, such as native menu-bar auto-hide, to restore owned state.
+- Setup status and doctor avoid a debug-build stack overflow during nested planning.
 - Setup review and diagnostics distinguish saved profiles from applied
   configuration, retain failing paths, and lead with recovery guidance.
 
