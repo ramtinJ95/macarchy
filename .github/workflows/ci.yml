@@ -41,6 +41,9 @@ jobs:
       - name: Test release tooling without the network
         run: python3 -B Scripts/test-release.py
 
+      - name: Test installer without Homebrew or the network
+        run: python3 -B Scripts/test-install.py
+
       - name: Test isolated VM helpers without starting a guest
         run: python3 -B -m unittest discover -s Scripts/vm -p 'test_*.py'
 
