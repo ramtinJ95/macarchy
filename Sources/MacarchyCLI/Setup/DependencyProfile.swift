@@ -35,7 +35,7 @@ enum DependencyCapabilityProbe: Sendable {
     case .macOSMajorVersion(let version):
       "requires macOS \(version)"
     case .appleMenuHelper(let url):
-      "\(url.path) --check must report ready (separate SkyLight helper and manual Accessibility permission)"
+      "\(url.path) --check-platform must report supported; Accessibility is verified after configuration in the SketchyBar service context"
     case .nativeMenuToggle:
       "native menu bar must allow auto-hide; no unmanaged sketchybar-toggle process may compete with the owned helper"
     }
@@ -63,10 +63,10 @@ enum DependencyCapabilityProbe: Sendable {
     case .appleMenuHelper(let url):
       guard
         let result = try? ProcessRunner.live.run(
-          .init(executableURL: url, arguments: ["--check"], timeout: 2))
+          .init(executableURL: url, arguments: ["--check-platform"], timeout: 2))
       else { return false }
       return result.terminationStatus == 0
-        && result.output.trimmingCharacters(in: .whitespacesAndNewlines) == "ready"
+        && result.output.trimmingCharacters(in: .whitespacesAndNewlines) == "supported"
     case .nativeMenuToggle:
       let preferences = UserDefaults.standard
       let allowsAutoHide =
@@ -332,7 +332,7 @@ struct DependencyProfile: Sendable {
                 path: AppleMenuHelper.executableName))
           ],
           remediation: .external(
-            "Enable Accessibility manually for the packaged macarchy-menu executable in System Settings > Privacy & Security > Accessibility. Run its --check command for the exact failure. Recheck after upgrades; no permission is granted automatically."
+            "Install the matching Macarchy release containing macarchy-menu beside macarchy. Guided setup verifies Apple-menu Accessibility from the configured SketchyBar service, not this terminal. No permission is granted automatically."
           )
         ),
         consumerCapability(

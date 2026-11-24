@@ -73,7 +73,10 @@ struct UnifiedSetupThemeLifecycleStatus: Encodable, Sendable {
         recorded.requirement == .required,
         recorded.status == .applied
       else {
-        return drifted(active, "macOS appearance reconciliation is incomplete.")
+        return drifted(
+          active,
+          "macOS appearance reconciliation is incomplete for this invocation (\(MacOSAppearanceEvents.launchContext)). Run macarchy setup guided --resume; other launch contexts need an interactive theme change from their own menu/keybinding to request consent."
+        )
       }
       let appearance = MacOSAppearanceAdapter.live(root: stateRoot).inspection(
         desiredAppearance: model.themePackage.appearance

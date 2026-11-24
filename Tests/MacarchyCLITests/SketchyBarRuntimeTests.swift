@@ -279,7 +279,14 @@ struct SketchyBarRuntimeTests {
       return .init(terminationStatus: 0, output: output)
     }
     let inspection = verifier.inspect(composition)
-    #expect(inspection.status == (condition == "valid" ? .converged : .drifted))
+    #expect(
+      inspection.status
+        == (condition == "valid" ? .converged : condition == "permission" ? .partial : .drifted))
+    if condition == "permission" {
+      #expect(inspection.applePermissionVerified == false)
+      #expect(inspection.message.contains("Accessibility"))
+      #expect(inspection.isValidEvidence)
+    }
     if condition == "valid" {
       #expect(inspection.appleStatePresent == true)
       #expect(inspection.isValidEvidence)

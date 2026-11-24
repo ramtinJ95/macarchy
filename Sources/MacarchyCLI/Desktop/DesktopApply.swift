@@ -461,8 +461,8 @@ struct DesktopApplyCommandRunner: Sendable {
       sketchyBar: mutations.sketchyBar,
       theme: themeResult,
       message: changed
-        ? "desktop providers and selected theme adapters converged"
-        : "desktop providers and selected theme adapters are already converged"
+        ? "desktop configuration and selected theme adapters applied; Apple-menu permission is checked separately"
+        : "desktop configuration and selected theme adapters are current; Apple-menu permission is checked separately"
     )
   }
 

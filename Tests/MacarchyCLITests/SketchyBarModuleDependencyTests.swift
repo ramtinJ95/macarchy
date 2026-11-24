@@ -38,7 +38,9 @@ struct SketchyBarModuleDependencyTests {
         #expect(requirement.remediation.homebrewPackage?.name == "nowplaying-cli")
         let helper = try #require(capabilities.first { $0.id == "apple-menu-helper" })
         #expect(helper.remediation.homebrewPackage == nil)
-        #expect(helper.requirement.contains("manual Accessibility"))
+        #expect(
+          helper.requirement.contains("--check-platform")
+            && helper.requirement.contains("after configuration in the SketchyBar service context"))
       }
     }
   }

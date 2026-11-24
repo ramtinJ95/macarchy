@@ -59,7 +59,10 @@ struct KeybindingLifecycleController: Sendable {
       Thread.sleep(forTimeInterval: 0.1)
     }
     throw KeybindingsApplyError.lifecycle(
-      last.message + " Verify skhd's manual Accessibility grant in System Settings.")
+      last.message + " Keybindings cannot be verified. Grant Accessibility manually to "
+        + ExternalTool.skhd.resolvingSymlinksInPath().path
+        + " in System Settings > Privacy & Security > Accessibility. Then run macarchy setup guided --resume."
+    )
   }
 
   private static func runSkhd(_ arguments: [String]) throws {

@@ -514,7 +514,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
         case .apple:
           lines += [
             "\"$SKETCHYBAR\" --add item macarchy.apple \(position.rawValue) --set macarchy.apple icon='􀣺' icon.font='SF Pro:Bold:14.0' icon.padding_left=2 icon.padding_right=6 label.drawing=off padding_left=0 padding_right=4 script=\"$PLUGIN_DIR/apple.sh\"",
-            "\"$SKETCHYBAR\" --subscribe macarchy.apple mouse.clicked",
+            "\"$SKETCHYBAR\" --add event macarchy_permission_check",
+            "\"$SKETCHYBAR\" --subscribe macarchy.apple mouse.clicked macarchy_permission_check",
           ]
         case .media:
           lines += [

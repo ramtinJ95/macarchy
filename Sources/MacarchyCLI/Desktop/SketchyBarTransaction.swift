@@ -403,8 +403,8 @@ struct SketchyBarProviderTransaction: Sendable {
       generationID: outcome.generationID,
       lifecycle: outcome.changed ? "reload_or_start" : "none",
       message: outcome.changed
-        ? "managed SketchyBar provider and runtime converged"
-        : "managed SketchyBar provider and runtime are already converged"
+        ? "managed SketchyBar configuration and core applied; Apple-menu permission is reported separately by guided setup/status"
+        : "managed SketchyBar configuration and core are current; Apple-menu permission is reported separately by guided setup/status"
     )
   }
 
@@ -415,7 +415,8 @@ struct SketchyBarProviderTransaction: Sendable {
     inspection.isValidEvidence
       && (inspection.nativeConfiguration ?? false) == composition.nativeConfiguration
       && (inspection.status == .converged
-        || (inspection.status == .partial && composition.hookURL != nil))
+        || (inspection.status == .partial
+          && (composition.hookURL != nil || inspection.applePermissionVerified == false)))
   }
 
   func recoverPendingLocked() throws -> SketchyBarTransaction? {

@@ -224,6 +224,7 @@ struct GuidedSetupCommandRunner: Sendable {
       [HomebrewPackageIdentity], @escaping GuidedSetupSelectionMenu.Requirements
     ) throws -> GuidedSetupAnswers =
       GuidedSetupTerminal.collect
+  var permissions: GuidedSetupPermissions? = nil
   var requestAutomation: @Sendable (MacOSPreference) throws -> Void =
     NativePreferenceEvent.requestAutomation
 
@@ -232,7 +233,7 @@ struct GuidedSetupCommandRunner: Sendable {
       packageTrust: .live(homeDirectory: FileManager.default.homeDirectoryForCurrentUser),
       planner: .live,
       apply: { context, consumerPaths, packageApproval, preferencesApproval, adoptions in
-        try await UnifiedSetupApplyCommandRunner.guided.execute(
+        try await UnifiedSetupApplyCommandRunner.guided(io: io).execute(
           context: context,
           consumerPaths: consumerPaths,
           packageApproval: packageApproval,
@@ -241,7 +242,8 @@ struct GuidedSetupCommandRunner: Sendable {
           json: false
         )
       },
-      io: io
+      io: io,
+      permissions: .live(io: io)
     )
   }
 
@@ -262,9 +264,11 @@ struct GuidedSetupCommandRunner: Sendable {
         layer.excludedFormulae.map { HomebrewPackageIdentity(kind: .formula, name: $0) }
           + layer.excludedCasks.map { HomebrewPackageIdentity(kind: .cask, name: $0) }
       }
-      io.write("Reviewing retained profile without rewriting it: \(context.profileURL.path)\n")
+      io.write(
+        "Reviewing retained profile without rewriting it: \(context.profileURL.path)\nSatisfied packages are not reinstalled and granted permissions are not requested again. Configuration still needing apply requires a fresh review; permission-only resume does not.\n"
+      )
       return try await reviewAndApply(
-        context: context, consumerPaths: consumerPaths, packageExclusions: exclusions)
+        context: context, consumerPaths: consumerPaths, packageExclusions: exclusions, resume: true)
     }
     let packages = try planner.standardBrewfile(
       context.environmentResourcesRoot.appending(path: "Brewfile")
@@ -308,9 +312,24 @@ struct GuidedSetupCommandRunner: Sendable {
       context: context, consumerPaths: consumerPaths, packageExclusions: answers.packageExclusions)
   }
 
+  private func finishPermissions(
+    _ permissions: GuidedSetupPermissions, context: UnifiedSetupPlanContext,
+    consumerPaths: ThemeConsumerPaths
+  ) async -> CommandExecution {
+    do {
+      return try await permissions.afterConfiguration(
+        context: context, consumerPaths: consumerPaths)
+    } catch {
+      return (
+        "Configuration is applied; the permission step is blocked: \(error). Resume: \(GuidedSetupPermissions.resumeCommand(context)).",
+        false
+      )
+    }
+  }
+
   private func reviewAndApply(
     context: UnifiedSetupPlanContext, consumerPaths: ThemeConsumerPaths,
-    packageExclusions: [HomebrewPackageIdentity], trustReviewed: Bool = false
+    packageExclusions: [HomebrewPackageIdentity], trustReviewed: Bool = false, resume: Bool = false
   ) async throws -> CommandExecution {
     var context = context
     var preparation = try planner.prepare(context: context)
@@ -323,7 +342,8 @@ struct GuidedSetupCommandRunner: Sendable {
         .lastPathComponent
       io.write(
         "Inspecting \(key.rawValue) needs Automation access to Apple's \(recipient). "
-          + "macOS controls this permission; requesting it installs nothing and changes no preferences.\n"
+          + "Sender/context: \(MacOSAppearanceEvents.launchContext). Recipient: \(NativePreferenceEvent.application(for: key).url.path). "
+          + "macOS controls this permission; requesting it installs nothing and changes no preferences. This does not verify service launchers.\n"
       )
       guard try io.confirm("Show Apple's Automation consent dialog for \(recipient)?") else {
         return (
@@ -332,6 +352,7 @@ struct GuidedSetupCommandRunner: Sendable {
         )
       }
       do {
+        if let permissions { try permissions.openPane("Automation") }
         try requestAutomation(key)
       } catch {
         return (
@@ -345,9 +366,15 @@ struct GuidedSetupCommandRunner: Sendable {
     io.write("\(try plan.render(json: false))\n")
     guard case .ready(let model, _) = preparation else {
       return (
-        "Guided setup stopped because the unified plan is blocked. The profile was retained; continue with macarchy setup guided --resume and the same profile options.",
+        "Guided setup is blocked. The profile was retained; no installation or configuration was applied. Resolve the reported diagnostics or external prerequisites, then continue with macarchy setup guided --resume and the same profile options.",
         false
       )
+    }
+    if resume, plan.actions.isEmpty, let permissions {
+      io.write(
+        "Configuration is already current. Continuing with permissions only; no package installation or configuration approval is repeated.\n"
+      )
+      return await finishPermissions(permissions, context: context, consumerPaths: consumerPaths)
     }
     guard let declarations = plan.packageDeclarations else {
       throw SetupPackageAdoptionError("The ready guided plan is missing package declarations.")
@@ -407,7 +434,7 @@ struct GuidedSetupCommandRunner: Sendable {
     if grantedTrust {
       return try await reviewAndApply(
         context: context, consumerPaths: consumerPaths, packageExclusions: packageExclusions,
-        trustReviewed: true)
+        trustReviewed: true, resume: resume)
     }
 
     let cancelled = (
@@ -444,6 +471,10 @@ struct GuidedSetupCommandRunner: Sendable {
     guard try io.confirm("Install & apply the reviewed setup now?") else {
       return cancelled
     }
-    return try await apply(context, consumerPaths, packageApproval, preferencesApproval, adoptions)
+    let execution = try await apply(
+      context, consumerPaths, packageApproval, preferencesApproval, adoptions)
+    guard execution.succeeded, let permissions else { return execution }
+    io.write("\(execution.output)\n")
+    return await finishPermissions(permissions, context: context, consumerPaths: consumerPaths)
   }
 }

@@ -192,7 +192,11 @@ struct UnifiedSetupPlanTests {
       )
     let before = try inventory(root)
 
-    var runner = UnifiedSetupPlanCommandRunner.live
+    let live = UnifiedSetupPlanCommandRunner.live
+    var runner = UnifiedSetupPlanCommandRunner(
+      capabilityIsAvailable: { _ in true },
+      desktopPlanner: live.desktopPlanner,
+      environmentPlanner: live.environmentPlanner)
     runner.packageInventoryReader = { HomebrewPackageObservation(packages: [], issues: []) }
     let execution = try runner.execute(
       context: UnifiedSetupPlanContext(
@@ -331,10 +335,13 @@ struct UnifiedSetupPlanTests {
     let adoption = try #require(report["adoption"] as? [[String: String]])
     let permissions = try #require(report["permissions"] as? [[String: String]])
 
-    #expect(execution.succeeded)
+    #expect(!execution.succeeded)
     #expect(report["operation"] as? String == "setup_plan")
-    #expect(report["outcome"] as? String == "ready")
+    #expect(report["outcome"] as? String == "blocked")
     #expect(report["mutated"] as? Bool == false)
+    let diagnostics = try #require(report["diagnostics"] as? [[String: Any]])
+    #expect(diagnostics.contains { $0["code"] as? String == "external_prerequisite" })
+    #expect((report["actions"] as? [Any])?.isEmpty == true)
     #expect(layers.map { $0["status"] as? String } == ["loaded", "loaded"])
     #expect(
       (report["field_origins"] as? [String: String])?["kitty.font_size"] == "machine"
@@ -361,8 +368,8 @@ struct UnifiedSetupPlanTests {
         == ["desktop:true", "environment:15.0"]
     )
     let human = try runner.execute(context: setupContext, json: false)
-    #expect(human.output.hasPrefix("Macarchy setup plan [ready]:"))
-    #expect(human.output.hasSuffix("No changes made."))
+    #expect(human.output.hasPrefix("Macarchy setup plan [blocked]:"))
+    #expect(human.output.hasSuffix("This plan made no installation or configuration changes."))
     #expect(try inventory(root) == before)
   }
 
@@ -438,7 +445,7 @@ struct UnifiedSetupPlanTests {
           ),
           diagnostics: [
             PlanDiagnostic(
-              code: "yabai_provider_blocked", source: "yabai",
+              code: "yabai_provider_blocked", source: "/specific/config/yabairc",
               message: "Unsafe desktop ownership.")
           ]
         )
@@ -469,6 +476,8 @@ struct UnifiedSetupPlanTests {
     #expect(
       (diagnostics.first?["message"] as? String)?.contains("Unsafe desktop ownership") == true)
     #expect(report["components"] != nil)
+    #expect(
+      (diagnostics.first?["message"] as? String)?.contains("/specific/config/yabairc") == true)
   }
 
   private func context(
@@ -523,7 +532,7 @@ struct UnifiedSetupPlanTests {
   ) throws -> (model: UnifiedSetupDesiredModel, report: UnifiedSetupPlanReport) {
     let live = UnifiedSetupPlanCommandRunner.live
     var runner = UnifiedSetupPlanCommandRunner(
-      capabilityIsAvailable: live.capabilityIsAvailable,
+      capabilityIsAvailable: { _ in true },
       desktopPlanner: live.desktopPlanner,
       environmentPlanner: { context, profile, bootstrapTheme in
         let noMutation: @Sendable (URL) throws -> Void = { _ in

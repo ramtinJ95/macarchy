@@ -26,7 +26,10 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   var packageInstaller: HomebrewBundleInstaller
   let capabilityIsAvailable: @Sendable (DependencyCapability) -> Bool
   let writePreMutationPlan: @Sendable (String) throws -> Void
-  let themeApply: ThemeApply
+  var themeApply: ThemeApply
+  var beforeConfiguration: @Sendable (UnifiedSetupPlanContext, PortableProfile) throws -> String? =
+    { _, _ in nil }
+  var deferAppearanceUntilPermissions = false
   let themeRefresh: ThemeRefresh
   let desktopApply: ComponentApply<DesktopAggregateMutationReport>
   let environmentApply: ComponentApply<EnvironmentLifecycleReport>
@@ -82,32 +85,25 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     }
   }
 
-  static var guided: Self {
-    var runner = live
-    runner.packageInstaller = .guided(
-      homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
-    return runner
-  }
+  private static let pendingAppearance = AdapterResult(
+    adapterID: MacOSAppearanceAdapter.id, requirement: .required, status: .pending,
+    message:
+      "System Events Automation and appearance reconciliation follow configuration in guided setup."
+  )
 
-  static let live = Self(
-    planner: .live,
-    themeInspection: UnifiedSetupThemeLifecycleStatus.preflightApply,
-    packageInstaller: .live(homeDirectory: FileManager.default.homeDirectoryForCurrentUser),
-    capabilityIsAvailable: { $0.isAvailable() },
-    writePreMutationPlan: { output in
-      try FileHandle.standardError.write(contentsOf: Data("\(output)\n".utf8))
-    },
-    themeApply: { package, stateRoot in
-      let store = SetupCoreOwnershipStore(stateRoot: stateRoot)
-      guard try store.read() == nil else { throw SetupCoreOwnershipError.alreadyExists }
-      let appearance = MacOSAppearanceAdapter.live(root: stateRoot)
-      let originalAppearance = try appearance.preflight()
-      // The bootstrap reconciles only macOS appearance; a failed or drifted result fails it.
-      let outcome = try await ThemeActivationOutcome.classify(
-        requiredFailure: { results in
-          results.contains { $0.status == .failed || $0.status == .drifted }
-        }
-      ) {
+  private static func bootstrapTheme(
+    _ package: ThemePackage, stateRoot: URL, deferAppearance: Bool
+  ) async throws -> ThemeSetJSONReport {
+    let store = SetupCoreOwnershipStore(stateRoot: stateRoot)
+    guard try store.read() == nil else { throw SetupCoreOwnershipError.alreadyExists }
+    let appearance = MacOSAppearanceAdapter.live(root: stateRoot)
+    let originalAppearance = try appearance.preflight()
+    // The bootstrap reconciles only macOS appearance; a failed or drifted result fails it.
+    let outcome = try await ThemeActivationOutcome.classify(
+      requiredFailure: { results in
+        results.contains { $0.status == .failed || $0.status == .drifted }
+      },
+      {
         let manifest = try ThemeActivator(root: stateRoot).activate(
           package: package,
           onCommittedLocked: { manifest in
@@ -120,7 +116,10 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           }
         )
         do {
-          let appearanceResult = try await appearance.apply(package.appearance)
+          let appearanceResult =
+            deferAppearance
+            ? Self.pendingAppearance
+            : try await appearance.apply(package.appearance)
           return ThemeActivationResult(
             manifest: manifest,
             reconciliation: try ReconciliationStatusStore(root: stateRoot).persist(
@@ -135,7 +134,35 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           )
         }
       }
-      return ThemeSetReport(outcome, themeID: package.id, slackTheme: nil).jsonReport
+    )
+    return ThemeSetReport(outcome, themeID: package.id, slackTheme: nil).jsonReport
+  }
+
+  static func guided(io: GuidedSetupIO = .live) -> Self {
+    var runner = live
+    runner.packageInstaller = .guided(
+      homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+    runner.deferAppearanceUntilPermissions = true
+    runner.themeApply = { package, root in
+      try await bootstrapTheme(package, stateRoot: root, deferAppearance: true)
+    }
+    runner.beforeConfiguration = { context, profile in
+      try GuidedSetupPermissions.live(io: io).beforeConfiguration(
+        context: context, profile: profile)
+    }
+    return runner
+  }
+
+  static let live = Self(
+    planner: .live,
+    themeInspection: UnifiedSetupThemeLifecycleStatus.preflightApply,
+    packageInstaller: .live(homeDirectory: FileManager.default.homeDirectoryForCurrentUser),
+    capabilityIsAvailable: { $0.isAvailable() },
+    writePreMutationPlan: { output in
+      try FileHandle.standardError.write(contentsOf: Data("\(output)\n".utf8))
+    },
+    themeApply: { package, stateRoot in
+      try await bootstrapTheme(package, stateRoot: stateRoot, deferAppearance: false)
     },
     desktopApply: { context, profile, consumerPaths, adoptions, enabledThemeAdapterIDs in
       try await DesktopApplyCommandRunner(
@@ -327,6 +354,11 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
             json: json
           )
         }
+        if let reason = try beforeConfiguration(context, currentModel.profile) {
+          return try result(
+            outcome: "blocked", mutated: packages.mutated, plan: currentPlan,
+            packages: packages, message: reason, json: json)
+        }
         let unresolved = try DependencyProfile.personal(homeDirectory: context.homeDirectory)
           .selectedForSetup(
             currentModel.profile,
@@ -420,7 +452,8 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         }) {
           // Theme activation is the only palette publisher (ADR-0189). The desktop and
           // environment stages reconcile their own consumers after publishing their seams.
-          var adapterIDs: Set<String> = [MacOSAppearanceAdapter.id]
+          var adapterIDs: Set<String> =
+            deferAppearanceUntilPermissions ? [] : [MacOSAppearanceAdapter.id]
           if !plannedStages.contains(.environment) {
             adapterIDs.formUnion(currentModel.profile.environment.selectedThemeAdapterIDs)
           }
@@ -437,9 +470,31 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
             try ownershipStore.transfer(from: previousGenerationID, to: manifest.generationID)
           }
           do {
+            var refreshed = try await themeRefresh(
+              context, currentModel.theme, adapterIDs, consumerPaths, followSetupOwnedTheme)
+            if deferAppearanceUntilPermissions, refreshed.succeeded {
+              refreshed.reconciliation = try ActivationLock(root: context.stateRoot).withLock {
+                let manifest = try ThemeGenerationReader(root: context.stateRoot).activeManifest()
+                let status = ReconciliationStatusStore(root: context.stateRoot)
+                guard manifest.generationID == refreshed.generationID,
+                  case .current(let record) = try status.read()
+                else {
+                  throw SetupComponentReportError(
+                    description:
+                      "Refreshed theme changed before deferred appearance could be recorded; review the current setup."
+                  )
+                }
+                // Environment's missing-adapter expansion must not pull appearance back
+                // into configuration before the guided permission step.
+                return try status.persist(
+                  manifest: manifest,
+                  results: record.results.filter { $0.adapterID != MacOSAppearanceAdapter.id }
+                    + [Self.pendingAppearance]
+                ).results
+              }
+            }
             theme = try stage(
-              await themeRefresh(
-                context, currentModel.theme, adapterIDs, consumerPaths, followSetupOwnedTheme),
+              refreshed,
               successMessage:
                 "Reactivated '\(currentModel.theme.id)' to publish the current SketchyBar palette; it stays active if a later stage rolls back."
             )
@@ -485,7 +540,8 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
                 adoptions,
                 currentModel.enabledThemeAdapterIDs
               ),
-              successMessage: "Desktop providers converged."
+              successMessage:
+                "Desktop configuration and core applied; Apple-menu permission is checked separately."
             )
           } catch {
             return try await failureAfterRollback(
@@ -511,7 +567,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
               packages: packages,
               theme: theme,
               desktop: desktop,
-              message: "Desktop apply did not converge; later stages were not run.",
+              message: "Desktop apply could not verify the selected services: \(desktop.message)",
               json: json
             )
           }
@@ -616,8 +672,8 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           environment: environment,
           preferences: preferences,
           message: mutated
-            ? "The selected Macarchy core converged."
-            : "The selected Macarchy core is already converged.",
+            ? "Reviewed configuration applied. Permission grants are not implied verified; use setup guided --resume for context-specific checks."
+            : "Reviewed configuration is already current. Permission grants are not implied verified; use setup guided --resume for context-specific checks.",
           json: json
         )
       }
@@ -726,7 +782,8 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         theme: theme,
         desktop: desktop,
         environment: environment,
-        message: "\(message) Completed setup stages were rolled back.",
+        message:
+          "Configuration was rolled back. \(message) Installed packages and manual permission decisions remain. Resume: \(GuidedSetupPermissions.resumeCommand(context)). The current configuration plan must be reviewed again before retrying.",
         json: json
       )
     } catch {

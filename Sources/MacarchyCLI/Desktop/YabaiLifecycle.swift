@@ -113,7 +113,9 @@ struct YabaiLifecycleController: Sendable {
     verifyStarted: {
       guard runtimeReady(), accessibilityReady() else {
         throw YabaiDesktopError.lifecycle(
-          "yabai did not become queryable with Accessibility references after start; grant Accessibility manually and keep an ordinary application window open"
+          "Tiling/Space control cannot be verified. Grant Accessibility manually to "
+            + ExternalTool.yabai.resolvingSymlinksInPath().path
+            + " in System Settings > Privacy & Security > Accessibility; keep an ordinary application window open. Then run macarchy setup guided --resume."
         )
       }
     }
