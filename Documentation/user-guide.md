@@ -4,7 +4,7 @@
 
 Detailed setup, customization and troubleshooting reference.
 
-- [Install](#install)
+- [Install](#install) · [Permissions and resume](#permissions-and-resuming-setup) · [Configuration backups](#existing-configuration-and-backups)
 - [Everyday use](#everyday-use)
 - [Screenshot capture](#capture-a-screenshot)
 - [Themes](#bring-an-omarchy-theme)
@@ -15,21 +15,16 @@ Detailed setup, customization and troubleshooting reference.
 
 ## Install
 
-You need **Apple Silicon, macOS 26, and [Homebrew](https://brew.sh/)**.
-Intel and older macOS versions are not currently supported.
+You need **Apple Silicon, macOS 26, working [Homebrew](https://brew.sh/) at
+`/opt/homebrew`, and Xcode Command Line Tools**. Intel, Rosetta, older macOS and
+custom Homebrew prefixes are unsupported. The installer checks prerequisites;
+it does not install Homebrew or CLT. Use the [README one-command quickstart](../README.md#install)
+in an interactive terminal. The [installer reference](install.md) explains the
+mutable-main script trust boundary, inspect-first option, exact-formula review,
+cancellation and repair. A new install opens guided setup; an installer rerun
+only verifies the existing release and prints setup/resume/update commands.
 
-Review the third-party tap before granting Homebrew's formula trust:
-
-```sh
-brew tap ramtinj95/tap
-brew trust --formula ramtinj95/tap/macarchy
-HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
-  HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
-  brew install --formula --no-ask ramtinj95/tap/macarchy
-macarchy setup guided
-```
-
-The Homebrew controls avoid unrelated automatic upgrades and cleanup during
+The installer avoids unrelated automatic upgrades and cleanup during
 Macarchy installation. Guided setup opens one selection menu: use Up/Down to
 move, Space to toggle, and Enter to review. Providers, optional presets, native
 settings and individual optional packages appear together. Core components start
@@ -42,7 +37,8 @@ false. Press q or Ctrl-C to cancel without saving.
 
 The menu saves a small profile and displays the unified plan. One default-no
 **Install & apply** confirmation authorizes its reviewed missing packages,
-configuration adoptions, writable native starters, native settings and service changes. Setup then installs
+configuration adoptions, writable native starters, listed backup-and-replace
+operations, native settings and service changes. Setup then installs
 and configures those selections without a separate apply or keybindings command.
 Blocked prerequisites still stop setup visibly. An interactive terminal is required.
 
@@ -56,24 +52,120 @@ remain after rollback or teardown; user configuration is not deleted.
 
 Enabled zsh, Kitty, Atuin, Starship and Neovim receive writable user configurations
 at their standard application paths, separate from generated state. The plan shows
-their exact contents before creation; existing files are never replaced. Declining
-creates no starters. Run `macarchy setup guided --resume` with the same profile
-options to review the retained profile again without rewriting it. Created user
-files survive failures and teardown. Retained v0.9.6 questionnaires still resume
-at their originally reviewed paths; upgrading does not relocate existing files.
+their exact contents before creation. Absent-only starters remain user-owned and
+survive failures and teardown. Existing zsh, Kitty and Neovim entries can instead
+use the [reviewed backup-and-replace path](#existing-configuration-and-backups).
+Declining Install & apply creates no starters or replacements; the saved profile
+and any earlier permission/trust grants remain. Retained v0.9.6 questionnaires
+still resume at their originally reviewed paths; upgrading does not relocate them.
 
 **Already have a profile?** Use `macarchy setup plan --profile /path/to/profile.toml`
 and the [profile-driven workflow](#make-it-yours) instead. Guided setup will not
 overwrite an existing profile.
 
-Some steps remain yours: trust for selected third-party packages, Accessibility
-for yabai/skhd, and Automation approval for macOS appearance control. The plan
-and `macarchy setup doctor` report prerequisites. Pi, when selected, requires
-manual installation with `npm install --global @earendil-works/pi-coding-agent`.
+Selected third-party packages need their own trust approval. Native Homebrew
+installers may ask for an administrator password through sudo; Macarchy does not
+collect it. Pi, when selected, requires manual installation with
+`npm install --global @earendil-works/pi-coding-agent`. Installing an optional app
+does not enable its integration or authorize access to protected data.
 
 Macarchy keeps **normal SIP**, does not use yabai's scripting addition, and
 does not grant permissions for you. It sends no telemetry. Homebrew owns package
 installers and dependencies; their effects are not rolled back with configuration.
+
+### Existing configuration and backups
+
+For selected zsh, Kitty and Neovim components, guided setup offers to replace
+conflicting `~/.zshrc`, `~/.config/kitty/kitty.conf` and `~/.config/nvim/` with
+Macarchy starters. Each replacement starts selected in the review menu; deselect
+it to keep the existing entry. Keeping it may require preparing the native theme
+connection yourself; it does not silently merge or repair an incompatible source.
+Atuin and Starship retain their absent-only starter behavior.
+
+Before the single default-no Install & apply confirmation, review exact original
+paths, starter contents and timestamped sibling backup destinations:
+`<original-path>.macarchy-backup-<UTC timestamp>-<unique ID>`. For a dotfile-managed
+symlink, only the link moves; its target is never modified. Ordinary reapply and
+updates do not repeat replacement or reset your edits.
+
+Teardown restores a copy of the original, or the original symlink with its exact
+target spelling. Before restoration it moves the current starter—including any
+edits—to another timestamped sibling backup. Neither the original backup nor the
+retained starter is consumed or automatically deleted. `macarchy setup status`
+and `macarchy setup doctor` list recorded backup paths, including after teardown.
+While restoration is required, missing, changed or retargeted originals block it;
+keep those backups intact. After successful restoration, the backups are archives
+you may keep or delete yourself; deleting them no longer affects health.
+Interrupted replacement/restoration uses the reported `macarchy setup recover`
+path, not another replacement or manual receipt deletion.
+
+### Permissions and resuming setup
+
+Permissions remain manual and belong to the actual launching context, not every
+Macarchy invocation. Guided setup opens the relevant **System Settings → Privacy
+& Security** pane and checks real results; enabling a toggle alone is not proof.
+
+| Permission | Why and how setup checks it |
+| --- | --- |
+| Accessibility for yabai and skhd | Tiling/Space control and desktop shortcuts. Setup installs selected packages first, shows their resolved binaries and guides manual enablement before managed startup. Keep an ordinary application window open so yabai can verify Accessibility window references. |
+| Accessibility for the SketchyBar-launched `macarchy-menu` helper | Opens the front app's native Apple menu. After the bar exists, setup checks through that running service and can ask macOS to identify the responsible entry. The printed bar/helper paths describe a launch chain, not interchangeable permission rows. A terminal helper check is not bar verification. |
+| Automation to System Events | Matches macOS light/dark appearance. After explicit confirmation, setup requests native consent and verifies a read plus setter authorization without changing appearance. A grant here proves only this invocation. |
+| Selected optional native preferences/features | Setup names the recipient for selected native-preference Automation. Screen capture, clipboard access and other optional actions have their own documented native grants; package installation is not permission consent. |
+
+The default bar's System Events check is informational: its Apple-menu action
+needs Accessibility, not appearance Automation. Accessibility and Automation
+results are reported independently; a timeout or failed observation means **could
+not verify**, not necessarily denied access.
+
+Default setup cannot verify **keybinding-origin System Events Automation** from
+a terminal. Open the theme browser with **Command–Shift–T** and select a theme of
+the opposite macOS light/dark appearance to request consent in that context.
+All three bundled themes are dark. If macOS is already dark, first choose Light
+in **System Settings → Appearance**, then use the keybinding to apply a different
+bundled theme. A same-appearance selection does not request consent. After a
+denial, enable **System Events** for the responsible app identified by macOS in
+**Privacy & Security → Automation**. Terminal resume/status/doctor still report
+that keybinding context as unverified even if access was granted there; this is
+an explicit verification limit, not a claim of denial. A successful terminal
+grant does not authorize menu, keybinding or background launchers. Explicit
+interactive theme selections may request consent; inspection and automatic
+background operations never do.
+
+Read the final result, not just a saved-profile message or `plan [ready]` heading:
+
+- **Blocked before configuration:** the profile and any installed packages or
+  earlier grants can remain. Resolve the named prerequisite; no working desktop
+  is implied. Failed provider startup may roll configuration back; read its
+  restoration/recovery result.
+- **Configuration applied; permissions incomplete:** configuration remains, but
+  named features are unavailable or not yet verified. Default desktop setup
+  reports the keybinding-origin limit above even when its terminal checks pass.
+- **Applied but theme verification incomplete:** a read-only Atuin, eza or
+  Starship deadline retains configuration, not proof of healthy theming. Follow
+  the named reconciliation command (normally `macarchy reconcile`), then check
+  `macarchy doctor`. Genuine probe errors still fail and can trigger rollback.
+
+For a saved questionnaire, use:
+
+```sh
+macarchy setup guided --resume
+macarchy setup status
+macarchy setup doctor
+```
+
+Reuse any original custom `--output-profile`, `--machine-profile` and `--state-root`
+options with guided resume. For status/doctor, the portable-profile option is
+`--profile`, not `--output-profile`. Resume does not rewrite the saved profile,
+reinstall satisfied packages or request already verified native grants. If
+configuration is current it continues with permissions only; otherwise a fresh
+review is required. With no saved profile, use `macarchy setup guided`.
+If setup reports an interrupted transaction, follow its `macarchy setup recover`
+instruction first; do not delete state or rerun the installer as a permission fix.
+
+With desktop defaults applied, open Kitty, check tiling and SketchyBar, and try
+the theme browser and effective shortcuts below. Status and doctor explain
+remaining configuration, runtime or permission gaps; a rendered menu alone does
+not establish a working desktop.
 
 ## Everyday use
 
@@ -826,13 +918,11 @@ helper/native-defaults readback, live Dock/Finder changes without restarting tho
 processes, unset no-write, and public profile-disable restoration/kept-user-choice.
 Widgets were not separately observed. Other builds remain unsupported.
 
-**Known aggregate teardown limitation:** after a theme switch replaces the
-setup-owned generation, `setup teardown` can refuse with “Cannot remove setup
-theme generation … while … is active” before either icon or accent restoration.
-The qualified restore path in that case is to set `icon_style = false` and run
-`macarchy environment apply --profile <profile.toml>` against the same state root.
-This does not retire the setup theme. Do not delete the native ownership receipt
-to work around the aggregate refusal.
+Unified `macarchy setup teardown` restores recorded icon/accent values even
+after theme switches or undo, while keeping later user choices. A concurrent
+theme switch can require a retry; follow the [removal guidance](#updates-diagnostics-and-removal)
+rather than deleting ownership receipts. Disabling `icon_style` through reviewed
+setup apply remains a separate way to restore just that control.
 
 ### Bring an Omarchy theme
 
@@ -1295,7 +1385,10 @@ An editable profile input is not proof that pending connection changes are activ
 Fresh guided setup uses `~/.zshrc`, `~/.config/kitty/kitty.conf`,
 `~/.config/atuin/config.toml`, `~/.config/starship.toml` and `~/.config/nvim/`.
 These are personal files or deliberately chosen dotfile links, not mandatory
-wrappers. Normal apply, updates and teardown preserve them. Macarchy maintains
+wrappers. Normal apply and updates preserve them. Teardown also preserves
+absent-only starters and externally connected sources; for a guided, explicitly
+approved replacement it instead [restores the original and backs up the current
+starter](#existing-configuration-and-backups). Macarchy maintains
 only declared defaults and theme integration; arbitrary personal behavior is not
 a convergence guarantee. Includes into Macarchy state become inactive after
 teardown and may need deliberate removal from personal configuration.
@@ -1399,8 +1492,10 @@ configuration. End that file with exactly one
 `include /absolute/home/.config/macarchy/state/adapters/kitty.conf` directive,
 using your actual home and state root. No behavior wrapper is installed in this
 mode. Keep external sources outside `~/.config/kitty`; all sources stay outside
-Macarchy state. Apply and teardown preserve personal files and dotfile symlinks;
-edits take effect on Kitty configuration reload. Paths may contain
+Macarchy state. Reapply preserves personal files and dotfile symlinks. Teardown
+keeps externally connected sources; approved guided replacements instead follow
+the [backup-and-restore lifecycle](#existing-configuration-and-backups).
+Edits take effect on Kitty configuration reload. Paths may contain
 spaces but not `$` expansion or control characters. Native includes are trusted
 user configuration, not a sandbox; plan/status validate the connected file and
 owned theme seam, not arbitrary nested includes or behavior.
@@ -2001,9 +2096,16 @@ macarchy setup teardown
 ```
 
 Teardown reverses recorded configuration changes and preserves unrelated data
-and installed packages. When setup created the canonical theme, teardown retires
-the active Macarchy generation even after theme switches or undo. It restores
-the original wallpaper and macOS appearance where Macarchy's values are still
+and installed packages. Approved guided zsh/Kitty/Neovim replacements restore
+originals, including exact dotfile symlinks without touching their targets;
+current starters and edits are retained in sibling backups. Original backups
+also remain until you delete them. `macarchy setup status` lists recorded paths
+even after teardown. Absent-only starters and externally connected personal
+sources are kept; see [backup ownership](#existing-configuration-and-backups).
+
+When setup created the canonical theme, teardown retires the active Macarchy
+generation even after theme switches or undo. It restores the original wallpaper
+and macOS appearance where Macarchy's values are still
 present; appearance is compared with the active theme, not the setup-time theme.
 Enabled macOS-look controls use their own recorded applied values.
 User-changed values are kept and named in the report, as are missing original
@@ -2025,7 +2127,9 @@ does not cover the idle screensaver: if you turned it on, run
 `macarchy saver idle off` first. For
 separately recorded legacy theme integrations,
 also inspect `macarchy teardown --dry-run` before running `macarchy teardown`.
-After restoration, remove the CLI separately if wanted:
+If teardown or restoration fails, keep the CLI and state, resolve its reported
+blocker and finish recovery before uninstalling. After successful restoration,
+remove the CLI separately if wanted:
 
 ```sh
 HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
