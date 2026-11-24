@@ -12,10 +12,10 @@ prepare   On the last PR branch of a batch: fold changelog.d into CHANGELOG.md,
           bump VERSION.txt and RuntimeEnvironment.sourceVersion, and commit
           "chore(release): prepare v1.2.3".
 publish   After that PR merged: require origin/main at 1.2.3 with a validated
-          archive, tag v1.2.3 on it and dispatch release.yml. A person approves the
-          protected stable-release environment; this script never does. The
-          archive is the one the PR's CI built when main landed exactly the tree
-          it tested; otherwise publish waits for main's push CI and uses its build.
+          archive, tag v1.2.3 on it and dispatch release.yml. Publication proceeds
+          automatically once the workflow's checks pass. The archive is the one
+          the PR's CI built when main landed exactly the tree it tested;
+          otherwise publish waits for main's push CI and uses its build.
 finish    Wait for the release run, verify the published archive (checksum,
           attestation, bin/macarchy --version) and land the Homebrew tap update,
           which may change only the formula url and sha256.
@@ -387,7 +387,8 @@ def publish(version):
             raise ReleaseError(f"dispatched release.yml for {tag} but found no run; "
                                "check the Actions tab")
     print(f"Release run: {active['url']}\n"
-          f"Approve the stable-release environment there, then run: "
+          f"Publication proceeds automatically after the workflow checks pass.\n"
+          f"Wait for publication and update the tap with: "
           f"Scripts/release.py finish {version}")
 
 
@@ -492,7 +493,7 @@ def finish(version):
         if not runs:
             raise ReleaseError(f"no release.yml run for {tag}; run publish {version}")
         if runs[0]["status"] != "completed":
-            print(f"Waiting for {runs[0]['url']} (approve stable-release if pending)")
+            print(f"Waiting for {runs[0]['url']}")
             wait_for_run(runs[0]["databaseId"], 7200)
         if not published(tag):
             raise ReleaseError(f"{tag} was not published: {runs[0]['url']}")
