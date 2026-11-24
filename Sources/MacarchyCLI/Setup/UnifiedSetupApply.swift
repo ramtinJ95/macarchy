@@ -25,7 +25,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   let themeInspection: UnifiedSetupThemeInspection
   var packageInstaller: HomebrewBundleInstaller
   let capabilityIsAvailable: @Sendable (DependencyCapability) -> Bool
-  let writePreMutationPlan: @Sendable (String) throws -> Void
+  var writePreMutationPlan: @Sendable (String) throws -> Void
   var themeApply: ThemeApply
   var beforeConfiguration: @Sendable (UnifiedSetupPlanContext, PortableProfile) throws -> String? =
     { _, _ in nil }
@@ -145,6 +145,9 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     var runner = live
     runner.packageInstaller = .guided(
       homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+    runner.writePreMutationPlan = { _ in
+      io.write("Preflight complete; applying the setup reviewed above.\n")
+    }
     runner.deferAppearanceUntilPermissions = true
     runner.themeApply = { package, root in
       try await bootstrapTheme(package, stateRoot: root, deferAppearance: true)

@@ -42,6 +42,7 @@ or start setup again.
    `~/.config/kitty/kitty.conf` and `~/.config/nvim/` can be backed up and replaced
    with starters. Replacement starts selected but can be deselected per item.
    Review exact paths before the default-no **Install & apply** confirmation.
+   Add `--full` to guided setup for starter contents and the full inventory.
    Originals stay in timestamped sibling backups; dotfile symlink targets are
    never changed. Teardown restores originals and preserves starter edits too.
 3. **Grant permissions manually when asked.** **Accessibility** lets yabai tile

@@ -82,6 +82,9 @@ extension Macarchy {
       )
       var resume = false
 
+      @Flag(help: "Show the complete review inventory, including starter contents.")
+      var full = false
+
       @Option(
         name: .customLong("output-profile"),
         help: "New portable profile path. Defaults to ~/.config/macarchy/profile.toml."
@@ -101,7 +104,9 @@ extension Macarchy {
         let profileURL =
           outputProfile.map { URL(filePath: $0).standardizedFileURL }
           ?? StateLayout.defaultProfile(in: home).standardizedFileURL
-        let execution = try await GuidedSetupCommandRunner.live().execute(
+        var runner = GuidedSetupCommandRunner.live()
+        runner.fullReview = full
+        let execution = try await runner.execute(
           context: .live(
             profileURL: profileURL,
             profileRequired: true,
@@ -144,6 +149,9 @@ extension Macarchy {
       @Flag(help: "Emit machine-readable output.")
       var json = false
 
+      @Flag(help: "Show the full inventory instead of the concise review; JSON is always complete.")
+      var full = false
+
       mutating func run() throws {
         let execution = try UnifiedSetupPlanCommandRunner.live.execute(
           context: profile.context(
@@ -152,7 +160,7 @@ extension Macarchy {
               directoryHint: .isDirectory
             ).standardizedFileURL
           ),
-          json: json
+          json: json, full: full
         )
         try emitExecution(execution)
       }
