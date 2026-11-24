@@ -6,3 +6,6 @@
   roll back, and required theme health remains unsuccessful until verified.
 - Setup checks restored shell startup after unified configuration restoration,
   avoiding misleading missing-defaults warnings from an intermediate rollback.
+- SketchyBar permission checks report Accessibility and Automation independently,
+  with stage timings and explicit timeout/recheck guidance instead of checking
+  indefinitely. Missing Automation is distinguished from a failed native probe.

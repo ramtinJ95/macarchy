@@ -13,7 +13,7 @@ struct GuidedSetupPermissionsTests {
     open: @escaping @Sendable (String) throws -> Void = { _ in },
     services: @escaping @Sendable () -> [URL] = { [] },
     bar: @escaping @Sendable (UnifiedSetupPlanContext) throws -> GuidedBarPermissions = { _ in
-      .init(apple: true, appearance: true)
+      .init(apple: .verified, appearance: .verified)
     },
     verify: @escaping @Sendable () throws -> Void = {},
     requestBar: @escaping @Sendable (UnifiedSetupPlanContext) throws -> Void = { _ in
@@ -151,7 +151,7 @@ struct GuidedSetupPermissionsTests {
       write: { text in output.withLock { $0 += text } },
       bar: { _ in
         barChecks.withLock { $0 += 1 }
-        return .init(apple: false, appearance: false)
+        return .init(apple: .notGranted, appearance: .notGranted)
       })
     let result = try await guide.afterConfiguration(
       context: fixture.context, consumerPaths: testConsumerPaths())
@@ -175,7 +175,9 @@ struct GuidedSetupPermissionsTests {
     let requests = Mutex(0)
     let guide = permissions(
       read: { "yes" },
-      bar: { _ in .init(apple: granted.withLock { $0 }, appearance: false) },
+      bar: { _ in
+        .init(apple: granted.withLock { $0 } ? .verified : .notGranted, appearance: .notGranted)
+      },
       requestBar: { _ in
         requests.withLock { $0 += 1 }
         granted.withLock { $0 = true }
@@ -268,14 +270,15 @@ struct GuidedSetupPermissionsTests {
         if args.first == "--set" { return .init(terminationStatus: 0, output: "") }
         #expect(args.first == "--query")
         let marker = args[1] == "macarchy.theme.ready"
-        let label =
-          marker
-          ? token.withLock { "permission:\(granted ? "granted" : "missing"):" + $0 }
-          : (granted ? "" : "Menu ERR")
+        let stage = token.withLock {
+          "permission:v2:\($0):complete:100:100.25:\(granted ? 0 : 77)"
+        }
+        let label = marker ? stage : (granted ? "" : "Menu ERR")
         let json: [String: Any] = [
           "name": args[1], "type": "item",
           "geometry": ["drawing": "on", "position": "left", "associated_space_mask": 0],
           "label": ["value": label, "drawing": granted || marker ? "off" : "on"],
+          "icon": ["value": stage, "drawing": "off"],
           "scripting": ["script": expected, "click_script": "", "update_freq": 0],
         ]
         return .init(
@@ -285,7 +288,9 @@ struct GuidedSetupPermissionsTests {
       requestAccessibility: requestAccessibility,
       generationInspection: { generation }, serviceInspection: { service },
       wait: { Issue.record("A completed fresh verdict should need no wait") })
-    #expect(result == .init(apple: granted, appearance: granted))
+    #expect(result.apple == (granted ? .verified : .failed))
+    #expect(result.appearance == (granted ? .verified : .notGranted))
+    #expect(result.diagnostics.contains { $0.contains("elapsed=0.250 s") })
     #expect(!token.withLock { $0 }.isEmpty)
   }
 
