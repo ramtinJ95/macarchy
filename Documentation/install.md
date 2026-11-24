@@ -19,7 +19,9 @@ to Bash, so prompts and guided setup retain terminal input.
 
 ## What it does
 
-1. Checks platform, Homebrew, developer tools and interactive input before mutation.
+1. Checks platform, native Homebrew at exactly `/opt/homebrew`, developer tools
+   and interactive input before mutation. Intel (`/usr/local`) and custom
+   Homebrew prefixes are unsupported; no trust is requested for them.
 2. Asks before downloading `ramtinj95/tap`, then reads its `Formula/macarchy.rb`
    directly for review, including the archive URL, SHA-256, installation code and
    tests. It avoids `brew cat`, which can enable persistent developer mode and
@@ -29,9 +31,10 @@ to Bash, so prompts and guided setup retain terminal input.
    formula, not the whole tap. Homebrew verifies the downloaded archive's checksum.
    Existing release tooling verifies checksums and GitHub attestations before
    publishing the tap update; the bootstrap does not add a second archive channel.
-4. Runs the existing Homebrew formula test against the installed release and shows
-   its version, Git revision, platform and Homebrew ownership.
-5. Starts `macarchy setup guided`. Its package/configuration approvals and manual
+4. For a new installation, runs the existing Homebrew formula test and shows
+   its version, Git revision, platform and Homebrew ownership. Rerun verification
+   is independent of the current tap version, as described below.
+5. For a new installation, starts `macarchy setup guided`. Its package/configuration approvals and manual
    native permission decisions are separate; installer approval does not grant them.
 
 Homebrew owns the installation. Automatic Homebrew metadata refresh, package
@@ -47,7 +50,15 @@ not persistently enable developer mode just because its test command was used.
   the fetched tap but requests no trust or package installation. Homebrew may keep
   download/cache files after a failure; the installer does not claim rollback.
 - Rerunning verifies an existing exact Homebrew-owned Macarchy without upgrading,
-  reinstalling, changing trust or starting setup again. It prints the next commands:
+  reinstalling, changing trust or starting setup again. It first checks that PATH
+  selects that same Homebrew executable; shadowing commands or missing command
+  links stop with PATH/link recovery rather than advice that runs a foreign binary.
+  Verification reads the installed keg's version/metadata, helper and built-in
+  themes, not the current tap's `brew test` (which requires the latest version).
+  A healthy older install remains usable; an available local-tap update is
+  reported with `macarchy update`, never installed implicitly. A failed update
+  check is reported separately from installed-release health.
+  It prints the next commands:
   `macarchy setup guided`, or `macarchy setup guided --resume` for a saved profile.
   Use `macarchy update` for upgrades. A different/unmanaged installation is refused.
 - After failed or partial installation, inspect Homebrew's error and `brew doctor`.
