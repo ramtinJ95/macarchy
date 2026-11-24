@@ -101,7 +101,12 @@ if [[ "$existing" == true ]]; then
        "$(field installation)" == homebrew && "$(field platform)" == macos-arm64 &&
        "$(field revision)" =~ ^[0-9a-f]{40}$ ]] || fail 'Installed-release verification failed: invalid version/ownership/platform/revision metadata. No repair or upgrade attempted.'
   [[ -x "$prefix/libexec/ttfx" ]] || fail 'Installed-release verification failed: bundled ttfx helper is missing. No repair or upgrade attempted.'
-  themes=$("$prefix/bin/macarchy" theme list) || fail 'Installed-release verification failed: built-in themes could not be read. No repair or upgrade attempted.'
+  # The ordinary list includes user packages and sorts favorites first. Validate
+  # only this keg's bundled packages, using the CLI loader with empty state.
+  verification_state=$(mktemp -d -t macarchy-install-verify) || fail 'Cannot create temporary state for bundled-theme verification.'
+  trap 'rm -rf "$verification_state"' EXIT
+  themes=$("$prefix/bin/macarchy" theme list --themes-root "$prefix/share/macarchy/themes" --state-root "$verification_state") ||
+    fail 'Installed-release verification failed: built-in themes could not be read. No repair or upgrade attempted.'
   [[ "$themes" == $'catppuccin-mocha\tdark\tCatppuccin Mocha\nkanagawa-wave\tdark\tKanagawa Wave\ntokyo-night\tdark\tTokyo Night' ]] ||
     fail 'Installed-release verification failed: built-in themes are incomplete. No repair or upgrade attempted.'
   printf '%s\n\nInstalled Macarchy %s verified.\n' "$report" "$version"

@@ -55,6 +55,8 @@ not persistently enable developer mode just because its test command was used.
   links stop with PATH/link recovery rather than advice that runs a foreign binary.
   Verification reads the installed keg's version/metadata, helper and built-in
   themes, not the current tap's `brew test` (which requires the latest version).
+  The theme loader checks the keg's bundled payload with a temporary empty state
+  root, removed on exit; your favorites and additional user themes are not inputs.
   A healthy older install remains usable; an available local-tap update is
   reported with `macarchy update`, never installed implicitly. A failed update
   check is reported separately from installed-release health.

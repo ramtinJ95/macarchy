@@ -63,9 +63,13 @@ elif name == "macarchy":
         if mode.startswith("bad-metadata-"):
             report[mode.removeprefix("bad-metadata-")] = "invalid"
         print(json.dumps(report))
-    elif args == ["theme", "list"]:
-        if mode == "broken-existing": print("incomplete")
-        else: print("catppuccin-mocha\\tdark\\tCatppuccin Mocha\\nkanagawa-wave\\tdark\\tKanagawa Wave\\ntokyo-night\\tdark\\tTokyo Night")
+    elif args[:2] == ["theme", "list"]:
+        lines = ["catppuccin-mocha\\tdark\\tCatppuccin Mocha", "kanagawa-wave\\tdark\\tKanagawa Wave", "tokyo-night\\tdark\\tTokyo Night"]
+        isolated = args[2:] == ["--themes-root", os.environ["PREFIX"] + "/share/macarchy/themes", "--state-root", os.environ["PREFIX"] + "/verification-state"]
+        if mode == "broken-existing": lines = ["incomplete"]
+        elif not isolated and mode == "existing-favorited": lines = lines[-1:] + lines[:-1]
+        elif not isolated and mode == "existing-user-theme": lines.append("user-theme\\tdark\\tUser Theme")
+        print("\\n".join(lines))
     else:
         print("REAL GUIDED HANDOFF FIXTURE")
         if mode == "guided-failure": sys.exit(7)
@@ -73,8 +77,9 @@ elif name == "plutil":
     try: print(json.load(sys.stdin)[args[1]])
     except (ValueError, KeyError): sys.exit(1)
 elif name == "mktemp":
-    path = pathlib.Path(os.environ["PREFIX"]) / "download"
-    path.write_text("")
+    path = pathlib.Path(os.environ["PREFIX"]) / ("verification-state" if "-d" in args else "download")
+    if "-d" in args: path.mkdir()
+    else: path.write_text("")
     print(path)
 elif name == "curl":
     path = pathlib.Path(args[args.index("-o") + 1])
@@ -242,8 +247,28 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual([a[0] for n, a, _ in calls if n == "brew"],
                          ["--version", "--prefix", "list", "--prefix", "outdated"])
         self.assertEqual([a for n, a, _ in calls if n == "macarchy"],
-                         [["--version"], ["version", "--json"], ["theme", "list"]])
+                         [["--version"], ["version", "--json"],
+                          ["theme", "list", "--themes-root", str(self.prefix / "share/macarchy/themes"),
+                           "--state-root", str(self.prefix / "verification-state")]])
         self.assertFalse(any(n == "macarchy" and a[0] == "setup" for n, a, _ in calls))
+
+    def test_favorited_theme_does_not_change_installed_bundle_verification(self):
+        self.assert_user_theme_state_ignored("existing-favorited")
+
+    def test_extra_user_theme_does_not_change_installed_bundle_verification(self):
+        self.assert_user_theme_state_ignored("existing-user-theme")
+
+    def assert_user_theme_state_ignored(self, mode):
+        code, output, calls = self.run_case(mode)
+        self.assertEqual(code, 0, output)
+        self.assertIn("Installed Macarchy 0.17.0 verified", output)
+        self.assertIn("macarchy setup guided --resume", output)
+        self.assertIn("macarchy update", output)
+        theme_calls = [a for n, a, _ in calls if n == "macarchy" and a[:2] == ["theme", "list"]]
+        self.assertEqual(theme_calls, [["theme", "list", "--themes-root", str(self.prefix / "share/macarchy/themes"),
+                                        "--state-root", str(self.prefix / "verification-state")]])
+        self.assertFalse((self.prefix / "verification-state").exists())
+        self.assertFalse(any(n == "brew" and a[0] in ("test", "install", "trust", "reinstall", "upgrade") for n, a, _ in calls))
 
     def test_older_installed_release_passes_without_current_tap_formula_test(self):
         code, output, calls = self.run_case("existing-older")
@@ -297,6 +322,7 @@ class InstallerTests(unittest.TestCase):
                 self.assertIn(message, output)
                 self.assertFalse(any(n == "macarchy" and a[0] == "setup" for n, a, _ in calls))
                 self.assertFalse(any(n == "brew" and a[0] in ("reinstall", "upgrade", "cleanup") for n, a, _ in calls))
+                self.assertFalse((self.prefix / "verification-state").exists())
 
     def test_unmanaged_path_is_not_overlaid(self):
         self.fixture(self.bin / "macarchy")
