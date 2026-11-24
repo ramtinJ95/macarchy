@@ -102,21 +102,37 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     let backups = try SetupNativeReplacement(
       homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
     ).status()
-    let execution = try inspect(
-      operation: operation, context: context, consumerPaths: consumerPaths, json: json)
-    guard !backups.isEmpty else { return execution }
+    let execution: CommandExecution
+    if backups.issues.isEmpty {
+      execution = try inspect(
+        operation: operation, context: context, consumerPaths: consumerPaths, json: json)
+    } else {
+      execution = try backupDrift(operation: operation, issues: backups.issues, json: json)
+    }
+    guard !backups.lines.isEmpty else { return execution }
     if json {
       var object =
         try JSONSerialization.jsonObject(with: Data(execution.output.utf8)) as! [String: Any]
-      object["configuration_backups"] = backups
+      object["configuration_backups"] = backups.lines
+      object["configuration_backup_issues"] = backups.issues
       let data = try JSONSerialization.data(
         withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
       return (String(decoding: data, as: UTF8.self), execution.succeeded)
     }
     return (
       execution.output + "\nConfiguration backups (never automatically deleted):\n"
-        + backups.map { "- " + $0 }.joined(separator: "\n"), execution.succeeded
+        + backups.lines.map { "- " + $0 }.joined(separator: "\n"), execution.succeeded
     )
+  }
+
+  // Keep large nil report arguments out of execute's frame: normal inspection
+  // nests the shared planner on a bounded Swift Testing executor stack (ADR-0332).
+  private func backupDrift(
+    operation: UnifiedSetupInspectionOperation, issues: [String], json: Bool
+  ) throws -> CommandExecution {
+    try result(
+      operation: operation, outcome: "drifted", plan: nil, theme: nil,
+      message: issues.joined(separator: "\n"), json: json)
   }
 
   private func inspect(

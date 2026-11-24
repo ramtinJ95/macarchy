@@ -43,7 +43,7 @@ struct UnifiedSetupRecoveryCommandRunner: Sendable {
           .hasUnverifiedSpicetifyRecovery()
         let backups = try SetupNativeReplacement(
           homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
-        ).status()
+        ).status().lines
         return UnifiedSetupRecoveryReport(
           outcome: unverified ? "recovered_with_unverified_runtime" : "recovered",
           spicetifyRuntimeRestoration: unverified ? "unverified" : "not_deferred",

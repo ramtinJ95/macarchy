@@ -55,7 +55,7 @@ struct SetupNativeReplacementTests {
         try FileManager.default.destinationOfSymbolicLink(atPath: fixture.original.path) == target)
     }
     #expect(try UnifiedSetupTransactionStore(stateRoot: fixture.context.stateRoot).read() == nil)
-    #expect(try store.status().contains { $0.contains(proposal.backup) })
+    #expect(try store.status().lines.contains { $0.contains(proposal.backup) })
   }
 
   @Test(arguments: SetupNativeReplacement.Checkpoint.allCases)
@@ -275,6 +275,100 @@ struct SetupNativeReplacementTests {
         == "foreign files are not starter ownership")
     #expect(try SetupNativeReplacement.digest(fixture.original) == proposal.originalDigest)
     #expect(recovery.output.contains(proposal.staging))
+  }
+
+  @Test(
+    arguments: [
+      "missing", "modified", "directory-modified", "link-target", "kind", "healthy-file",
+      "healthy-directory", "healthy-link",
+    ], [false, true])
+  func backupDriftMakesStatusAndDoctorUnhealthyWithoutChangingOwnership(
+    change: String, restored: Bool
+  ) throws {
+    let fixture = try Fixture(
+      kind: change.contains("link") ? "link" : change.contains("directory") ? "directory" : "file")
+    defer { fixture.cleanup() }
+    _ = try ThemeActivator(root: fixture.base.state).activate(
+      package: ThemePackageLoader().load(
+        packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha")))
+    let proposal = try #require(try fixture.store.propose(fixture.provider))
+    var seed = fixture.seed
+    seed.replacement = proposal
+    _ = try seed.seed(approval: seed.plan().approval)
+    if restored { _ = try fixture.store.restore([proposal]) }
+    let ledgerBefore = try Data(contentsOf: fixture.store.url)
+    let currentBefore = try SetupNativeReplacement.digest(fixture.original)
+    let backup = URL(filePath: proposal.backup)
+    let runner = UnifiedSetupInspectionCommandRunner(
+      planner: UnifiedSetupPlanCommandRunner(
+        capabilityIsAvailable: { _ in true },
+        desktopPlanner: { _, _ in desktopPlanStub() },
+        environmentPlanner: { _, _, _ in environmentPlanStub() },
+        packageInventoryReader: { .init(packages: [], issues: []) },
+        standardBrewfile: { _ in SetupBrewfile(packages: []) }),
+      themeInspection: { model, _, _ in
+        .init(
+          succeeded: true, status: "managed", generationID: model.theme.currentGenerationID,
+          message: "fixture")
+      }, desktopInspection: { _, _, _, _ in desktopInspectionStub() },
+      environmentInspection: { _, _, _, _ in environmentInspectionStub() })
+    // This is an otherwise healthy control, not merely another already-blocked plan.
+    #expect(
+      try runner.execute(
+        operation: .status, context: fixture.context, consumerPaths: testConsumerPaths(), json: true
+      ).succeeded)
+    switch change {
+    case "missing": try FileManager.default.removeItem(at: backup)
+    case "modified": try "changed original".write(to: backup, atomically: true, encoding: .utf8)
+    case "directory-modified":
+      try "changed original".write(
+        to: backup.appending(path: "init.lua"), atomically: true, encoding: .utf8)
+    case "link-target":
+      try FileManager.default.removeItem(at: backup)
+      try FileManager.default.createSymbolicLink(
+        atPath: backup.path, withDestinationPath: "not-the-recorded-target")
+    case "kind":
+      try FileManager.default.removeItem(at: backup)
+      try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: false)
+    case "healthy-link":
+      // A missing target is not damage to the retained link itself. Never follow it.
+      try FileManager.default.removeItem(at: fixture.targetFile)
+    default: break
+    }
+    let healthy = change.hasPrefix("healthy")
+    for operation in [UnifiedSetupInspectionOperation.status, .doctor] {
+      for json in [false, true] {
+        let result = try runner.execute(
+          operation: operation, context: fixture.context, consumerPaths: testConsumerPaths(),
+          json: json)
+        #expect(result.succeeded == healthy, "\(result.output)")
+        #expect(result.output.contains(proposal.backup))
+        if !healthy {
+          #expect(result.output.contains("Teardown cannot restore the original"))
+          let reason =
+            change == "missing"
+            ? "missing"
+            : change == "link-target"
+              ? "link target changed" : change == "kind" ? "kind changed" : "contents changed"
+          #expect(result.output.contains(reason))
+          if json {
+            let object = try jsonObject(result.output)
+            #expect(object["outcome"] as? String == "drifted")
+            #expect((object["configuration_backup_issues"] as? [String])?.isEmpty == false)
+          } else {
+            #expect(result.output.contains("[drifted]"))
+          }
+        }
+      }
+    }
+    if !restored, !healthy {
+      #expect(throws: (any Error).self) { try fixture.store.restore([proposal], dryRun: true) }
+    }
+    #expect(try Data(contentsOf: fixture.store.url) == ledgerBefore)
+    #expect(try SetupNativeReplacement.digest(fixture.original) == currentBefore)
+    if change != "healthy-link" {
+      #expect(try Data(contentsOf: fixture.targetFile) == fixture.targetBytes)
+    }
   }
 
   private struct Interrupted: Error {}
