@@ -1186,6 +1186,7 @@ struct SketchyBarItemQuery: Decodable {
   let type: String
   let geometry: Geometry
   let label: Label
+  let icon: Label?
   let scripting: Scripting
   let slider: Slider?
   let bracket: [String]?

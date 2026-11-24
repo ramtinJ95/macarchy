@@ -169,7 +169,7 @@ package enum MacOSAppearanceEvents {
 
   package struct Failure: Error, CustomStringConvertible, Sendable {
     let reason: String
-    let code: Int32?
+    package let code: Int32?
     package init(_ reason: String, code: Int32? = nil) {
       self.reason = reason
       self.code = code

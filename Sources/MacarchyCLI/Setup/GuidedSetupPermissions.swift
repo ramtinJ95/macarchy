@@ -2,8 +2,9 @@ import Foundation
 import ThemeCore
 
 struct GuidedBarPermissions: Equatable, Sendable {
-  let apple: Bool
-  let appearance: Bool
+  let apple: GuidedPermissionVerdict
+  let appearance: GuidedPermissionVerdict
+  var diagnostics: [String] = []
 }
 
 /// Interaction only; services, configuration and rollback remain with their existing owners.
@@ -114,7 +115,8 @@ struct GuidedSetupPermissions: Sendable {
       do { verified = try verifyBar(context) } catch {
         io.write("SketchyBar permission check could not run: \(error)\n")
       }
-      if verified?.apple != true {
+      for diagnostic in verified?.diagnostics ?? [] { io.write(diagnostic + "\n") }
+      if verified?.apple != .verified {
         io.write(
           "Accessibility — Apple-menu feature\nSketchyBar service: \(bar.path)\nHelper: \(helper.path)\n"
             + "The helper is checked by the running SketchyBar service, not this terminal. "
@@ -134,17 +136,19 @@ struct GuidedSetupPermissions: Sendable {
           do { verified = try verifyBar(context) } catch {
             io.write("SketchyBar permission recheck failed: \(error)\n")
           }
+          for diagnostic in verified?.diagnostics ?? [] { io.write(diagnostic + "\n") }
         }
       }
-      if verified?.apple != true {
+      if let verified { io.write("SketchyBar Accessibility result: \(verified.apple.rawValue).\n") }
+      if verified?.apple != .verified {
         missing.append(
           "Apple menu will not work: Accessibility is not verified for SketchyBar \(bar.path) → \(helper.path)."
         )
       }
       io.write(
-        verified?.appearance == true
+        verified?.appearance == .verified
           ? "System Events read verified in the SketchyBar context (observation only).\n"
-          : "System Events read is unverified in the SketchyBar context (observation only). The selected bar actions do not change appearance, so this is not an additional required grant.\n"
+          : "System Events Automation result in the SketchyBar context: \(verified?.appearance.rawValue ?? "could_not_verify") (observation only). The selected bar actions do not change appearance, so this is not an additional required grant.\n"
       )
 
     }
@@ -236,7 +240,8 @@ struct GuidedSetupPermissions: Sendable {
     generationInspection: (@Sendable () -> SketchyBarGenerationInspection)? = nil,
     serviceInspection: @Sendable () throws -> SketchyBarRuntimeInspection =
       SketchyBarLifecycleController.live.inspect,
-    wait: @Sendable () -> Void = { Thread.sleep(forTimeInterval: 0.1) }
+    wait: @Sendable () -> Void = { Thread.sleep(forTimeInterval: 0.1) },
+    now: @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
   ) throws -> GuidedBarPermissions {
     let inspectGeneration =
       generationInspection ?? {
@@ -246,16 +251,17 @@ struct GuidedSetupPermissions: Sendable {
     guard generation.status == .current else { throw SetupPackageAdoptionError(generation.message) }
     let service = try serviceInspection()
     guard service.status == .running else { throw SetupPackageAdoptionError(service.message) }
-    func run(_ arguments: [String]) throws -> String {
+    func run(_ arguments: [String], timeout: TimeInterval = 2) throws -> String {
       let result = try runner.run(
-        .init(executableURL: ExternalTool.sketchybar, arguments: arguments, timeout: 2))
+        .init(executableURL: ExternalTool.sketchybar, arguments: arguments, timeout: timeout))
       guard result.terminationStatus == 0 else {
         throw SetupPackageAdoptionError("SketchyBar \(arguments): \(result.output)")
       }
       return result.output
     }
-    func item(_ name: String) throws -> SketchyBarItemQuery {
-      try SketchyBarQueryReply.decode(SketchyBarItemQuery.self, from: run(["--query", name]))
+    func item(_ name: String, timeout: TimeInterval = 2) throws -> SketchyBarItemQuery {
+      try SketchyBarQueryReply.decode(
+        SketchyBarItemQuery.self, from: run(["--query", name], timeout: timeout))
     }
     let apple = try item(SketchyBarContract.appleItem)
     let expected = context.stateRoot.appending(
@@ -266,29 +272,80 @@ struct GuidedSetupPermissions: Sendable {
         "The active Apple-menu plugin is not the selected managed script: \(expected)")
     }
     let token = UUID().uuidString.lowercased()
-    _ = try run(["--set", SketchyBarContract.readyItem, "label=permission:checking:" + token])
+    let pending = "permission:v2:\(token):pending:0:0:-1"
+    _ = try run(["--set", SketchyBarContract.readyItem, "label=" + pending, "icon=" + pending])
+    // Measured helper 0.23s, appearance 0.69s, plus IPC. Ten seconds also
+    // accommodates the appearance owner's 3s launch + 2s event bounds/cold exec.
+    // It is a wall-clock budget, not 30 sleeps plus unbounded query overhead.
+    let budget: TimeInterval = 10
+    let deadline = now() + budget
     _ = try run([
       "--trigger", "macarchy_permission_check", "MACARCHY_PERMISSION_TOKEN=" + token,
       "MACARCHY_PERMISSION_REQUEST_AX=" + (requestAccessibility ? "1" : "0"),
     ])
-    for _ in 0..<30 {
-      let marker = try item(SketchyBarContract.readyItem).label.value
-      if marker == "permission:granted:" + token || marker == "permission:missing:" + token {
-        let current = try item(SketchyBarContract.appleItem)
-        guard inspectGeneration().generationID == generation.generationID,
-          try serviceInspection() == service
-        else {
-          throw SetupPackageAdoptionError(
-            "SketchyBar changed during the permission check; retry from the actual service.")
+    var ax: GuidedBarPermissionStage?
+    var automation: GuidedBarPermissionStage?
+    var observationFailure: String?
+    while now() < deadline {
+      let remaining = deadline - now()
+      guard remaining > 0 else { break }
+      do {
+        let marker = try item(
+          SketchyBarContract.readyItem, timeout: min(2, remaining))
+        if ax?.phase != .complete {
+          ax = GuidedBarPermissionStage.decode(marker.label.value, token: token)
         }
-        return .init(
-          apple: current.label.drawing == "off" && current.label.value.isEmpty,
-          appearance: marker == "permission:granted:" + token)
+        if automation?.phase != .complete {
+          automation = GuidedBarPermissionStage.decode(marker.icon?.value ?? "", token: token)
+        }
+      } catch {
+        observationFailure = "SketchyBar stage observation failed: \(error)"
+        break
       }
+      if ax?.phase == .complete && automation?.phase == .complete { break }
       wait()
     }
-    throw SetupPackageAdoptionError(
-      "SketchyBar did not complete the actual-context permission check within the bounded 30-attempt check."
-    )
+    guard inspectGeneration().generationID == generation.generationID,
+      try serviceInspection() == service
+    else {
+      throw SetupPackageAdoptionError(
+        "SketchyBar changed during the permission check; retry from the actual service.")
+    }
+    var diagnostics = [String]()
+    let budgetExpired = now() >= deadline
+    if let observationFailure { diagnostics.append(observationFailure) }
+    if budgetExpired {
+      // Do not leave this challenge visibly pending in read-only bar diagnostics.
+      // Only expire properties last observed with our own token. A late complete
+      // result is still useful evidence, but no other token can verify this check.
+      var expired = [String]()
+      for (property, stage) in [("label", ax), ("icon", automation)] {
+        if let stage, stage.phase != .complete {
+          expired.append(
+            "\(property)=permission:v2:\(token):timeout:\(stage.started):\(Date().timeIntervalSince1970):-1"
+          )
+        }
+      }
+      if !expired.isEmpty {
+        do { _ = try run(["--set", SketchyBarContract.readyItem] + expired) } catch {
+          diagnostics.append("Could not publish the expired permission stage marker: \(error)")
+        }
+      }
+    }
+    for (name, stage) in [("Accessibility", ax), ("Automation", automation)] {
+      if let stage { diagnostics.append(stage.diagnostic(name: name)) }
+      if stage?.phase != .complete {
+        diagnostics.append(
+          "\(name): couldn't verify"
+            + (budgetExpired
+              ? " within \(Int(budget)) s" : " because stage observation failed")
+            + "; last stage: \(stage?.phase.rawValue ?? "no token-correlated marker"). "
+            + "Recheck through the actual SketchyBar service: \(resumeCommand(context)).")
+      }
+    }
+    return .init(
+      apple: ax?.verdict(automation: false) ?? .couldNotVerify,
+      appearance: automation?.verdict(automation: true) ?? .couldNotVerify,
+      diagnostics: diagnostics)
   }
 }

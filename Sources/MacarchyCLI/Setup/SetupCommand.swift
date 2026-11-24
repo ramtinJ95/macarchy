@@ -121,11 +121,13 @@ extension Macarchy {
         abstract:
           "Verify System Events Automation in this launch context without prompting or changing appearance."
       )
+      @Flag(help: "Emit a nonprompting permission result; exit 77 means Automation is not granted.")
+      var json = false
+
       mutating func run() throws {
-        try MacOSAppearanceEvents.verify()
-        print(
-          "System Events Automation verified for this invocation: \(MacOSAppearanceEvents.launchContext)"
-        )
+        let result = SetupAppearanceCheck.inspect()
+        print(try json ? renderJSON(result) : result.message)
+        if result.exitStatus != 0 { throw ExitCode(result.exitStatus) }
       }
     }
 
