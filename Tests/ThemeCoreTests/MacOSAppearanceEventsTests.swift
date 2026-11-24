@@ -180,6 +180,39 @@ struct MacOSAppearanceEventsTests {
     #expect(asks == [false, false])
   }
 
+  @Test(arguments: [Int32(0), -600, -1744])
+  func guidedConsentRequiresIndependentVerification(code: Int32) throws {
+    var asks = [Bool]()
+    var verified = false
+    try MacOSAppearanceEvents.requestConsent(
+      determine: {
+        asks.append($0)
+        if code != 0 { throw MacOSAppearanceEvents.Failure("request", code: code) }
+      }, verify: { verified = true })
+    #expect(asks == [true])
+    #expect(verified)
+  }
+
+  @Test(arguments: [Int32(-1743), -1712, -1708])
+  func guidedDenialAndTimeoutNeverBecomeGrants(code: Int32) {
+    #expect(throws: MacOSAppearanceEvents.Failure.self) {
+      try MacOSAppearanceEvents.requestConsent(
+        determine: { _ in throw MacOSAppearanceEvents.Failure("request", code: code) },
+        verify: { Issue.record("Final native failure must not start child checks") })
+    }
+  }
+
+  @Test(arguments: [Int32(0), -600, -1744])
+  func guidedIndependentVerificationFailureIsNeverSuppressed(code: Int32) {
+    #expect(throws: MacOSAppearanceEvents.Failure.self) {
+      try MacOSAppearanceEvents.requestConsent(
+        determine: { _ in
+          if code != 0 { throw MacOSAppearanceEvents.Failure("request", code: code) }
+        },
+        verify: { throw MacOSAppearanceEvents.Failure("fresh denied", code: -1743) })
+    }
+  }
+
   @Test func inspectionReportsDeniedAccessEvenWhenAppearanceAlreadyMatches() throws {
     let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     let adapter = MacOSAppearanceAdapter(

@@ -3,8 +3,8 @@ import ThemeCore
 
 /// Exit 77 distinguishes absent/denied consent from a failed native probe.
 /// The bar records that exit independently of the AX helper's result.
-struct SetupAppearanceCheck: Encodable {
-  enum Status: String, Encodable {
+struct SetupAppearanceCheck: Codable {
+  enum Status: String, Codable {
     case verified
     case notGranted = "not_granted"
     case failed

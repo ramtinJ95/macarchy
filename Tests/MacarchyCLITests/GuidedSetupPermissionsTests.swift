@@ -122,22 +122,41 @@ struct GuidedSetupPermissionsTests {
     defer { fixture.cleanup() }
     try profile(fixture, desktop: false, bar: false)
     let events = Mutex([String]())
-    let granted = Mutex(false)
     let guide = permissions(
       read: { "yes" },
       verify: {
         events.withLock { $0.append("verify") }
-        if !granted.withLock({ $0 }) { throw Denied() }
+        throw Denied()  // This process remains stale even after the fresh child succeeds.
       },
       request: {
         events.withLock { $0.append("request") }
-        granted.withLock { $0 = true }
+        events.withLock { $0.append("fresh-verify") }
       },
       reconcile: { _, _ in events.withLock { $0.append("reconcile") } })
     let result = try await guide.afterConfiguration(
       context: fixture.context, consumerPaths: testConsumerPaths())
     #expect(result.succeeded)
-    #expect(events.withLock { $0 } == ["verify", "request", "verify", "reconcile"])
+    #expect(events.withLock { $0 } == ["verify", "request", "fresh-verify", "reconcile"])
+  }
+
+  @Test(arguments: [FreshAppearanceVerification.Failure.unconfirmed, .timedOut])
+  func unconfirmedAndTimeoutRemainNamedWithoutReconciliation(
+    failure: FreshAppearanceVerification.Failure
+  ) async throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    try profile(fixture, desktop: true, bar: false)
+    let guide = permissions(
+      read: { "yes" }, verify: { throw Denied() }, request: { throw failure },
+      reconcile: { _, _ in Issue.record("Unverified access must not reconcile") })
+    let result = try await guide.afterConfiguration(
+      context: fixture.context, consumerPaths: testConsumerPaths())
+    #expect(!result.succeeded)
+    #expect(!result.output.contains("permissions are incomplete"))
+    #expect(result.output.contains(failure == .unconfirmed ? "consent_unconfirmed" : "timed_out"))
+    #expect(result.output.contains("macarchy setup check-appearance --json"))
+    #expect(result.output.contains("Keybinding-origin"))
+    #expect(FileManager.default.fileExists(atPath: fixture.context.profileURL.path))
   }
 
   @Test func helperDenialDoesNotUndoConfigurationOrPretendTerminalGrantCoversServices() async throws
