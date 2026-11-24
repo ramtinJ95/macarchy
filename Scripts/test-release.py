@@ -4,11 +4,14 @@
 import argparse
 import datetime
 import importlib.util
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -100,6 +103,48 @@ class CiStateTests(unittest.TestCase):
             [self.run_entry(conclusion="failure")], SHA)[0], "failed")
         self.assertEqual(release.ci_state([], SHA), ("missing", None))
         self.assertEqual(release.ci_state([self.run_entry(sha=OTHER)], SHA)[0], "missing")
+
+
+class PublicationProgressTests(unittest.TestCase):
+    entry = {"databaseId": 1, "status": "in_progress", "conclusion": None,
+             "url": "https://example.invalid/release"}
+
+    def test_publish_reports_automatic_publication_and_finish_command(self):
+        output = StringIO()
+        ensure_tag = Mock()
+        with patch.multiple(
+                release, git=Mock(side_effect=["", SHA, "1.2.3", OTHER]),
+                find_pr_archive=Mock(return_value={"html_url": "https://example.invalid/ci"}),
+                ensure_tag=ensure_tag, published=Mock(return_value=False),
+                release_runs=Mock(return_value=[self.entry]),
+                run=Mock(side_effect=AssertionError("unexpected command")),
+                stream=Mock(side_effect=AssertionError("unexpected command"))), \
+                redirect_stdout(output):
+            release.publish("1.2.3")
+        ensure_tag.assert_called_once_with("v1.2.3", SHA)
+        self.assertIn(f"Release run: {self.entry['url']}", output.getvalue())
+        self.assertIn("Publication proceeds automatically", output.getvalue())
+        self.assertIn("Scripts/release.py finish 1.2.3", output.getvalue())
+        self.assertNotIn("approv", output.getvalue().lower())
+
+    def test_finish_still_waits_and_verifies_without_an_approval_instruction(self):
+        output = StringIO()
+        wait = Mock()
+        verify = Mock(return_value="c" * 64)
+        update = Mock()
+        with patch.multiple(
+                release, published=Mock(side_effect=[False, True]),
+                release_runs=Mock(return_value=[self.entry]), wait_for_run=wait,
+                verify_archive=verify, update_tap=update,
+                run=Mock(side_effect=AssertionError("unexpected command")),
+                stream=Mock(side_effect=AssertionError("unexpected command"))), \
+                redirect_stdout(output):
+            release.finish("1.2.3")
+        wait.assert_called_once_with(1, 7200)
+        self.assertEqual(verify.call_args.args[0], "1.2.3")
+        self.assertEqual(update.call_args.args[:2], ("1.2.3", "c" * 64))
+        self.assertIn(f"Waiting for {self.entry['url']}", output.getvalue())
+        self.assertNotIn("approv", output.getvalue().lower())
 
 
 class PullRequestArchiveTests(unittest.TestCase):

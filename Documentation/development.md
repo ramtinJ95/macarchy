@@ -60,9 +60,10 @@ still require compilation. No source timestamps are rewritten.
 It always invokes the builds and tests after restoring a cache; a cache hit is
 not verification. The job summary reports cache reuse, and Actions step timings
 show its actual benefit. Each `main` push also keeps its validated release
-archive as a 30-day artifact. Stable release publication does not rebuild: it
-requires a successful `main` push run for the tagged commit, revalidates that
-run's archive, then attests and publishes it.
+archive as a 30-day artifact. Stable release publication uses the archive from
+successful same-repository PR CI when `main` landed exactly the tested tree;
+otherwise it requires the tagged commit's successful `main` push CI archive.
+It revalidates the archive, then attests and publishes it.
 
 The lightweight CI and release script checks run without Swift:
 
@@ -79,5 +80,9 @@ Each user-facing change adds a fragment under `changelog.d/` instead of editing
 `CHANGELOG.md`, so concurrent PRs do not conflict. Releases run through
 `Scripts/release.py`: `prepare` folds the fragments into `CHANGELOG.md` and bumps
 the version on the last PR of a batch, `publish` tags the merged commit once its
-`main` CI is green, and `finish` verifies the published archive and updates the
-Homebrew tap. Run the script with `--help` for each step.
+CI archive is validated, and dispatches the release workflow. Publication
+proceeds automatically after its checks pass; `finish` waits for publication,
+verifies the published archive and updates the Homebrew tap. The `stable-release`
+GitHub environment retains its `v*` tag-only deployment rule, with no required
+reviewers or wait timer. Keep that rule when changing environment settings.
+Run the script with `--help` for each step.

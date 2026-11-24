@@ -316,8 +316,10 @@ and refactors follow this workflow:
     the last PR of a batch instead of opening a separate release PR. After it
     merges, run `publish <version>`. It releases the archive the PR's CI built
     when `main` landed exactly the tree that CI tested, and otherwise waits for
-    `main`'s push CI. A person approves the `stable-release` environment; then
-    run `finish <version>` and `upgrade --expect <version>` on each machine.
+    `main`'s push CI. Publication proceeds automatically after the workflow
+    checks pass; `stable-release` retains its tag-only deployment rule without
+    required reviewers. Run `finish <version>` to wait and update the tap, then
+    `upgrade --expect <version>` on each machine.
 
 PR descriptions must identify the milestone and vertical slice, summarize the
 observable behavior, list verification performed, and call out any ADR or
