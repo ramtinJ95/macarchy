@@ -198,34 +198,7 @@ struct KeybindingProcessInspector: Sendable {
       throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .ESRCH)
     }
 
-    var argumentsSize = 0
-    var mib = [CTL_KERN, KERN_PROCARGS2, processID]
-    guard sysctl(&mib, u_int(mib.count), nil, &argumentsSize, nil, 0) == 0 else {
-      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EINVAL)
-    }
-    var bytes = [UInt8](repeating: 0, count: argumentsSize)
-    guard
-      sysctl(&mib, u_int(mib.count), &bytes, &argumentsSize, nil, 0) == 0,
-      argumentsSize >= MemoryLayout<Int32>.size
-    else {
-      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EINVAL)
-    }
-    let count = bytes.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) }
-    guard count > 0 else { throw POSIXError(.EINVAL) }
-    var cursor = MemoryLayout<Int32>.size
-    while cursor < argumentsSize, bytes[cursor] != 0 { cursor += 1 }
-    while cursor < argumentsSize, bytes[cursor] == 0 { cursor += 1 }
-    var arguments: [String] = []
-    while cursor < argumentsSize, arguments.count < Int(count) {
-      let start = cursor
-      while cursor < argumentsSize, bytes[cursor] != 0 { cursor += 1 }
-      guard cursor > start,
-        let argument = String(data: Data(bytes[start..<cursor]), encoding: .utf8)
-      else { throw POSIXError(.EILSEQ) }
-      arguments.append(argument)
-      while cursor < argumentsSize, bytes[cursor] == 0 { cursor += 1 }
-    }
-    guard arguments.count == Int(count) else { throw POSIXError(.EINVAL) }
+    let arguments = try processArguments(processID)
     return KeybindingProcessSnapshot(
       processID: processID,
       executablePath: executablePath,
