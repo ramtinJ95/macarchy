@@ -55,6 +55,11 @@ enum UnifiedSetupPreparation {
 }
 
 struct UnifiedSetupPlanCommandRunner: Sendable {
+  enum Purpose: Sendable {
+    case apply
+    case teardown
+  }
+
   let capabilityIsAvailable: @Sendable (DependencyCapability) -> Bool
   let desktopPlanner:
     @Sendable (
@@ -183,7 +188,9 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     }
   }
 
-  func prepare(context: UnifiedSetupPlanContext) throws -> UnifiedSetupPreparation {
+  func prepare(
+    context: UnifiedSetupPlanContext, purpose: Purpose = .apply
+  ) throws -> UnifiedSetupPreparation {
     do {
       if let transaction = try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read() {
         return .blocked(
@@ -301,9 +308,14 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
         )
       )
     }
-    diagnostics += packages.external.map {
-      PlanDiagnostic(
-        code: "external_prerequisite", source: $0.capabilityID, message: $0.instruction)
+    // Enabling a selected feature may need an external capability that removing it
+    // does not. Teardown still validates the profile, component plans and ownership,
+    // then its own restoration preflights; it must not require apply-only grants.
+    if case .apply = purpose {
+      diagnostics += packages.external.map {
+        PlanDiagnostic(
+          code: "external_prerequisite", source: $0.capabilityID, message: $0.instruction)
+      }
     }
     let actions = plannedActions(
       installPlan: model.packages,

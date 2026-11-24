@@ -200,30 +200,32 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
       desktop.succeeded && environment.succeeded && preferences.succeeded && missing.isEmpty
       && missingPackages.isEmpty
     let contextWarnings = permissionContextWarnings(model.profile)
-    if succeeded, !contextWarnings.isEmpty {
-      return try result(
-        operation: operation, outcome: "permissions_unverified", plan: plan, theme: theme,
-        desktop: desktop, environment: environment, preferences: preferences,
-        message:
-          "Configuration and services are converged; launch-context permission coverage is incomplete. "
-          + contextWarnings.joined(separator: " "), json: json)
-    }
     let outcome: String
-    switch operation {
-    case .status: outcome = succeeded ? "converged" : "drifted"
-    case .doctor: outcome = succeeded ? "healthy" : "unhealthy"
+    let message: String
+    if succeeded, !contextWarnings.isEmpty {
+      outcome = "permissions_unverified"
+      message =
+        "Configuration and services are converged; launch-context permission coverage is incomplete. "
+        + contextWarnings.joined(separator: " ")
+    } else {
+      switch operation {
+      case .status: outcome = succeeded ? "converged" : "drifted"
+      case .doctor: outcome = succeeded ? "healthy" : "unhealthy"
+      }
+      message =
+        succeeded
+        ? "The selected Macarchy core is converged."
+        : [
+          missing.isEmpty ? nil : "Missing capabilities: \(missing.joined(separator: ", ")).",
+          missingPackages.isEmpty
+            ? nil : "Missing setup packages: \(missingPackages.joined(separator: ", ")).",
+          desktop.succeeded ? nil : "Desktop inspection failed.",
+          environment.succeeded ? nil : "Environment inspection failed.",
+          preferences.succeeded ? nil : "Native preferences require attention.",
+        ].compactMap { $0 }.joined(separator: " ")
     }
-    let message =
-      succeeded
-      ? "The selected Macarchy core is converged."
-      : [
-        missing.isEmpty ? nil : "Missing capabilities: \(missing.joined(separator: ", ")).",
-        missingPackages.isEmpty
-          ? nil : "Missing setup packages: \(missingPackages.joined(separator: ", ")).",
-        desktop.succeeded ? nil : "Desktop inspection failed.",
-        environment.succeeded ? nil : "Environment inspection failed.",
-        preferences.succeeded ? nil : "Native preferences require attention.",
-      ].compactMap { $0 }.joined(separator: " ")
+    // Share report rendering: duplicating its large value arguments in a branch
+    // exhausts the debug executor stack while the nested planner is running.
     return try result(
       operation: operation,
       outcome: outcome,

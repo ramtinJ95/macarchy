@@ -181,7 +181,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
 
     let preparation: UnifiedSetupPreparation
     do {
-      preparation = try planner.prepare(context: context)
+      preparation = try planner.prepare(context: context, purpose: .teardown)
     } catch {
       return try result(
         outcome: "blocked",
