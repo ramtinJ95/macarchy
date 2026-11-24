@@ -121,6 +121,50 @@ enum GuidedSetupTerminal {
     packages: [HomebrewPackageIdentity],
     requirements: @escaping GuidedSetupSelectionMenu.Requirements
   ) throws -> GuidedSetupAnswers {
+    try withTerminalIO { io in
+      try GuidedSetupSelectionMenu(io: io, packages: packages, requirements: requirements).collect()
+    }
+  }
+
+  static func replacements(_ proposals: [SetupNativeReplacement.Proposal]) throws -> Set<String> {
+    try withTerminalIO { io in
+      try replacementChoices(proposals, io: io)
+    }
+  }
+
+  static func replacementChoices(
+    _ proposals: [SetupNativeReplacement.Proposal], io: GuidedSetupIO
+  ) throws -> Set<String> {
+    var selected = Set(proposals.map { $0.provider.rawValue })
+    var cursor = 0
+    while true {
+      io.write("\u{1B}[H\u{1B}[2JReview existing configurations — back up and replace\n")
+      io.write("Up/Down: move   Space: keep/connect instead   Enter: review setup   q: cancel\n")
+      io.write(
+        "No files move before the final Install & apply confirmation. Backups are never automatically deleted.\n\n"
+      )
+      for (index, proposal) in proposals.enumerated() {
+        io.write(
+          "\(index == cursor ? ">" : " ") [\(selected.contains(proposal.provider.rawValue) ? "x" : " ")] \(proposal.summary)\n"
+        )
+      }
+      guard let input = io.read() else { throw GuidedSetupError.inputClosed }
+      switch input {
+      case "up": cursor = (cursor + proposals.count - 1) % proposals.count
+      case "down": cursor = (cursor + 1) % proposals.count
+      case " ":
+        let provider = proposals[cursor].provider.rawValue
+        if !selected.insert(provider).inserted { selected.remove(provider) }
+      case "", "enter": return selected
+      case "q", "cancel": throw GuidedSetupError.inputClosed
+      default: break
+      }
+    }
+  }
+
+  private static func withTerminalIO<Value>(_ operation: (GuidedSetupIO) throws -> Value) throws
+    -> Value
+  {
     guard isatty(STDIN_FILENO) == 1, isatty(STDOUT_FILENO) == 1,
       ProcessInfo.processInfo.environment["TERM"] != "dumb"
     else { throw GuidedSetupError.terminalUnavailable }
@@ -142,9 +186,7 @@ enum GuidedSetupTerminal {
       tcsetattr(STDIN_FILENO, TCSANOW, &original)
       write("\u{1B}[?25h\u{1B}[?1049l")
     }
-    return try GuidedSetupSelectionMenu(
-      io: .init(read: readKey, write: write), packages: packages, requirements: requirements
-    ).collect()
+    return try operation(.init(read: readKey, write: write))
   }
 
   private static func readByte() -> UInt8? {

@@ -377,6 +377,19 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
             json: json
           )
         }
+        let replacements = currentModel.nativeStarters.compactMap { $0.replacement }
+        let contextDigest = unifiedSetupContextDigest(
+          context: context, consumerPaths: consumerPaths)
+        var transaction: UnifiedSetupTransaction?
+        // Replacement intent belongs to this exact aggregate operation. Write it
+        // before the per-entry journal or any staging/publication can occur.
+        if !replacements.isEmpty {
+          let initial = UnifiedSetupTransaction(
+            operation: .apply, stages: [], desiredAppearance: currentModel.themePackage.appearance,
+            contextDigest: contextDigest, nativeReplacements: replacements)
+          try store.write(initial)
+          transaction = initial
+        }
         // These become user-owned immediately, like the emitted profile. Never
         // remove them during provider rollback: the user may already have edited them.
         do {
@@ -388,23 +401,25 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           }
         } catch {
           return try result(
-            outcome: "failed", mutated: true, plan: currentPlan, packages: packages,
+            outcome: transaction == nil ? "failed" : "recovery_required", mutated: true,
+            plan: currentPlan, packages: packages,
             message:
-              "Native starter publication stopped: \(error). Any created user files were retained; no providers were changed. Review existing files before retrying.",
+              "Native starter publication stopped: \(error). Created files and originals were retained. "
+              + (transaction == nil
+                ? "Review existing files before retrying."
+                : "Run macarchy setup recover before retrying."),
             json: json)
         }
         let plannedStages = Set(
           currentPlan.actions.compactMap { SetupStage(rawValue: $0.stage) }
         )
-        var transaction: UnifiedSetupTransaction?
-        let contextDigest = unifiedSetupContextDigest(
-          context: context, consumerPaths: consumerPaths)
         func start(_ stage: SetupStage) throws {
           let next = UnifiedSetupTransaction(
             operation: .apply,
             stages: (transaction?.stages ?? []) + [stage],
             desiredAppearance: currentModel.themePackage.appearance,
-            contextDigest: contextDigest
+            contextDigest: contextDigest,
+            nativeReplacements: replacements.isEmpty ? nil : replacements
           )
           try store.write(next)
           transaction = next

@@ -52,6 +52,9 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
   let stages: [SetupStage]
   let desiredAppearance: ThemeAppearance
   let contextDigest: String
+  /// Reviewed intent precedes each per-entry journal; missing receipts cannot
+  /// silently erase recovery authority after an original moves.
+  let nativeReplacements: [SetupNativeReplacement.Proposal]?
   /// Applied paths retained before environment teardown removes its ownership.
   let userScripts: [String]?
   /// Write-ahead retirement target, then a durable commit before lock release.
@@ -64,6 +67,7 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
     desiredAppearance: ThemeAppearance,
     contextDigest: String,
     userScripts: [String]? = nil,
+    nativeReplacements: [SetupNativeReplacement.Proposal]? = nil,
     themeRetirement: UnifiedSetupThemeRetirement? = nil
   ) {
     schemaVersion = Self.schemaVersion
@@ -72,6 +76,7 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
     self.stages = stages
     self.desiredAppearance = desiredAppearance
     self.contextDigest = contextDigest
+    self.nativeReplacements = nativeReplacements
     self.userScripts = userScripts
     self.themeRetirement = themeRetirement
   }
@@ -88,12 +93,16 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
       desiredAppearance: desiredAppearance,
       contextDigest: contextDigest,
       userScripts: userScripts,
+      nativeReplacements: nativeReplacements,
       themeRetirement: themeRetirement ?? self.themeRetirement
     )
   }
 
   var hasValidShape: Bool {
     guard
+      (nativeReplacements ?? []).count <= 3,
+      Set((nativeReplacements ?? []).map(\.id)).count == (nativeReplacements ?? []).count,
+      (nativeReplacements ?? []).allSatisfy({ UUID(uuidString: $0.id) != nil }),
       (userScripts ?? []).count <= 8,
       Set(userScripts ?? []).count == (userScripts ?? []).count,
       (userScripts ?? []).allSatisfy({ NSString(string: $0).isAbsolutePath && !$0.contains("\0") }),
@@ -112,6 +121,7 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
     case desiredAppearance = "desired_appearance"
     case contextDigest = "context_digest"
     case userScripts = "user_scripts"
+    case nativeReplacements = "native_replacements"
     case themeRetirement = "theme_retirement"
   }
 }
@@ -136,12 +146,22 @@ struct UnifiedSetupTransactionStore: Sendable {
       let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
       guard
         let object,
-        Set(object.keys).subtracting(["user_scripts", "theme_retirement"])
+        Set(object.keys).subtracting(["user_scripts", "theme_retirement", "native_replacements"])
           == Set(UnifiedSetupTransaction.CodingKeys.allCases.map(\.rawValue)).subtracting([
-            "user_scripts", "theme_retirement",
+            "user_scripts", "theme_retirement", "native_replacements",
           ])
       else {
         throw UnifiedSetupTransactionError.invalid("contains unknown or missing fields")
+      }
+      if let replacements = object["native_replacements"] {
+        guard let intents = replacements as? [[String: Any]],
+          intents.allSatisfy({
+            Set($0.keys).subtracting(["linkTarget"]) == [
+              "id", "provider", "destination", "backup", "staging", "originalDigest",
+              "enclosesKittyFile",
+            ]
+          })
+        else { throw UnifiedSetupTransactionError.invalid("invalid native replacement intent") }
       }
       if let retirement = object["theme_retirement"] {
         guard let fields = retirement as? [String: Any],
@@ -166,6 +186,20 @@ struct UnifiedSetupTransactionStore: Sendable {
   func write(_ transaction: UnifiedSetupTransaction) throws {
     guard transaction.hasValidShape else {
       throw UnifiedSetupTransactionError.invalid("has an invalid shape")
+    }
+    if transaction.nativeReplacements != nil {
+      // Replacement journals must survive a power loss before the original moves.
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+      let data = try encoder.encode(transaction)
+      guard data.count <= BoundedRegularFile.maximumSize else {
+        throw UnifiedSetupTransactionError.invalid("exceeds the 1 MiB file limit")
+      }
+      let parent = try SetupNativeReplacement.openJournalDirectory(stateRoot: stateRoot)
+      defer { Darwin.close(parent) }
+      try PinnedFilesystem.replaceRegularFileAtomically(
+        parentDescriptor: parent, name: url.lastPathComponent, url: url, data: data, mode: 0o600)
+      return
     }
     try writeBoundedEvidenceJSON(
       transaction,
@@ -223,13 +257,15 @@ enum UnifiedSetupInterruptionError: Error, Sendable {
 }
 
 struct UnifiedSetupRecoveryResult: Sendable {
+  var nativeConfigurationMutated = false
   var preferences: UnifiedSetupTeardownStage?
   var environment: UnifiedSetupTeardownStage?
   var desktop: UnifiedSetupTeardownStage?
   var theme: UnifiedSetupTeardownStage?
 
   var mutated: Bool {
-    [preferences, environment, desktop, theme].compactMap { $0 }.contains { $0.mutated }
+    nativeConfigurationMutated
+      || [preferences, environment, desktop, theme].compactMap { $0 }.contains { $0.mutated }
   }
 
   mutating func record(
