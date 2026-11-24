@@ -120,6 +120,8 @@ struct SketchyBarConfigurationTests {
       let apple = composition.artifacts.first { $0.path == "plugins/apple.sh" }
       #expect((apple != nil) == enabled)
       if let apple {
+        let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
+        #expect(entry.contents.contains("updates=on update_freq=0 script=\"$PLUGIN_DIR/apple.sh\""))
         #expect(apple.contents.contains("'/Applications/Macarchy Tools/macarchy-menu'"))
         #expect(apple.contents.contains("ACTION=--open-apple-menu"))
         #expect(!apple.contents.contains("AXIsProcessTrustedWithOptions"))

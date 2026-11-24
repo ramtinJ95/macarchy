@@ -271,6 +271,11 @@ struct GuidedSetupPermissions: Sendable {
       throw SetupPackageAdoptionError(
         "The active Apple-menu plugin is not the selected managed script: \(expected)")
     }
+    guard apple.scripting.updates == "on" else {
+      throw SetupPackageAdoptionError(
+        "SketchyBar Apple-menu permission events cannot run while hidden with updates=\(apple.scripting.updates ?? "unknown"). "
+          + "Reapply the managed bar: \(Self.resumeCommand(context)).")
+    }
     let token = UUID().uuidString.lowercased()
     let pending = "permission:v2:\(token):pending:0:0:-1"
     _ = try run(["--set", SketchyBarContract.readyItem, "label=" + pending, "icon=" + pending])
