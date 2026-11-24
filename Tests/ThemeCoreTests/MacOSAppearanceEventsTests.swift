@@ -83,6 +83,57 @@ struct MacOSAppearanceEventsTests {
     #expect(!MacOSAppearanceEvents.Failure("target unavailable").description.contains("tccutil"))
   }
 
+  @Test func missingProcessAfterConsentRechecksOnceWithoutPrompting() throws {
+    var asks = [Bool]()
+    let value = try MacOSAppearanceEvents.withTargetRecovery(ask: true) { ask in
+      asks.append(ask)
+      if asks.count == 1 { throw MacOSAppearanceEvents.Failure("stale PID", code: -600) }
+      return ThemeAppearance.dark
+    }
+    #expect(asks == [true, false])
+    #expect(value == .dark)
+  }
+
+  @Test(arguments: [-1743, -1744, -1712, -1708])
+  func terminalTransportFailuresAreNotRetriedOrTreatedAsGrants(code: Int32) {
+    var calls = 0
+    #expect(throws: MacOSAppearanceEvents.Failure.self) {
+      try MacOSAppearanceEvents.withTargetRecovery(ask: true) { _ in
+        calls += 1
+        throw MacOSAppearanceEvents.Failure("transport", code: code)
+      }
+    }
+    #expect(calls == 1)
+    if code == -1712 {
+      #expect(
+        MacOSAppearanceEvents.Failure("transport", code: code).description.contains("timed_out"))
+    }
+  }
+
+  @Test(arguments: [-600, -1743, -1744, -1712])
+  func recoveryRequiresRealSuccessAndPreservesTheFinalVerdict(code: Int32) {
+    var asks = [Bool]()
+    do {
+      try MacOSAppearanceEvents.withTargetRecovery(ask: true) { ask in
+        asks.append(ask)
+        throw MacOSAppearanceEvents.Failure("transport", code: asks.count == 1 ? -600 : code)
+      }
+      Issue.record("A missing process or failed recheck is never a grant")
+    } catch let error as MacOSAppearanceEvents.Failure {
+      #expect(error.code == code)
+    } catch { Issue.record("Unexpected error: \(error)") }
+    #expect(asks == [true, false])
+  }
+
+  @Test func backgroundRecoveryNeverPrompts() throws {
+    var asks = [Bool]()
+    try MacOSAppearanceEvents.withTargetRecovery { ask in
+      asks.append(ask)
+      if asks.count == 1 { throw MacOSAppearanceEvents.Failure("stale PID", code: -600) }
+    }
+    #expect(asks == [false, false])
+  }
+
   @Test func inspectionReportsDeniedAccessEvenWhenAppearanceAlreadyMatches() throws {
     let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     let adapter = MacOSAppearanceAdapter(
