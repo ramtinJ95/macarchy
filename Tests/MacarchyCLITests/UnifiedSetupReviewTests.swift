@@ -62,6 +62,21 @@ struct UnifiedSetupReviewTests {
     #expect(!text.contains("full-inventory-not-to-repeat"))
   }
 
+  @Test func completeApprovalDetectsByteChangesHiddenByTheSummary() throws {
+    var plan = report()
+    func starter(_ bytes: String) -> EnvironmentNativeSeed.Plan {
+      .init(
+        provider: "zsh", destination: "/home/.zshrc", contents: bytes,
+        approval: "digest", message: "seed")
+    }
+    plan.nativeStarters = [starter("first reviewed bytes")]
+    let summary = plan.renderReview()
+    let approved = try plan.approvalText()
+    plan.nativeStarters = [starter("changed hidden bytes")]
+    #expect(plan.renderReview() == summary)
+    #expect(try plan.approvalText() != approved)
+  }
+
   private func report(boundaries: Int = 1) -> UnifiedSetupPlanReport {
     .init(
       outcome: "blocked", layers: [], fieldOrigins: ["origin": "inventory-origin"],

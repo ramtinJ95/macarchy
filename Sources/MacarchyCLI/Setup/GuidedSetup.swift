@@ -212,7 +212,8 @@ struct GuidedSetupCommandRunner: Sendable {
       ThemeConsumerPaths,
       String?,
       String?,
-      UnifiedSetupAdoptionApprovals
+      UnifiedSetupAdoptionApprovals,
+      String
     ) async throws -> CommandExecution
 
   let packageTrust: GuidedHomebrewTrust
@@ -235,13 +236,15 @@ struct GuidedSetupCommandRunner: Sendable {
     Self(
       packageTrust: .live(homeDirectory: FileManager.default.homeDirectoryForCurrentUser),
       planner: .live,
-      apply: { context, consumerPaths, packageApproval, preferencesApproval, adoptions in
+      apply: {
+        context, consumerPaths, packageApproval, preferencesApproval, adoptions, reviewedPlan in
         try await UnifiedSetupApplyCommandRunner.guided(io: io).execute(
           context: context,
           consumerPaths: consumerPaths,
           packageApproval: packageApproval,
           preferencesApproval: preferencesApproval,
           adoptions: adoptions,
+          reviewedPlan: reviewedPlan,
           json: false
         )
       },
@@ -512,7 +515,7 @@ struct GuidedSetupCommandRunner: Sendable {
       return cancelled
     }
     let execution = try await apply(
-      context, consumerPaths, packageApproval, preferencesApproval, adoptions)
+      context, consumerPaths, packageApproval, preferencesApproval, adoptions, review)
     guard execution.succeeded, let permissions else { return execution }
     io.write("\(execution.output)\n")
     return await finishPermissions(permissions, context: context, consumerPaths: consumerPaths)
