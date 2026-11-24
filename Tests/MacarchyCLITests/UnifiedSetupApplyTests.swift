@@ -8,6 +8,51 @@ import Testing
 @testable import ThemeCore
 
 struct UnifiedSetupApplyTests {
+  @Test func blockedPostInstallGuidanceResumesWithoutRepeatingHomebrew() async throws {
+    let fixture = try ApplyFixture()
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    try "schema_version = 1\n[packages]\nbaseline = 'standard'\n".write(
+      to: fixture.context.profileURL, atomically: true, encoding: .utf8)
+    let inventory = try InventoryFixture()
+    defer { inventory.cleanup() }
+    let installed = Mutex(false)
+    let calls = Mutex([String]())
+    var runner = fixture.runner(
+      available: { _ in true },
+      packages: try SetupBrewfile.parse("brew 'jq'\n"),
+      inventory: {
+        inventory.reader(formulae: installed.withLock { $0 } ? "jq" : "", casks: "").read()
+      },
+      installer: .init(apply: { _, _ in
+        calls.withLock { $0.append("install") }
+        try inventory.formula("jq", tap: "homebrew/core")
+        installed.withLock { $0 = true }
+        return .init(status: 0, diagnostic: "")
+      }),
+      theme: { _, _ in throw UnexpectedComponentCall() },
+      desktop: { _, _, _, _, _ in throw UnexpectedComponentCall() },
+      environment: { _, _, _, _, _ in throw UnexpectedComponentCall() })
+    runner.beforeConfiguration = { context, _ in
+      calls.withLock { $0.append("guide") }
+      return "Accessibility missing for /installed/yabai. Resume: "
+        + GuidedSetupPermissions.resumeCommand(context)
+    }
+    let plan = try runner.planner.prepare(context: fixture.context).report
+    let first = try await runner.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths(),
+      packageApproval: plan.packageInstallation?.approvalDigest, json: true)
+    let second = try await runner.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths(), json: true)
+    #expect(!first.succeeded && !second.succeeded)
+    #expect(calls.withLock { $0 } == ["install", "guide", "guide"])
+    #expect(first.output.contains("/installed/yabai"))
+    #expect(second.output.contains("macarchy setup guided --resume"))
+    #expect(
+      try SetupCoreOwnershipStore(stateRoot: fixture.state).read()?.themeGenerationID
+        == manifest.generationID)
+  }
+
   @Test(arguments: [false, true])
   func menuReviewAuthorizesPackagesAndPreferencesOnlyAfterConsent(confirm: Bool) async throws {
     let fixture = try ApplyFixture()
@@ -216,7 +261,7 @@ struct UnifiedSetupApplyTests {
     )
   }
 
-  @Test(arguments: ["environment_planned", "desktop_only", "refresh_failed"])
+  @Test(arguments: ["environment_planned", "desktop_only", "refresh_failed", "guided_deferred"])
   func outdatedSketchyBarPaletteIsReactivatedBeforeDesktopApply(mode: String) async throws {
     let fixture = try ApplyFixture()
     let manifest = try ThemeActivator(root: fixture.state).activate(
@@ -228,9 +273,10 @@ struct UnifiedSetupApplyTests {
     let calls = Mutex([String]())
     let refreshedAdapterIDs = Mutex(Set<String>())
     let desktopAdapterIDs = Mutex(Set<String>())
-    let runner = fixture.runner(
+    var runner = fixture.runner(
       available: { _ in true },
-      plannedStages: mode == "environment_planned" ? [.environment] : [],
+      plannedStages: ["environment_planned", "guided_deferred"].contains(mode)
+        ? [.environment] : [],
       paletteRefresh: true,
       theme: { _, _ in
         Issue.record("An active theme must not be replaced by the curated default")
@@ -241,6 +287,16 @@ struct UnifiedSetupApplyTests {
         #expect(theme.currentGenerationID == manifest.generationID)
         refreshedAdapterIDs.withLock { $0 = adapterIDs }
         calls.withLock { $0.append("theme") }
+        if mode == "guided_deferred" {
+          _ = try ReconciliationStatusStore(root: fixture.state).persist(
+            manifest: manifest,
+            results: [
+              AdapterResult(adapterID: "sketchybar", requirement: .required, status: .applied)
+            ])
+          return ThemeSetJSONReport(
+            themeID: manifest.themeID, outcome: .success, committed: true,
+            generationID: manifest.generationID)
+        }
         return mode == "refresh_failed"
           ? themeReportStub(.precommitFailure, committed: false, error: "refused")
           : themeReportStub()
@@ -252,9 +308,20 @@ struct UnifiedSetupApplyTests {
       },
       environment: { _, _, _, _, _ in
         calls.withLock { $0.append("environment") }
+        if mode == "guided_deferred" {
+          guard
+            case .current(let record) = try ReconciliationStatusStore(root: fixture.state).read()
+          else {
+            throw SetupComponentReportError(description: "Expected a current reconciliation record")
+          }
+          #expect(
+            record.results.first { $0.adapterID == MacOSAppearanceAdapter.id }?.status == .pending)
+          #expect(record.results.first { $0.adapterID == "sketchybar" }?.status == .applied)
+        }
         return environmentReportStub(message: "environment changed")
       })
 
+    runner.deferAppearanceUntilPermissions = mode == "guided_deferred"
     let plan = try runner.planner.prepare(context: fixture.context).report
     #expect(plan.outcome == "ready")
     let execution = try await runner.execute(
@@ -267,6 +334,10 @@ struct UnifiedSetupApplyTests {
       #expect(report["outcome"] as? String == "failed")
       #expect(report["mutated"] as? Bool == false)
       #expect(calls.withLock { $0 } == ["theme"])
+    case "guided_deferred":
+      #expect(execution.succeeded, "\(execution.output)")
+      #expect(calls.withLock { $0 } == ["theme", "desktop", "environment"])
+      #expect(refreshedAdapterIDs.withLock { $0 }.isEmpty)
     case "environment_planned":
       #expect(execution.succeeded, "\(execution.output)")
       #expect(calls.withLock { $0 } == ["theme", "desktop", "environment"])

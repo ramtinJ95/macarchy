@@ -21,6 +21,8 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
   let desktopInspection: ComponentInspection<DesktopInspectionReport>
   let environmentInspection: ComponentInspection<EnvironmentLifecycleReport>
 
+  var permissionContextWarnings: @Sendable (PortableProfile) -> [String] = { _ in [] }
+
   static let live = Self(
     planner: .live,
     themeInspection: UnifiedSetupThemeLifecycleStatus.inspect,
@@ -77,6 +79,17 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
           profile: profile
         )
       }
+    },
+    permissionContextWarnings: { profile in
+      var warnings = [String]()
+      if profile.desktop.provider == .yabaiSkhd {
+        warnings.append(
+          "Keybinding-origin System Events Automation is unverified for "
+            + ExternalTool.skhd.resolvingSymlinksInPath().path
+            + " → macarchy → System Events. Open the configured theme-browser keybinding and select an opposite-appearance theme to request consent in that context."
+        )
+      }
+      return warnings
     }
   )
 
@@ -115,7 +128,8 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
         outcome: preparation.report.outcome,
         plan: plan,
         theme: nil,
-        message: "The unified setup plan is blocked.",
+        message: "Resume setup with macarchy setup guided --resume and the same profile options. "
+          + (plan.diagnostics.first?.message ?? "Resolve the blocked plan before applying."),
         json: json
       )
     }
@@ -185,6 +199,15 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     let succeeded =
       desktop.succeeded && environment.succeeded && preferences.succeeded && missing.isEmpty
       && missingPackages.isEmpty
+    let contextWarnings = permissionContextWarnings(model.profile)
+    if succeeded, !contextWarnings.isEmpty {
+      return try result(
+        operation: operation, outcome: "permissions_unverified", plan: plan, theme: theme,
+        desktop: desktop, environment: environment, preferences: preferences,
+        message:
+          "Configuration and services are converged; launch-context permission coverage is incomplete. "
+          + contextWarnings.joined(separator: " "), json: json)
+    }
     let outcome: String
     switch operation {
     case .status: outcome = succeeded ? "converged" : "drifted"
@@ -305,7 +328,15 @@ private struct UnifiedSetupInspectionReport: CommandReport {
 
   func renderText() throws -> String {
     var lines = ["Macarchy \(operation.replacingOccurrences(of: "_", with: " ")) [\(outcome)]:"]
+    if !succeeded {
+      lines.append(
+        "- Recovery: macarchy setup guided --resume (with the same profile options), then recheck this launch context."
+      )
+    }
     lines.append("- \(message)")
+    lines.append(
+      "- System Events check scope: \(MacOSAppearanceEvents.launchContext). Terminal access does not verify skhd, bar/menu or launch agents; an interactive light/dark change in each failing context can request native consent."
+    )
     if let theme { lines.append("- theme [\(theme.status)]: \(theme.message)") }
     if let desktop { lines.append("- desktop [\(desktop.outcome)]") }
     if let environment { lines.append("- environment [\(environment.outcome)]") }

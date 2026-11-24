@@ -284,7 +284,7 @@ struct GuidedSetupTests {
 
     #expect(!execution.succeeded)
     #expect(execution.output.contains("external prerequisites"))
-    #expect(output.contains("Macarchy setup plan [ready]"))
+    #expect(output.contains("Macarchy setup plan [blocked]"))
     #expect(output.contains("Permissions:"))
     #expect(output.contains("yabai_accessibility"))
     #expect(output.contains("npm install --global @earendil-works/pi-coding-agent"))

@@ -2,7 +2,7 @@ import Testing
 
 @testable import MacarchyMenu
 
-struct MenuCommandTests {
+@MainActor struct MenuCommandTests {
   @Test func permissionDiagnosticNamesTheLaunchContextRatherThanDemandingAHelperEntry() {
     let message = MenuFailure.permission.description
     #expect(message.contains("launch context"))
@@ -21,6 +21,29 @@ struct MenuCommandTests {
     #expect(checks == 1 && opens == 0)
     #expect(try command.execute(["--open-apple-menu"]) == "")
     #expect(checks == 2 && opens == 1)
+  }
+
+  @Test func platformCheckDoesNotRequireAccessibility() throws {
+    var platforms = 0
+    let command = MenuCommand(
+      check: { throw MenuFailure.permission },
+      open: { Issue.record("unexpected menu action") },
+      checkPlatform: { platforms += 1 })
+    #expect(try command.execute(["--check-platform"]) == "supported")
+    #expect(platforms == 1)
+    #expect(throws: MenuFailure.self) { try command.execute(["--check"]) }
+  }
+
+  @Test func accessibilityRequestRequiresItsOwnExplicitInvocationAndNeverOpensMenu() throws {
+    var requests = 0
+    let command = MenuCommand(
+      check: { Issue.record("A native request must not stand in for check") },
+      open: { Issue.record("A native request must not press a menu") },
+      requestAccessibility: { requests += 1 })
+    #expect(try command.execute(["--help"]).contains("--request-accessibility"))
+    #expect(requests == 0)
+    #expect(try command.execute(["--request-accessibility"]) == "ready")
+    #expect(requests == 1)
   }
 
   @Test func deniedPermissionOrUnsupportedPlatformCannotOpenMenu() {

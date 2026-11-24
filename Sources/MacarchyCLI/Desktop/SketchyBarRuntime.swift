@@ -30,6 +30,7 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
   let wifiStatePresent: Bool?
   let mediaStatePresent: Bool?
   let appleStatePresent: Bool?
+  let applePermissionVerified: Bool?
   let toggleStatePresent: Bool?
   let nativeConfiguration: Bool?
 
@@ -83,6 +84,7 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
     wifiStatePresent: Bool = false,
     mediaStatePresent: Bool = false,
     appleStatePresent: Bool = false,
+    applePermissionVerified: Bool? = nil,
     toggleStatePresent: Bool = false,
     nativeConfiguration: Bool? = nil
   ) {
@@ -100,6 +102,7 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
     self.wifiStatePresent = wifiStatePresent
     self.mediaStatePresent = mediaStatePresent
     self.appleStatePresent = appleStatePresent
+    self.applePermissionVerified = applePermissionVerified
     self.toggleStatePresent = toggleStatePresent
     self.nativeConfiguration = nativeConfiguration
   }
@@ -128,6 +131,8 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
         && wifiStatePresent != true && mediaStatePresent != true
         && appleStatePresent != true && toggleStatePresent != true
     }
+    guard applePermissionVerified != false || (status == .partial && appleStatePresent == true)
+    else { return false }
     let metrics = metricModules ?? []
     guard metrics == metrics.sorted(), Set(metrics).count == metrics.count,
       metrics.allSatisfy({ ["cpu", "memory"].contains($0) })
@@ -166,7 +171,9 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
   }
 
   func agreesWithProviderRuntime(_ current: Self) -> Bool {
-    status == current.status
+    (status == current.status
+      || (isValidEvidence && current.isValidEvidence
+        && (applePermissionVerified == false || current.applePermissionVerified == false)))
       && (nativeConfiguration ?? false) == (current.nativeConfiguration ?? false)
       && items == current.items
       && spaceIndices == current.spaceIndices
@@ -199,6 +206,7 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
     case wifiStatePresent = "wifi_state_present"
     case mediaStatePresent = "media_state_present"
     case appleStatePresent = "apple_state_present"
+    case applePermissionVerified = "apple_permission_verified"
     case toggleStatePresent = "toggle_state_present"
     case nativeConfiguration = "native_configuration"
   }
@@ -356,7 +364,10 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         if expected.appleStatePresent == true {
           let apple: SketchyBarItemQuery = try query(SketchyBarContract.appleItem)
           presentationMatches =
-            presentationMatches && apple.label.drawing == "off" && apple.label.value.isEmpty
+            presentationMatches
+            && ((apple.label.drawing == "off" && apple.label.value.isEmpty)
+              || (expected.applePermissionVerified == false
+                && apple.label.drawing == "on" && apple.label.value == "Menu ERR"))
         }
         if expected.mediaStatePresent == true {
           let media: SketchyBarItemQuery = try query(SketchyBarContract.mediaItem)
@@ -771,13 +782,15 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       toggleStatePresent = true
     }
     var appleStatePresent = false
+    var applePermissionVerified: Bool?
     if let position = composition.layout.position(of: .apple) {
       let apple: SketchyBarItemQuery = try query(SketchyBarContract.appleItem)
       let events: [String: SketchyBarEventQuery] = try query("events")
       guard apple.name == SketchyBarContract.appleItem, apple.type == "item",
         apple.geometry.drawing == "on",
-        apple.geometry.position == position.rawValue, apple.label.drawing == "off",
-        apple.label.value.isEmpty,
+        apple.geometry.position == position.rawValue,
+        (apple.label.drawing == "off" && apple.label.value.isEmpty)
+          || (apple.label.drawing == "on" && apple.label.value == "Menu ERR"),
         apple.scripting.script
           == pluginPath("apple"),
         apple.scripting.updateFrequency == 0,
@@ -788,6 +801,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
           "running SketchyBar Apple-menu helper failed or its script/subscription is incomplete")
       }
       appleStatePresent = true
+      applePermissionVerified = apple.label.drawing == "off" && apple.label.value.isEmpty
     }
     var mediaStatePresent = false
     if let position = composition.layout.position(of: .media) {
@@ -851,12 +865,14 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         items: finalBar.items.sorted())
     }
 
-    let partial = composition.hookURL != nil
+    let partial = composition.hookURL != nil || applePermissionVerified == false
     return SketchyBarCoreRuntimeInspection(
       status: partial ? .partial : .converged,
-      message: partial
-        ? "managed SketchyBar core is verified; the trusted hook may add behavior Macarchy cannot inspect"
-        : "running SketchyBar matches the selected provider and canonical theme generations",
+      message: applePermissionVerified == false
+        ? "SketchyBar configuration is verified, but Apple-menu Accessibility is not. Run macarchy setup guided --resume to check the actual SketchyBar launch context."
+        : partial
+          ? "managed SketchyBar core is verified; the trusted hook may add behavior Macarchy cannot inspect"
+          : "running SketchyBar matches the selected provider and canonical theme generations",
       themeGenerationID: palette.generationID,
       barColor: palette.color,
       items: items,
@@ -868,6 +884,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       wifiStatePresent: wifiStatePresent,
       mediaStatePresent: mediaStatePresent,
       appleStatePresent: appleStatePresent,
+      applePermissionVerified: applePermissionVerified,
       toggleStatePresent: toggleStatePresent
     )
   }
@@ -1124,7 +1141,7 @@ private struct SketchyBarBarQuery: Decodable {
   }
 }
 
-private struct SketchyBarItemQuery: Decodable {
+struct SketchyBarItemQuery: Decodable {
   struct Popup: Decodable {
     let drawing: String
     let items: [String]

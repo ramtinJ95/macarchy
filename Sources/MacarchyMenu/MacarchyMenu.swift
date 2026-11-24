@@ -1,4 +1,5 @@
-import ApplicationServices
+// The public immutable AX option key is exposed as a legacy mutable C global.
+@preconcurrency import ApplicationServices
 import Carbon
 import Darwin
 import Foundation
@@ -93,16 +94,25 @@ func openAppleMenu(_ owner: SkyLightMenuOwner) throws {
   guard result == .success else { throw MenuFailure.accessibility(result) }
 }
 
-struct MenuCommand {
+@MainActor struct MenuCommand {
   let check: () throws -> Void
   let open: () throws -> Void
+  var checkPlatform: () throws -> Void = {}
+  var requestAccessibility: (() throws -> Void)? = nil
   func execute(_ arguments: [String]) throws -> String {
     switch arguments {
     case ["--help"]:
       return
-        "macarchy-menu --check | --open-apple-menu\nSeparate SkyLight/Accessibility helper. Permission must be enabled manually; --check never requests it."
+        "macarchy-menu --check-platform | --check | --request-accessibility | --open-apple-menu\nSeparate SkyLight/Accessibility helper. Permission must be enabled manually; --check never requests it."
+    case ["--check-platform"]:
+      try checkPlatform()
+      return "supported"
     case ["--check"]:
       try check()
+      return "ready"
+    case ["--request-accessibility"]:
+      guard let requestAccessibility else { throw InvalidMenuArguments() }
+      try requestAccessibility()
       return "ready"
     case ["--open-apple-menu"]:
       try check()
@@ -115,7 +125,7 @@ struct MenuCommand {
 
 struct InvalidMenuArguments: Error {}
 
-@main struct MacarchyMenu {
+@main @MainActor struct MacarchyMenu {
   static func main() {
     do {
       var owner: SkyLightMenuOwner?
@@ -127,12 +137,21 @@ struct InvalidMenuArguments: Error {}
         open: {
           guard let owner else { throw MenuFailure.frontApplication }
           try openAppleMenu(owner)
+        },
+        checkPlatform: { _ = try SkyLightMenuOwner() },
+        requestAccessibility: {
+          _ = try SkyLightMenuOwner()
+          let options =
+            [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+          guard AXIsProcessTrustedWithOptions(options) else { throw MenuFailure.permission }
         })
       let output = try command.execute(Array(CommandLine.arguments.dropFirst()))
       if !output.isEmpty { print(output) }
     } catch is InvalidMenuArguments {
       FileHandle.standardError.write(
-        Data("Usage: macarchy-menu --check | --open-apple-menu\n".utf8))
+        Data(
+          "Usage: macarchy-menu --check-platform | --check | --request-accessibility | --open-apple-menu\n"
+            .utf8))
       exit(64)
     } catch {
       FileHandle.standardError.write(Data("Macarchy menu: \(error)\n".utf8))

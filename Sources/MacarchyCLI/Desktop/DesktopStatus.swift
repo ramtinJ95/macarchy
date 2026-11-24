@@ -187,9 +187,10 @@ struct DesktopStatusCommandRunner: Sendable {
         sketchyBarEvidence?.coreRuntime.agreesWithProviderRuntime($0) == true
       } == true
     let sketchyBarCoreAgrees =
-      sketchyBarCore?.status == .converged
-      || (sketchyBarCore?.status == .partial
-        && desired?.sketchyBarComposition?.hookURL != nil)
+      sketchyBarCore?.applePermissionVerified != false
+      && (sketchyBarCore?.status == .converged
+        || (sketchyBarCore?.status == .partial
+          && desired?.sketchyBarComposition?.hookURL != nil))
     let sketchyBarConverged =
       sketchyBarEnabled && !sketchyBarTransactionPending && diagnostics.isEmpty
       && sketchyBarProvider.status == .managed && sketchyBarPalette.status == .current

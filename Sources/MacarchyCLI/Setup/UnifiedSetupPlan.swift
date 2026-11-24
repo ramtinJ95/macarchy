@@ -301,6 +301,10 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
         )
       )
     }
+    diagnostics += packages.external.map {
+      PlanDiagnostic(
+        code: "external_prerequisite", source: $0.capabilityID, message: $0.instruction)
+    }
     let actions = plannedActions(
       installPlan: model.packages,
       theme: model.theme,
@@ -455,7 +459,8 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       UnifiedSetupPermission(
         id: "system_events_automation",
         status: "manual_boundary",
-        message: "macOS may request Automation access when applying system appearance."
+        message:
+          "Guided setup checks System Events Automation after configuration. Each terminal, skhd, bar/menu or launch-agent context needs its own verified access; inspection and background operations never prompt; an explicit interactive theme selection may request native consent."
       )
     ] + profile.desktopSetupPermissions
   }
@@ -638,11 +643,11 @@ struct SetupComponentPlans: Encodable, Sendable {
     [
       (
         .desktop, desktop.succeeded, desktop.report.actions,
-        desktop.report.diagnostics.map(\.message)
+        desktop.report.diagnostics.map { "\($0.source): \($0.message)" }
       ),
       (
         .environment, environment.succeeded, environment.report.actions,
-        environment.report.diagnostics.map(\.message)
+        environment.report.diagnostics.map { "\($0.source): \($0.message)" }
       ),
       (
         .preferences, preferences.succeeded, preferences.report.actions,
@@ -876,7 +881,7 @@ struct UnifiedSetupPlanReport: CommandReport {
       }
     }
     lines += PlanDiagnostic.renderLines(diagnostics)
-    lines.append("No changes made.")
+    lines.append("This plan made no installation or configuration changes.")
     return lines.joined(separator: "\n")
   }
 

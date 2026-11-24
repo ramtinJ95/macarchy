@@ -7,7 +7,8 @@ extension Macarchy {
     static let configuration = CommandConfiguration(
       abstract: "Plan and converge the complete curated Macarchy core.",
       subcommands: [
-        Guided.self, Plan.self, AdoptPackages.self, InstallPackages.self, AddPackages.self,
+        Guided.self, CheckAppearance.self, Plan.self, AdoptPackages.self, InstallPackages.self,
+        AddPackages.self,
         Apply.self, Recover.self, Status.self,
         Doctor.self,
         Teardown.self,
@@ -112,6 +113,19 @@ extension Macarchy {
           resume: resume
         )
         try emitExecution(execution)
+      }
+    }
+
+    struct CheckAppearance: ParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract:
+          "Verify System Events Automation in this launch context without prompting or changing appearance."
+      )
+      mutating func run() throws {
+        try MacOSAppearanceEvents.verify()
+        print(
+          "System Events Automation verified for this invocation: \(MacOSAppearanceEvents.launchContext)"
+        )
       }
     }
 

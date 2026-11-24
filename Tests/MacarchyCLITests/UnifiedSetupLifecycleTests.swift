@@ -41,6 +41,32 @@ struct UnifiedSetupLifecycleTests {
     #expect(calls.withLock { $0 } == 0)
   }
 
+  @Test func terminalInspectionCannotClaimServiceContextAutomationIsHealthy() throws {
+    let fixture = try ApplyFixture()
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    let runner = UnifiedSetupInspectionCommandRunner(
+      planner: fixture.planner(),
+      themeInspection: { model, _, _ in
+        .init(
+          succeeded: true, status: "managed", generationID: model.theme.currentGenerationID,
+          message: "current")
+      },
+      desktopInspection: { _, _, _, _ in desktopInspectionStub() },
+      environmentInspection: { _, _, _, _ in environmentInspectionStub() },
+      permissionContextWarnings: { _ in
+        ["/installed/skhd → macarchy → System Events is unverified; use the interactive keybinding"]
+      })
+    let result = try runner.execute(
+      operation: .doctor, context: fixture.context,
+      consumerPaths: testConsumerPaths(), json: false)
+    #expect(!result.succeeded)
+    #expect(result.output.contains("[permissions_unverified]"))
+    #expect(result.output.contains("/installed/skhd"))
+    #expect(result.output.contains("Recovery:"))
+    #expect(result.output.contains("interactive keybinding"))
+  }
+
   @Test(arguments: [false, true])
   func statusRequiresThemeAndPackageEvidenceForConvergence(missingPackage: Bool) throws {
     let fixture = try ApplyFixture()
