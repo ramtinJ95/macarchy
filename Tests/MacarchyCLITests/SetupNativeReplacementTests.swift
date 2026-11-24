@@ -288,9 +288,15 @@ struct SetupNativeReplacementTests {
     let fixture = try Fixture(
       kind: change.contains("link") ? "link" : change.contains("directory") ? "directory" : "file")
     defer { fixture.cleanup() }
-    _ = try ThemeActivator(root: fixture.base.state).activate(
-      package: ThemePackageLoader().load(
-        packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha")))
+    // Theme health is injected below; publishing a real generation here would
+    // make these backup-only cases contend on the process-wide activation mutex.
+    // A typed ownership fixture keeps normal component inspection active instead
+    // of taking the intentionally absent-baseline shortcut.
+    let fixtureGenerationID = "g-\(UUID().uuidString.lowercased())"
+    let coreOwnership = SetupCoreOwnershipStore(stateRoot: fixture.base.state)
+    try coreOwnership.write(
+      .init(themeGenerationID: fixtureGenerationID, originalAppearance: .dark))
+    let coreBefore = try Data(contentsOf: coreOwnership.url)
     let proposal = try #require(try fixture.store.propose(fixture.provider))
     var seed = fixture.seed
     seed.replacement = proposal
@@ -300,6 +306,7 @@ struct SetupNativeReplacementTests {
     let currentBefore = try SetupNativeReplacement.digest(fixture.original)
     let backup = URL(filePath: proposal.backup)
     let themeHealthy = Mutex(true)
+    let componentInspections = Mutex(0)
     let runner = UnifiedSetupInspectionCommandRunner(
       planner: UnifiedSetupPlanCommandRunner(
         capabilityIsAvailable: { _ in true },
@@ -307,19 +314,28 @@ struct SetupNativeReplacementTests {
         environmentPlanner: { _, _, _ in environmentPlanStub() },
         packageInventoryReader: { .init(packages: [], issues: []) },
         standardBrewfile: { _ in SetupBrewfile(packages: []) }),
-      themeInspection: { model, _, _ in
+      themeInspection: { _, ownership, _ in
+        #expect(ownership?.themeGenerationID == fixtureGenerationID)
         let healthy = themeHealthy.withLock { $0 }
         return .init(
           succeeded: healthy, status: healthy ? "managed" : "drifted",
-          generationID: model.theme.currentGenerationID,
+          generationID: fixtureGenerationID,
           message: healthy ? "fixture" : "fixture theme drift")
-      }, desktopInspection: { _, _, _, _ in desktopInspectionStub() },
-      environmentInspection: { _, _, _, _ in environmentInspectionStub() })
-    // This is an otherwise healthy control, not merely another already-blocked plan.
-    #expect(
-      try runner.execute(
-        operation: .status, context: fixture.context, consumerPaths: testConsumerPaths(), json: true
-      ).succeeded)
+      },
+      desktopInspection: { _, _, _, _ in
+        componentInspections.withLock { $0 += 1 }
+        return desktopInspectionStub()
+      },
+      environmentInspection: { _, _, _, _ in
+        componentInspections.withLock { $0 += 1 }
+        return environmentInspectionStub()
+      })
+    // This is a converged control that actually delegates, not absent or blocked.
+    let control = try runner.execute(
+      operation: .status, context: fixture.context, consumerPaths: testConsumerPaths(), json: true)
+    #expect(control.succeeded, "\(control.output)")
+    #expect(try jsonObject(control.output)["outcome"] as? String == "converged")
+    #expect(componentInspections.withLock { $0 } == 2)
     switch change {
     case "missing": try FileManager.default.removeItem(at: backup)
     case "modified": try "changed original".write(to: backup, atomically: true, encoding: .utf8)
@@ -341,10 +357,12 @@ struct SetupNativeReplacementTests {
     let healthy = restored || change.hasPrefix("healthy")
     for operation in [UnifiedSetupInspectionOperation.status, .doctor] {
       for json in [false, true] {
+        let callsBefore = componentInspections.withLock { $0 }
         let result = try runner.execute(
           operation: operation, context: fixture.context, consumerPaths: testConsumerPaths(),
           json: json)
         #expect(result.succeeded == healthy, "\(result.output)")
+        #expect(componentInspections.withLock { $0 } == callsBefore + (healthy ? 2 : 0))
         #expect(result.output.contains(proposal.backup))
         if !healthy {
           #expect(result.output.contains("Teardown cannot restore the original"))
@@ -364,9 +382,10 @@ struct SetupNativeReplacementTests {
         } else {
           #expect(!result.output.contains("Teardown cannot restore the original"))
           if json {
+            let object = try jsonObject(result.output)
             #expect(
-              (try jsonObject(result.output)["configuration_backup_issues"] as? [String])?.isEmpty
-                == true)
+              object["outcome"] as? String == (operation == .status ? "converged" : "healthy"))
+            #expect((object["configuration_backup_issues"] as? [String])?.isEmpty == true)
           }
         }
       }
@@ -405,6 +424,11 @@ struct SetupNativeReplacementTests {
     if change != "healthy-link" {
       #expect(try Data(contentsOf: fixture.targetFile) == fixture.targetBytes)
     }
+    #expect(try Data(contentsOf: coreOwnership.url) == coreBefore)
+    #expect(try SetupNativeReplacement.kind(fixture.base.state.appending(path: "current")) == nil)
+    #expect(
+      try SetupNativeReplacement.kind(
+        fixture.base.state.appending(path: "run/activation.lock")) == nil)
   }
 
   @Test(
