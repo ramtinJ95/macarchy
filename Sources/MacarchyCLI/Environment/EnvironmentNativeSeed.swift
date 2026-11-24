@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import ThemeCore
 
-/// Creates personal starter files, not ownership receipts or active connections.
+/// Publishes personal starters; only reviewed guided replacements record ownership.
 struct EnvironmentNativeSeed: Sendable {
   enum Provider: String, Codable, CaseIterable, Sendable {
     case zsh, kitty, atuin, starship, neovim
@@ -70,16 +70,18 @@ struct EnvironmentNativeSeed: Sendable {
     let message: String
     var files: [String: Data] = [:]
     var parentDirectory: String? = nil
+    var replacement: SetupNativeReplacement.Proposal? = nil
   }
 
   let provider: Provider
-  let destination: URL
+  var destination: URL
   let homeDirectory: URL
   let stateRoot: URL
   var resourcesRoot: URL = RuntimeEnvironment.live.builtInEnvironmentURL
   var bootstrapPalette: Data? = nil
   /// Guided setup reviews this one directory as well as each absent starter.
   var createParentDirectory = false
+  var replacement: SetupNativeReplacement.Proposal? = nil
 
   func plan() throws -> Plan {
     let destination = destination.standardizedFileURL
@@ -98,7 +100,12 @@ struct EnvironmentNativeSeed: Sendable {
       throw EnvironmentLifecycleError.blocked(
         "Neovim starter must not contain managed entry points or state")
     }
-    try validateDestination()
+    if let replacement {
+      try SetupNativeReplacement(homeDirectory: homeDirectory, stateRoot: stateRoot)
+        .validateReviewed(replacement)
+    } else {
+      try validateDestination()
+    }
     let contents: String
     var files: [String: Data] = [:]
     switch provider {
@@ -170,24 +177,35 @@ struct EnvironmentNativeSeed: Sendable {
       try sortedKeysJSON([
         provider.rawValue, destination.path, stateRoot.standardizedFileURL.path, contents,
         createParentDirectory ? destination.deletingLastPathComponent().path : "",
-      ]) + sortedKeysJSON(files))
+      ]) + sortedKeysJSON(files) + sortedKeysJSON(replacement))
     return Plan(
       provider: provider.rawValue, destination: destination.path, contents: contents,
       approval: approval,
       message:
         "Creates only this writable starter. Set \(provider.rawValue).\(provider.profileKey) in your profile, then review environment plan/apply. No active entry or profile is changed.",
       files: files,
-      parentDirectory: createParentDirectory ? destination.deletingLastPathComponent().path : nil
+      parentDirectory: createParentDirectory ? destination.deletingLastPathComponent().path : nil,
+      replacement: replacement
     )
   }
 
   func seed(approval: String) throws -> Plan {
+    if replacement != nil {
+      return try SetupNativeReplacement(homeDirectory: homeDirectory, stateRoot: stateRoot)
+        .install(self, approval: approval)
+    }
     let plan = try plan()
     guard approval == plan.approval else {
       throw EnvironmentLifecycleError.blocked("starter approval changed; review the plan again")
     }
+    try publish(plan)
+    return plan
+  }
+
+  /// Exclusive publication of already-reviewed bytes, including private staging.
+  func publish(_ plan: Plan) throws {
     if createParentDirectory { try ensureParentDirectory() }
-    let destination = URL(filePath: plan.destination)
+    let destination = self.destination
     if provider == .neovim {
       try EnvironmentNeovimMigration.seedArtifacts(
         plan.files.sorted(by: { $0.key < $1.key }).map {
@@ -196,12 +214,11 @@ struct EnvironmentNativeSeed: Sendable {
       try EnvironmentNeovimMigration(
         homeDirectory: homeDirectory, stateRoot: stateRoot, sourceURL: destination
       ).validateNativeTree(userOwnedPublicEntry: true)
-      return plan
+      return
     }
     try Self.publishFile(
       Data(plan.contents.utf8), at: destination, temporaryPrefix: ".macarchy-native",
       publishOperation: "publish native starter", syncOperation: "sync published native starter")
-    return plan
   }
 
   static func publishFile(

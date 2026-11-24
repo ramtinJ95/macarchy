@@ -41,11 +41,15 @@ struct UnifiedSetupRecoveryCommandRunner: Sendable {
           transaction: transaction, context: context, consumerPaths: consumerPaths)
         let unverified = try EnvironmentStateStore(stateRoot: context.stateRoot)
           .hasUnverifiedSpicetifyRecovery()
+        let backups = try SetupNativeReplacement(
+          homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
+        ).status()
         return UnifiedSetupRecoveryReport(
           outcome: unverified ? "recovered_with_unverified_runtime" : "recovered",
           spicetifyRuntimeRestoration: unverified ? "unverified" : "not_deferred",
           message: "Interrupted setup recovery completed; review a fresh plan before applying."
-            + (unverified ? " \(EnvironmentStateStore.spicetifyRecoveryMessage)" : ""),
+            + (unverified ? " \(EnvironmentStateStore.spicetifyRecoveryMessage)" : "")
+            + (backups.isEmpty ? "" : "\n" + backups.joined(separator: "\n")),
           environment: recovery.environment, desktop: recovery.desktop, theme: recovery.theme,
           preferences: recovery.preferences)
       }

@@ -161,7 +161,10 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
             environment: recovered.result.environment,
             desktop: recovered.result.desktop,
             theme: recovered.result.theme,
-            message: "Interrupted unified teardown completed in reverse apply order.",
+            message: "Interrupted unified teardown completed in reverse apply order.\n"
+              + (try SetupNativeReplacement(
+                homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
+              ).status()).joined(separator: "\n"),
             json: json
           )
         }
@@ -262,6 +265,12 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
           json: json
         )
       }
+      _ = try SetupNativeReplacement(
+        homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
+      )
+      .restore(
+        SetupNativeReplacement(homeDirectory: context.homeDirectory, stateRoot: context.stateRoot)
+          .activeProposals(), dryRun: true)
       themePreview = try await themeTeardown(
         context.stateRoot,
         ownership,
@@ -297,9 +306,14 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       .preferences: preferencesPreview,
     ]
     let stages = SetupStage.teardownOrder.filter { previews[$0]?.outcome == "planned" }
-    if dryRun || stages.isEmpty {
+    let replacements = SetupNativeReplacement(
+      homeDirectory: context.homeDirectory, stateRoot: context.stateRoot)
+    let replacementProposals = try replacements.activeProposals()
+    let replacementPreview = try replacements.restore(replacementProposals, dryRun: true).joined(
+      separator: "\n")
+    if dryRun || (stages.isEmpty && replacementProposals.isEmpty) {
       return try result(
-        outcome: stages.isEmpty ? "no_change" : "planned",
+        outcome: stages.isEmpty && replacementProposals.isEmpty ? "no_change" : "planned",
         mutated: false,
         dryRun: dryRun,
         plan: plan,
@@ -307,9 +321,10 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         environment: environmentPreview,
         desktop: desktopPreview,
         theme: themePreview,
-        message: stages.isEmpty
+        message: (stages.isEmpty && replacementProposals.isEmpty
           ? "No Macarchy-owned core lifecycle state exists."
-          : "Reverse-order teardown is ready; Homebrew packages remain externally owned.",
+          : "Reverse-order teardown is ready; Homebrew packages remain externally owned.")
+          + (replacementPreview.isEmpty ? "" : "\n" + replacementPreview),
         json: json
       )
     }
@@ -319,7 +334,8 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       desiredAppearance: model.themePackage.appearance,
       contextDigest: unifiedSetupContextDigest(context: context, consumerPaths: consumerPaths),
       userScripts: try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership()?
-        .userScripts
+        .userScripts,
+      nativeReplacements: replacementProposals.isEmpty ? nil : replacementProposals
     )
     do {
       let recovery = try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
@@ -351,7 +367,8 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         desktop: recovery.desktop ?? desktopPreview,
         theme: recovery.theme ?? themePreview,
         message:
-          "Restored the setup-owned core in reverse order; Homebrew packages were retained.",
+          "Restored the setup-owned core in reverse order; Homebrew packages were retained.\n"
+          + (try replacements.status()).joined(separator: "\n"),
         json: json
       )
     } catch let error as UnifiedSetupInterruptionError {
@@ -412,6 +429,12 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       var result = UnifiedSetupRecoveryResult()
       var remaining = transaction.stages
       let commit = transaction.phase == .committing
+      if commit {
+        _ = try SetupNativeReplacement(
+          homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
+        )
+        .restore(transaction.nativeReplacements ?? [], dryRun: true)
+      }
       for stageID in transaction.stages.reversed() {
         let execution = try await finishApply(
           stageID,
@@ -428,6 +451,11 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         try store.write(transaction.replacing(stages: remaining))
       }
       if !commit {
+        _ = try SetupNativeReplacement(
+          homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
+        )
+        .restore(transaction.nativeReplacements ?? [])
+        result.nativeConfigurationMutated = !(transaction.nativeReplacements ?? []).isEmpty
         try store.write(transaction.replacing(phase: .committing, stages: []))
       }
       try store.remove()
@@ -456,6 +484,11 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       remaining.removeAll { $0 == stageID }
       try store.write((try store.read() ?? transaction).replacing(stages: remaining))
     }
+    _ = try SetupNativeReplacement(
+      homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
+    )
+    .restore(transaction.nativeReplacements ?? [])
+    result.nativeConfigurationMutated = !(transaction.nativeReplacements ?? []).isEmpty
     try store.write((try store.read() ?? transaction).replacing(phase: .committing, stages: []))
     try store.remove()
     return result

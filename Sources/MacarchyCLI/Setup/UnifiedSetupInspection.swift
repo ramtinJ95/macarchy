@@ -99,6 +99,30 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     json: Bool
   ) throws -> CommandExecution {
+    let backups = try SetupNativeReplacement(
+      homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
+    ).status()
+    let execution = try inspect(
+      operation: operation, context: context, consumerPaths: consumerPaths, json: json)
+    guard !backups.isEmpty else { return execution }
+    if json {
+      var object =
+        try JSONSerialization.jsonObject(with: Data(execution.output.utf8)) as! [String: Any]
+      object["configuration_backups"] = backups
+      let data = try JSONSerialization.data(
+        withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+      return (String(decoding: data, as: UTF8.self), execution.succeeded)
+    }
+    return (
+      execution.output + "\nConfiguration backups (never automatically deleted):\n"
+        + backups.map { "- " + $0 }.joined(separator: "\n"), execution.succeeded
+    )
+  }
+
+  private func inspect(
+    operation: UnifiedSetupInspectionOperation, context: UnifiedSetupPlanContext,
+    consumerPaths: ThemeConsumerPaths, json: Bool
+  ) throws -> CommandExecution {
     let preparation: UnifiedSetupPreparation
     do {
       preparation = try planner.prepare(context: context)
