@@ -1,4 +1,5 @@
 import Darwin
+import Foundation
 
 /// The executable path of `pid`, or nil when the kernel cannot resolve it.
 package func processExecutablePath(_ pid: Int32) -> String? {
@@ -52,4 +53,43 @@ package func terminateVerifiedProcess(_ pid: Int32, orThrow failure: (Int32) -> 
   guard kill(pid, SIGTERM) != 0 else { return }
   let code = errno
   guard code == ESRCH else { throw failure(code) }
+}
+
+/// Read argv from the kernel, not a truncated or whitespace-split ps display.
+/// Consumers must separately authenticate executable, owner and process lifetime.
+package func processArguments(_ pid: Int32) throws -> [String] {
+  var size = 0
+  var mib = [CTL_KERN, KERN_PROCARGS2, pid]
+  guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0 else {
+    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EINVAL)
+  }
+  guard size >= MemoryLayout<Int32>.size else { throw POSIXError(.EINVAL) }
+  var bytes = [UInt8](repeating: 0, count: size)
+  guard sysctl(&mib, u_int(mib.count), &bytes, &size, nil, 0) == 0,
+    size <= bytes.count
+  else {
+    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EINVAL)
+  }
+  return try decodedProcessArguments(Array(bytes.prefix(size)))
+}
+
+package func decodedProcessArguments(_ bytes: [UInt8]) throws -> [String] {
+  guard bytes.count >= MemoryLayout<Int32>.size else { throw POSIXError(.EINVAL) }
+  let count = bytes.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) }
+  guard count > 0, Int(count) <= bytes.count else { throw POSIXError(.EINVAL) }
+  var cursor = MemoryLayout<Int32>.size
+  while cursor < bytes.count, bytes[cursor] != 0 { cursor += 1 }
+  while cursor < bytes.count, bytes[cursor] == 0 { cursor += 1 }
+  var arguments: [String] = []
+  for _ in 0..<count {
+    let start = cursor
+    while cursor < bytes.count, bytes[cursor] != 0 { cursor += 1 }
+    guard cursor < bytes.count else { throw POSIXError(.EINVAL) }
+    guard let argument = String(bytes: bytes[start..<cursor], encoding: .utf8) else {
+      throw POSIXError(.EILSEQ)
+    }
+    arguments.append(argument)
+    cursor += 1
+  }
+  return arguments
 }

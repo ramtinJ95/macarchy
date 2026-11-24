@@ -10,3 +10,6 @@
   with stage timings and explicit timeout/recheck guidance instead of checking
   indefinitely, even while the bar is hidden, without adding idle polling.
   Missing Automation is distinguished from a failed native probe.
+- Yabai startup counts daemon instances rather than short-lived message clients
+  sent by its configuration script, while retaining daemon identity and singleton
+  checks.

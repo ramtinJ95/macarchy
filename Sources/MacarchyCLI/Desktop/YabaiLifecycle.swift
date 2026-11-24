@@ -301,22 +301,10 @@ struct YabaiLifecycleController: Sendable {
     let processIDs = result.output.split(whereSeparator: \.isNewline).compactMap {
       Int32($0.trimmingCharacters(in: .whitespaces))
     }
-    guard processIDs.count == 1, let processID = processIDs.first else {
-      throw YabaiDesktopError.lifecycle(
-        "expected one UID-scoped yabai process; found \(processIDs.count)"
-      )
-    }
-    guard let path = processExecutablePath(processID) else {
-      throw YabaiDesktopError.lifecycle("cannot resolve yabai PID \(processID)")
-    }
-    let supportedPath = ExternalTool.yabai
-      .resolvingSymlinksInPath().path
-    guard path == supportedPath else {
-      throw YabaiDesktopError.lifecycle(
-        "yabai PID \(processID) uses unsupported executable \(path)"
-      )
-    }
-    return (processID, path)
+    return try YabaiProcessEvidence.inspect(
+      processIDs: processIDs,
+      expectedExecutable: ExternalTool.yabai.resolvingSymlinksInPath().path,
+      snapshot: YabaiProcessSnapshot.observe)
   }
 
   private static func runtimeReady() -> Bool {
