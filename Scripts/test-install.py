@@ -131,6 +131,8 @@ class InstallerTests(unittest.TestCase):
             if name == "brew" and args[0] != "--version":
                 for key in CONTROLS:
                     self.assertEqual(environment.get(key), "1", (args, key))
+                if args[0] == "test":
+                    self.assertEqual(environment.get("HOMEBREW_DEVELOPER"), "1")
 
     def test_prerequisites_fail_before_mutation(self):
         for mode, message in (("linux", "Apple Silicon"), ("intel", "Rosetta"),

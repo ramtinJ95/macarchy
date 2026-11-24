@@ -38,6 +38,8 @@ Homebrew owns the installation. Automatic Homebrew metadata refresh, package
 upgrades, dependent checks, autoremove and cleanup are disabled for this process;
 no global Homebrew settings are changed. An already-present tap is not refreshed
 implicitly. To refresh metadata deliberately, use `brew update` separately.
+The formula test uses a command-local developer-mode setting so Homebrew does
+not persistently enable developer mode just because its test command was used.
 
 ## Cancellation, reruns and recovery
 
