@@ -282,7 +282,7 @@ struct SetupNativeReplacementTests {
       "missing", "modified", "directory-modified", "link-target", "kind", "healthy-file",
       "healthy-directory", "healthy-link",
     ], [false, true])
-  func backupDriftMakesStatusAndDoctorUnhealthyWithoutChangingOwnership(
+  func backupIntegrityMatchesRestorationWithoutChangingOwnership(
     change: String, restored: Bool
   ) throws {
     let fixture = try Fixture(
@@ -299,6 +299,7 @@ struct SetupNativeReplacementTests {
     let ledgerBefore = try Data(contentsOf: fixture.store.url)
     let currentBefore = try SetupNativeReplacement.digest(fixture.original)
     let backup = URL(filePath: proposal.backup)
+    let themeHealthy = Mutex(true)
     let runner = UnifiedSetupInspectionCommandRunner(
       planner: UnifiedSetupPlanCommandRunner(
         capabilityIsAvailable: { _ in true },
@@ -307,9 +308,11 @@ struct SetupNativeReplacementTests {
         packageInventoryReader: { .init(packages: [], issues: []) },
         standardBrewfile: { _ in SetupBrewfile(packages: []) }),
       themeInspection: { model, _, _ in
-        .init(
-          succeeded: true, status: "managed", generationID: model.theme.currentGenerationID,
-          message: "fixture")
+        let healthy = themeHealthy.withLock { $0 }
+        return .init(
+          succeeded: healthy, status: healthy ? "managed" : "drifted",
+          generationID: model.theme.currentGenerationID,
+          message: healthy ? "fixture" : "fixture theme drift")
       }, desktopInspection: { _, _, _, _ in desktopInspectionStub() },
       environmentInspection: { _, _, _, _ in environmentInspectionStub() })
     // This is an otherwise healthy control, not merely another already-blocked plan.
@@ -335,7 +338,7 @@ struct SetupNativeReplacementTests {
       try FileManager.default.removeItem(at: fixture.targetFile)
     default: break
     }
-    let healthy = change.hasPrefix("healthy")
+    let healthy = restored || change.hasPrefix("healthy")
     for operation in [UnifiedSetupInspectionOperation.status, .doctor] {
       for json in [false, true] {
         let result = try runner.execute(
@@ -358,17 +361,112 @@ struct SetupNativeReplacementTests {
           } else {
             #expect(result.output.contains("[drifted]"))
           }
+        } else {
+          #expect(!result.output.contains("Teardown cannot restore the original"))
+          if json {
+            #expect(
+              (try jsonObject(result.output)["configuration_backup_issues"] as? [String])?.isEmpty
+                == true)
+          }
         }
       }
     }
-    if !restored, !healthy {
-      #expect(throws: (any Error).self) { try fixture.store.restore([proposal], dryRun: true) }
+    let restorationRefused: Bool
+    do {
+      _ = try fixture.store.restore([proposal], dryRun: true)
+      restorationRefused = false
+    } catch {
+      restorationRefused = true
+    }
+    // Every case, including restored archives, must agree with restoration.
+    #expect(restorationRefused == !healthy)
+    #expect(try fixture.store.status().issues.isEmpty == !restorationRefused)
+    if restored {
+      themeHealthy.withLock { $0 = false }
+      for operation in [UnifiedSetupInspectionOperation.status, .doctor] {
+        for json in [false, true] {
+          let result = try runner.execute(
+            operation: operation, context: fixture.context, consumerPaths: testConsumerPaths(),
+            json: json)
+          #expect(!result.succeeded)
+          #expect(result.output.contains("fixture theme drift"))
+          #expect(result.output.contains(proposal.backup))
+          #expect(!result.output.contains("Teardown cannot restore the original"))
+          if json {
+            #expect(
+              (try jsonObject(result.output)["configuration_backup_issues"] as? [String])?.isEmpty
+                == true)
+          }
+        }
+      }
     }
     #expect(try Data(contentsOf: fixture.store.url) == ledgerBefore)
     #expect(try SetupNativeReplacement.digest(fixture.original) == currentBefore)
     if change != "healthy-link" {
       #expect(try Data(contentsOf: fixture.targetFile) == fixture.targetBytes)
     }
+  }
+
+  @Test(
+    arguments: [
+      SetupNativeReplacement.Phase.preparing, .staged, .backedUp, .installed, .restoring,
+      .restored, .cancelled,
+    ], [false, true])
+  func backupHealthMatchesRestorationAtEveryPhase(
+    phase: SetupNativeReplacement.Phase, damaged: Bool
+  ) throws {
+    let fixture = try Fixture(kind: "file")
+    defer { fixture.cleanup() }
+    let proposal = try #require(try fixture.store.propose(.zsh))
+    var seed = fixture.seed
+    seed.replacement = proposal
+    switch phase {
+    case .preparing, .staged, .backedUp, .cancelled:
+      let boundary: SetupNativeReplacement.Checkpoint =
+        phase == .preparing || phase == .cancelled
+        ? .journaled : phase == .staged ? .staged : .installed
+      var interrupted = fixture.store
+      interrupted.checkpoint = { if $0 == boundary { throw Interrupted() } }
+      #expect(throws: Interrupted.self) {
+        try interrupted.install(seed, approval: seed.plan().approval)
+      }
+      if phase == .cancelled { _ = try fixture.store.restore([proposal]) }
+    case .installed, .restoring, .restored:
+      _ = try seed.seed(approval: seed.plan().approval)
+      if phase == .restoring {
+        var interrupted = fixture.store
+        interrupted.checkpoint = { if $0 == .restoreJournaled { throw Interrupted() } }
+        #expect(throws: Interrupted.self) { try interrupted.restore([proposal]) }
+      } else if phase == .restored {
+        _ = try fixture.store.restore([proposal])
+      }
+    }
+    #expect(try fixture.store.read().records.first?.phase == phase)
+    if damaged {
+      let backup = URL(filePath: proposal.backup)
+      if try SetupNativeReplacement.kind(backup) != nil {
+        try FileManager.default.removeItem(at: backup)
+      } else {
+        // Before the move, an absent backup is expected only while the original
+        // is intact. A cancelled record no longer requires restoration at all.
+        try "changed original".write(to: fixture.original, atomically: true, encoding: .utf8)
+      }
+    }
+    let ledgerBefore = try Data(contentsOf: fixture.store.url)
+    let currentBefore = try SetupNativeReplacement.digest(fixture.original)
+    let status = try fixture.store.status()
+    let restorationRefused: Bool
+    do {
+      _ = try fixture.store.restore([proposal], dryRun: true)
+      restorationRefused = false
+    } catch {
+      restorationRefused = true
+    }
+    #expect(restorationRefused == (damaged && phase != .restored && phase != .cancelled))
+    #expect(status.issues.isEmpty == !restorationRefused)
+    #expect(status.lines.contains { $0.contains(proposal.backup) })
+    #expect(try Data(contentsOf: fixture.store.url) == ledgerBefore)
+    #expect(try SetupNativeReplacement.digest(fixture.original) == currentBefore)
   }
 
   private struct Interrupted: Error {}

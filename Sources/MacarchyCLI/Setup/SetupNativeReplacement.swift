@@ -334,7 +334,9 @@ struct SetupNativeReplacement: Sendable {
         "\(record.proposal.provider.rawValue) [\(record.phase.rawValue)]: \(record.proposal.destination)",
         "Original backup\(record.phase == .cancelled ? " (not created)" : ""): \(record.proposal.backup)",
       ]
-      if record.phase != .cancelled {
+      // Once restored, this is a historical archive the user may edit or remove.
+      // Match restoration's terminal-state skip; archives cannot block health.
+      if record.phase != .restored && record.phase != .cancelled {
         do {
           // Before the original move, absence is expected only while the
           // original is still intact, just as in restoration recovery.
