@@ -40,18 +40,6 @@ extension AdapterContractTests {
     try makeTemporaryDirectory(named: "macarchy-adapter-tests")
   }
 
-  static func appearanceScript(dark: Bool) -> String {
-    "tell application \"System Events\" to tell appearance preferences to set dark mode to \(dark)"
-  }
-
-  static func appearanceRequest(dark: Bool) -> ProcessRequest {
-    ProcessRequest(
-      executableURL: URL(filePath: "/usr/bin/osascript"),
-      arguments: ["-e", appearanceScript(dark: dark)],
-      timeout: 2
-    )
-  }
-
   static func wallpaperControl(
     initialURL: URL = URL(filePath: "/tmp/existing-wallpaper.png")
   ) -> WallpaperControl {

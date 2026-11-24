@@ -11,19 +11,13 @@ extension AdapterContractTests {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     let state = Mutex(ThemeAppearance.light)
-    let requests = Mutex([ProcessRequest]())
+    let requests = Mutex([ThemeAppearance]())
     let adapter = MacOSAppearanceAdapter(
-      root: root,
-      controlIsAvailable: { true },
+      root: root, controlIsAvailable: { true },
       currentAppearance: { state.withLock { $0 } },
-      processRunner: ProcessRunner { request in
-        requests.withLock { $0.append(request) }
-        if request.arguments.last?.hasSuffix("true") == true {
-          state.withLock { $0 = .dark }
-        } else if request.arguments.last?.hasSuffix("false") == true {
-          state.withLock { $0 = .light }
-        }
-        return ProcessResult(terminationStatus: 0, output: "")
+      writeAppearance: { appearance in
+        requests.withLock { $0.append(appearance) }
+        state.withLock { $0 = appearance }
       }
     )
 
@@ -41,11 +35,41 @@ extension AdapterContractTests {
     #expect(
       requests.withLock { $0 }
         == [
-          Self.appearanceRequest(dark: true),
-          Self.appearanceRequest(dark: false),
+          ThemeAppearance.dark,
+          ThemeAppearance.light,
         ]
     )
     #expect(adapter.inspection(desiredAppearance: .light).status == .ready)
+  }
+
+  @Test
+  func interactiveConsentDoesNotHoldActivationLockAndRereadsCanonicalChoice() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let desired = Mutex(ThemeAppearance.dark)
+    let authorizations = Mutex(0)
+    let adapter = MacOSAppearanceAdapter(
+      root: root, controlIsAvailable: { true }, currentAppearance: { .light },
+      writeAppearance: { _ in Issue.record("The newer canonical light choice needs no setter") },
+      authorizeInteraction: {
+        authorizations.withLock { $0 += 1 }
+        let acquired = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+          do {
+            try ActivationLock(root: root).withLock { desired.withLock { $0 = .light } }
+          } catch { Issue.record(error) }
+          acquired.signal()
+        }
+        guard acquired.wait(timeout: .now() + 5) == .success else {
+          throw MacOSAppearanceEvents.Failure(
+            "Consent was incorrectly held under the activation lock")
+        }
+      })
+    let outcome = try await adapter.reconciliation(desiredAppearance: { desired.withLock { $0 } })
+      .run()
+    #expect(outcome.status == .applied)
+    #expect(authorizations.withLock { $0 } == 1)
+    #expect(desired.withLock { $0 } == .light)
   }
 
   @Test
@@ -57,19 +81,19 @@ extension AdapterContractTests {
       root: root,
       controlIsAvailable: { true },
       currentAppearance: { state.withLock { $0 } },
-      processRunner: ProcessRunner { _ in
-        ProcessResult(terminationStatus: 1, output: "Not authorized to send Apple events")
+      writeAppearance: { _ in
+        throw MacOSAppearanceEvents.Failure("Not authorized to send Apple events")
       }
     )
     let failure = try await failed.reconciliation(desiredAppearance: { .dark }).run()
     #expect(failure.status == .failed)
-    #expect(failure.message == "Not authorized to send Apple events")
+    #expect(failure.message?.contains("Not authorized to send Apple events") == true)
 
     let drifted = MacOSAppearanceAdapter(
       root: root,
       controlIsAvailable: { true },
       currentAppearance: { state.withLock { $0 } },
-      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
+      writeAppearance: { _ in }
     )
     let drift = try await drifted.reconciliation(desiredAppearance: { .dark }).run()
     #expect(drift.status == .drifted)
@@ -79,10 +103,7 @@ extension AdapterContractTests {
       root: root,
       controlIsAvailable: { false },
       currentAppearance: { .dark },
-      processRunner: ProcessRunner { _ in
-        Issue.record("Unavailable control must fail before process execution")
-        return ProcessResult(terminationStatus: 0, output: "")
-      }
+      writeAppearance: { _ in Issue.record("Unavailable control must fail before a write") }
     )
     #expect(unavailable.inspection(desiredAppearance: .dark).status == .failed)
     #expect(
@@ -374,20 +395,23 @@ extension AdapterContractTests {
       ]
     )
     let state = Mutex(ThemeAppearance.light)
-    let requests = Mutex([ProcessRequest]())
+    let requests = Mutex([ThemeAppearance]())
     let coordinator = ThemeActivationCoordinator(
       root: root,
       consumerPaths: try Self.consumerPaths(
         root: root, kittyConfigurationURL: configurationURL,
         sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
-      processRunner: ProcessRunner { request in
-        requests.withLock { $0.append(request) }
-        state.withLock { $0 = .dark }
-        return ProcessResult(terminationStatus: 0, output: "")
+      processRunner: ProcessRunner { _ in
+        Issue.record("Appearance must not launch a subprocess")
+        return .init(terminationStatus: 1, output: "unexpected")
       },
       wallpaperControl: Self.wallpaperControl(),
       wallpaperSignal: try Self.wallpaperSignal(root: root),
-      currentAppearance: { state.withLock { $0 } }
+      currentAppearance: { state.withLock { $0 } },
+      writeAppearance: { appearance in
+        requests.withLock { $0.append(appearance) }
+        state.withLock { $0 = appearance }
+      }
     )
 
     let result = try await coordinator.reconcile(adapterIDs: ["macos-appearance"])
@@ -395,7 +419,7 @@ extension AdapterContractTests {
     #expect(
       requests.withLock { $0 }
         == [
-          Self.appearanceRequest(dark: true)
+          ThemeAppearance.dark
         ]
     )
     #expect(
@@ -423,27 +447,21 @@ extension AdapterContractTests {
         lightCommandEntered: false,
         darkActivationStarted: false,
         darkPreflightEntered: false,
-        appearanceRequests: [ProcessRequest]()
+        appearanceRequests: [ThemeAppearance]()
       )
     )
     let releaseLightCommand = DispatchSemaphore(value: 0)
-    let runner = ProcessRunner { request in
-      guard request.executableURL == URL(filePath: "/usr/bin/osascript") else {
-        return ProcessResult(terminationStatus: 1, output: "no matching process")
-      }
+    let writer: @Sendable (ThemeAppearance) throws -> Void = { appearance in
       state.withLock { state in
-        state.appearanceRequests.append(request)
-        if request.arguments.last?.hasSuffix("false") == true {
-          state.lightCommandEntered = true
-        }
+        state.appearanceRequests.append(appearance)
+        if appearance == .light { state.lightCommandEntered = true }
       }
-      if request.arguments.last?.hasSuffix("false") == true {
-        releaseLightCommand.wait()
-        state.withLock { $0.appearance = .light }
-      } else {
-        state.withLock { $0.appearance = .dark }
-      }
-      return ProcessResult(terminationStatus: 0, output: "")
+      if appearance == .light { releaseLightCommand.wait() }
+      state.withLock { $0.appearance = appearance }
+    }
+    let runner = ProcessRunner { _ in
+      Issue.record("Appearance must not launch a subprocess")
+      return .init(terminationStatus: 1, output: "unexpected")
     }
     let consumerPaths = try Self.consumerPaths(
       root: root,
@@ -457,6 +475,7 @@ extension AdapterContractTests {
       wallpaperControl: Self.wallpaperControl(),
       wallpaperSignal: try Self.wallpaperSignal(root: root),
       currentAppearance: { state.withLock { $0.appearance } },
+      writeAppearance: writer,
       enabledAdapterIDs: [MacOSAppearanceAdapter.id]
     )
     let darkCoordinator = ThemeActivationCoordinator(
@@ -471,6 +490,7 @@ extension AdapterContractTests {
           return state.appearance
         }
       },
+      writeAppearance: writer,
       enabledAdapterIDs: [MacOSAppearanceAdapter.id]
     )
     let basePackage = try catppuccinPackage()
@@ -509,8 +529,8 @@ extension AdapterContractTests {
     #expect(
       state.withLock { $0.appearanceRequests }
         == [
-          Self.appearanceRequest(dark: false),
-          Self.appearanceRequest(dark: true),
+          ThemeAppearance.light,
+          ThemeAppearance.dark,
         ]
     )
     #expect(try ReconciliationStatusStore(root: root).read() == .current(dark.reconciliation))

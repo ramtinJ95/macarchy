@@ -31,7 +31,7 @@ struct ThemeUndoExecution: Sendable {
 struct ThemeUndoCommandRunner: Sendable {
   let activeManifest: @Sendable (URL) throws -> GenerationManifest
   let loadHistory: @Sendable (URL) throws -> [ThemeHistoryEntry]
-  let activation: ThemeActivationService
+  var activation: ThemeActivationService
 
   static let live = ThemeUndoCommandRunner(
     activeManifest: { try ThemeGenerationReader(root: $0).activeManifest() },

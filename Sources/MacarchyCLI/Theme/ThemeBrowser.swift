@@ -405,7 +405,7 @@ struct ThemeBrowserApplyRunner: Sendable {
       )
     },
     setThemeAndBackground: { repository, themeID, backgroundID, root, consumerPaths, reviewed in
-      try await ThemeActivationService.live.execute(
+      try await ThemeActivationService.interactive.execute(
         repository: repository,
         themeID: themeID,
         stateRoot: root,

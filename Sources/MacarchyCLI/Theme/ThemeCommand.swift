@@ -107,6 +107,12 @@ extension Theme {
     @Flag(help: "Validate and describe outputs without writing files.")
     var dryRun = false
 
+    @Flag(
+      help:
+        "Allow native System Events consent for this explicit interactive theme change. Leave off in scripts, background jobs and automatic switches."
+    )
+    var allowAutomationConsent = false
+
     var stateRootURL: URL {
       state.stateRootURL
     }
@@ -150,7 +156,9 @@ extension Theme {
 
     @MainActor
     mutating func run() async throws {
-      let execution = try await ThemeActivationService.live.execute(
+      let activation: ThemeActivationService =
+        alertOnError || options.allowAutomationConsent ? .interactive : .live
+      let execution = try await activation.execute(
         repository: options.repository,
         themeID: themeID,
         stateRoot: options.stateRootURL,
@@ -174,7 +182,9 @@ extension Theme {
     @OptionGroup var options: ActivationOptions
 
     mutating func run() async throws {
-      let execution = try await ThemeNextCommandRunner.live.execute(
+      var runner = ThemeNextCommandRunner.live
+      if options.allowAutomationConsent { runner.activation = .interactive }
+      let execution = try await runner.execute(
         repository: options.repository,
         stateRoot: options.stateRootURL,
         consumerPaths: options.consumerPaths,
@@ -202,7 +212,9 @@ extension Theme {
     mutating func run() async throws {
       let execution: ThemeUndoExecution
       do {
-        execution = try await ThemeUndoCommandRunner.live.execute(
+        var runner = ThemeUndoCommandRunner.live
+        if alertOnError || options.allowAutomationConsent { runner.activation = .interactive }
+        execution = try await runner.execute(
           repository: options.repository,
           stateRoot: options.stateRootURL,
           consumerPaths: options.consumerPaths,
