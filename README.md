@@ -8,11 +8,11 @@ at **`/opt/homebrew`**, and **Xcode Command Line Tools**. Install these prerequi
 first; Macarchy checks them but does not install them. Intel, Rosetta and other
 macOS versions or Homebrew prefixes are unsupported.
 
-> **Alpha:** in daily use on real Macs; the complete fresh-account setup and native
+> **Beta:** in daily use on real Macs; the complete fresh-account setup and native
 > permission journey still need real-hardware qualification.
 > [Releases](https://github.com/ramtinJ95/macarchy/releases) · [Changelog](CHANGELOG.md)
 
-https://github.com/user-attachments/assets/b3efc2ce-e763-465a-a928-10628b43b8c0
+https://github.com/user-attachments/assets/ab709a15-cdeb-4919-a9de-bbd43c80a930
 
 ## Install
 
