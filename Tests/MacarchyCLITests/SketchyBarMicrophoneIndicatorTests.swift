@@ -32,7 +32,7 @@ struct SketchyBarMicrophoneIndicatorTests {
       run.bar == [
         [
           "--set", "macarchy.microphone", "drawing=on",
-          "icon=\(muted ? "\u{1002B3}" : "\u{1002B1}")",
+          "icon=\(muted ? "\u{f131}" : "\u{f130}")",
           "icon.color=\(muted ? CompanionToggleHarness.accent : CompanionToggleHarness.muted)",
           "--set", "macarchy.microphone.detail", "label=\(detail)",
         ]

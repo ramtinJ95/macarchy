@@ -56,6 +56,7 @@ struct SketchyBarWiFiTests {
         "label=\(condition == "no_interface" ? "No Wi-Fi interface" : condition == "connected" ? "Privacy restricted" : "Disconnected / no IPv4")"
       ))
     #expect(arguments.contains("label.color=0xff888888"))
+    #expect(arguments.contains("icon=\(condition == "connected" ? "\u{f1eb}" : "\u{f127}")"))
     #expect(reads == (condition == "no_interface" ? 1 : 2))
   }
 
@@ -78,6 +79,7 @@ struct SketchyBarWiFiTests {
       }, sleep: { _ in }, uptime: { 0 }, copy: { copied = $0 }, launch: { launches.append($0) })
     try runner.execute(name: "macarchy.wifi.hostname", sender: "mouse.clicked", colors: colors)
     #expect(copied == value)
+    #expect(requests.withLock { $0.contains(["--set", "macarchy.wifi.hostname", "label=Copied"]) })
     #expect(reads == 0)
     #expect(requests.withLock { $0.last } == ["--set", "macarchy.wifi.hostname", "label=\(value)"])
     try runner.execute(name: "macarchy.wifi.up", sender: "mouse.clicked", colors: colors)

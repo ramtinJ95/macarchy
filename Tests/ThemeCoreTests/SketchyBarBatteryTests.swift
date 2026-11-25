@@ -16,7 +16,7 @@ struct SketchyBarBatteryTests {
     #expect(
       result.output.contains(
         "icon.color=\(level <= 20 ? "red" : level <= 40 ? "orange" : "green")\n"))
-    let icon = level > 80 ? "􀛨" : level > 60 ? "􀺸" : level > 40 ? "􀺶" : level > 20 ? "􀛩" : "􀛪"
+    let icon = level > 80 ? "" : level > 60 ? "" : level > 40 ? "" : level > 20 ? "" : ""
     #expect(result.output.contains("icon=\(icon)\n"))
   }
 
@@ -35,7 +35,7 @@ struct SketchyBarBatteryTests {
       "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t9%; charging; (no estimate) present: true\n"
     )
     #expect(charging.status == 0)
-    #expect(charging.output.contains("icon=􀢋\n"))
+    #expect(charging.output.contains("icon=\n"))
     #expect(charging.output.contains("label=No estimate\n"))
     let desktop = try run("Now drawing from 'AC Power'\n")
     #expect(desktop.status == 0)

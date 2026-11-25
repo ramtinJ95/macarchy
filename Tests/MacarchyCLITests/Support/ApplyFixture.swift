@@ -56,6 +56,7 @@ final class ApplyFixture: @unchecked Sendable {
 
   func runner(
     available: @escaping @Sendable (DependencyCapability) -> Bool,
+    postInstallAvailable: (@Sendable (DependencyCapability) throws -> Bool)? = nil,
     requiredAdoptions: UnifiedSetupAdoptionApprovals = .none,
     plannedStages: Set<SetupStage> = [],
     paletteRefresh: Bool = false,
@@ -112,7 +113,7 @@ final class ApplyFixture: @unchecked Sendable {
       planner: planner,
       themeInspection: themeInspection,
       packageInstaller: installer,
-      capabilityIsAvailable: available,
+      capabilityIsAvailable: postInstallAvailable ?? available,
       writePreMutationPlan: writePlan,
       themeApply: theme,
       themeRefresh: themeRefresh,

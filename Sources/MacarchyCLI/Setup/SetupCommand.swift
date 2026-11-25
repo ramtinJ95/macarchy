@@ -7,7 +7,8 @@ extension Macarchy {
     static let configuration = CommandConfiguration(
       abstract: "Plan and converge the complete curated Macarchy core.",
       subcommands: [
-        Guided.self, CheckAppearance.self, Plan.self, AdoptPackages.self, InstallPackages.self,
+        Guided.self, CheckAppearance.self, CheckFonts.self, Plan.self, AdoptPackages.self,
+        InstallPackages.self,
         AddPackages.self,
         Apply.self, Recover.self, Status.self,
         Doctor.self,
@@ -118,6 +119,28 @@ extension Macarchy {
           resume: resume
         )
         try emitExecution(execution)
+      }
+    }
+
+    /// Read-only child of the post-install gate: a new CoreText font inventory,
+    /// never a font registration request or an installer.
+    struct CheckFonts: ParsableCommand {
+      static let configuration = CommandConfiguration(
+        commandName: "_check-fonts", shouldDisplay: false)
+      @Argument var names: [String] = []
+
+      mutating func validate() throws {
+        guard !names.isEmpty, names.count <= 16,
+          names.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 128 })
+        else { throw ValidationError("Supply 1–16 exact registered PostScript font names.") }
+      }
+
+      mutating func run() throws {
+        let available = names.allSatisfy {
+          DependencyCapabilityProbe.postScriptFont($0).isSatisfied()
+        }
+        print(available ? "registered" : "missing")
+        if !available { throw ExitCode.failure }
       }
     }
 

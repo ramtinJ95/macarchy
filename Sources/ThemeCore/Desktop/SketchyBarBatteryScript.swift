@@ -46,16 +46,16 @@ enum SketchyBarBatteryScript {
     EOF
     COLOR=$MACARCHY_BATTERY_GREEN
     if [ "$LEVEL" -eq -1 ]; then
-      LABEL='No battery'; ICON='􀟛'; COLOR=$MACARCHY_MUTED_COLOR
+      LABEL='No battery'; ICON='\(SketchyBarSymbol.plug.rawValue)'; COLOR=$MACARCHY_MUTED_COLOR
     else
       LABEL=$(printf '%02d%%' "$LEVEL")
-      if [ "$LEVEL" -gt 80 ]; then ICON='􀛨'
-      elif [ "$LEVEL" -gt 60 ]; then ICON='􀺸'
-      elif [ "$LEVEL" -gt 40 ]; then ICON='􀺶'
-      elif [ "$LEVEL" -gt 20 ]; then ICON='􀛩'; COLOR=$MACARCHY_BATTERY_ORANGE
-      else ICON='􀛪'; COLOR=$MACARCHY_BATTERY_RED
+      if [ "$LEVEL" -gt 80 ]; then ICON='\(SketchyBarSymbol.batteryFull.rawValue)'
+      elif [ "$LEVEL" -gt 60 ]; then ICON='\(SketchyBarSymbol.batteryThreeQuarters.rawValue)'
+      elif [ "$LEVEL" -gt 40 ]; then ICON='\(SketchyBarSymbol.batteryHalf.rawValue)'
+      elif [ "$LEVEL" -gt 20 ]; then ICON='\(SketchyBarSymbol.batteryQuarter.rawValue)'; COLOR=$MACARCHY_BATTERY_ORANGE
+      else ICON='\(SketchyBarSymbol.batteryEmpty.rawValue)'; COLOR=$MACARCHY_BATTERY_RED
       fi
-      if [ "$AC" -eq 1 ]; then ICON='􀢋'; fi
+      if [ "$AC" -eq 1 ]; then ICON='\(SketchyBarSymbol.charging.rawValue)'; fi
     fi
     "$SKETCHYBAR" --set "$NAME" label="$LABEL" icon="$ICON" icon.color="$COLOR" \\
       --set macarchy.battery.remaining label="$ESTIMATE"

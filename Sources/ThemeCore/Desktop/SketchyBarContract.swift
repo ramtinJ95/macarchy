@@ -1,5 +1,39 @@
 import Foundation
 
+/// Factory symbols are Nerd Font glyphs, never SF Pro's unshipped private-use symbols.
+/// Keep the exact registered face requirement in the normal desktop dependency plan.
+package enum SketchyBarSymbol: String, CaseIterable, Sendable {
+  package static let fontFamily = "MesloLGS Nerd Font Mono"
+  package static let postScriptNames = ["MesloLGSNFM-Regular", "MesloLGSNFM-Bold"]
+
+  case apple = ""
+  case coffee = ""
+  case microphone = ""
+  case microphoneMuted = ""
+  case pause = ""
+  case screensaver = ""
+  case previous = ""
+  case play = ""
+  case next = ""
+  case music = ""
+  case wifi = ""
+  case disconnected = ""
+  case upload = ""
+  case download = ""
+  case network = ""
+  case volumeOff = ""
+  case volumeLow = ""
+  case volumeHigh = ""
+  case batteryFull = ""
+  case batteryThreeQuarters = ""
+  case batteryHalf = ""
+  case batteryQuarter = ""
+  case batteryEmpty = ""
+  case charging = ""
+  case plug = ""
+  case sliderKnob = ""
+}
+
 /// Names the managed bar's generator and the CLI must agree on: each module's top-level items
 /// and the sub-items listed below, the plugin scripts, and the hidden `macarchy desktop`
 /// helpers those scripts run. The generator,
@@ -148,8 +182,8 @@ package struct SketchyBarClockCompanion: Sendable {
 
   /// Keep-awake changes trigger this event so the indicator refreshes before its timer.
   package static let keepAwakeEvent = "macarchy_keep_awake_changed"
-  /// SF Symbols cup.and.saucer.fill, drawn by SF Pro at the size of the other toggle icons.
-  package static let keepAwakeIcon = "\u{100E19}"
+  /// Nerd Font coffee cup, drawn by the registered factory symbol font.
+  package static let keepAwakeIcon = SketchyBarSymbol.coffee.rawValue
   package static let keepAwake = Self(
     item: "macarchy.keep-awake", side: .left, plugin: "keep-awake",
     helperCommand: "_keep-awake-indicator", calendarFlag: "keep-awake-indicator",
@@ -160,10 +194,10 @@ package struct SketchyBarClockCompanion: Sendable {
 
   /// Microphone mute changes trigger this event so the indicator refreshes before its timer.
   package static let microphoneEvent = "macarchy_microphone_changed"
-  /// SF Symbols mic.slash.fill, drawn by the SF Pro font like the bar's other symbol glyphs.
-  package static let microphoneMutedIcon = "\u{1002B3}"
-  /// SF Symbols mic.fill, the live counterpart of `microphoneMutedIcon`.
-  package static let microphoneLiveIcon = "\u{1002B1}"
+  /// Muted microphone, using the same registered face as the live counterpart.
+  package static let microphoneMutedIcon = SketchyBarSymbol.microphoneMuted.rawValue
+  /// Live counterpart of `microphoneMutedIcon`.
+  package static let microphoneLiveIcon = SketchyBarSymbol.microphone.rawValue
   package static let microphone = Self(
     item: "macarchy.microphone", side: .left, plugin: "microphone",
     helperCommand: "_microphone-indicator", calendarFlag: "microphone-indicator",
@@ -174,10 +208,10 @@ package struct SketchyBarClockCompanion: Sendable {
 
   /// Idle screensaver changes trigger this event so its toggle refreshes before its timer.
   package static let saverIdleEvent = "macarchy_saver_idle_changed"
-  /// SF Symbols pause.fill, drawn by SF Pro like the idle screensaver icon it replaces.
-  package static let saverPausedIcon = "\u{100286}"
-  /// SF Symbols sparkles.tv: a screen showing decorative sparkles, drawn by SF Pro.
-  package static let saverIdleIcon = "\u{10114B}"
+  /// Pause indicator for the idle screensaver.
+  package static let saverPausedIcon = SketchyBarSymbol.pause.rawValue
+  /// Screen indicator for the idle screensaver.
+  package static let saverIdleIcon = SketchyBarSymbol.screensaver.rawValue
   package static let saverPaused = Self(
     item: "macarchy.saver-paused", side: .left, plugin: "saver-paused",
     helperCommand: "_saver-paused-indicator", calendarFlag: "saver-paused-indicator",

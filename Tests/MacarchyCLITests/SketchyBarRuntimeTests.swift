@@ -659,8 +659,8 @@ struct SketchyBarRuntimeTests {
     #expect(inspection.items == ["macarchy.theme.ready"])
   }
 
-  @Test
-  func verifiesTheOptInVolumeLevelAndRequiredEventSubscriptions() throws {
+  @Test(arguments: ["\u{f027}", "􀊧"])
+  func verifiesTheOptInVolumeLevelAndRequiredEventSubscriptions(icon: String) throws {
     let fixture = try SketchyBarRuntimeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let composition = try fixture.composition(
@@ -722,7 +722,7 @@ struct SketchyBarRuntimeTests {
           return .init(
             terminationStatus: 0,
             output: Self.itemJSON(
-              name: "macarchy.volume.icon", drawing: "on", position: "right", label: "􀊧",
+              name: "macarchy.volume.icon", drawing: "on", position: "right", label: icon,
               labelDrawing: "on", script: fixture.volumeScript, updateMask: 3))
         case ["--query", "macarchy.volume.padding"]:
           let output = Self.itemJSON(

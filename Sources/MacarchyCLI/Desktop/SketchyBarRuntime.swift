@@ -1017,7 +1017,9 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
   }
 
   private static func isVolumeIcon(_ value: String) -> Bool {
-    ["􀊣", "􀊡", "􀊥", "􀊧", "􀊩"].contains(value)
+    [SketchyBarSymbol.volumeOff, .volumeLow, .volumeHigh].map(\.rawValue).contains(value)
+      // Retained pre-remap generations remain inspectable until setup reapplies them.
+      || ["􀊣", "􀊡", "􀊥", "􀊧", "􀊩"].contains(value)
   }
 
   private static func isWiFiRate(_ value: String) -> Bool {
@@ -1028,7 +1030,8 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
   }
 
   private static func isWiFiSSIDLabel(_ value: String) -> Bool {
-    ["No Wi-Fi interface", "Disconnected / no IPv4", "Privacy restricted", "􀉄"].contains(value)
+    ["No Wi-Fi interface", "Disconnected / no IPv4", "Privacy restricted", "Copied", "􀉄"].contains(
+      value)
   }
 
   private static func isMetricLabel(_ value: String, metric: String) -> Bool {

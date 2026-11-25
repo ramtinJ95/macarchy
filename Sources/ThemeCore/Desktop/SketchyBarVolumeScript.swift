@@ -61,11 +61,9 @@ enum SketchyBarVolumeScript {
       RAW=$(/usr/bin/osascript -e 'output volume of (get volume settings)')
       VOLUME=$(printf '%s\\n' "$RAW" | level)
     fi
-    ICON='􀊣'
-    if [ "$VOLUME" -gt 60 ]; then ICON='􀊩'
-    elif [ "$VOLUME" -gt 30 ]; then ICON='􀊧'
-    elif [ "$VOLUME" -gt 10 ]; then ICON='􀊥'
-    elif [ "$VOLUME" -gt 0 ]; then ICON='􀊡'; fi
+    ICON='\(SketchyBarSymbol.volumeOff.rawValue)'
+    if [ "$VOLUME" -gt 60 ]; then ICON='\(SketchyBarSymbol.volumeHigh.rawValue)'
+    elif [ "$VOLUME" -gt 0 ]; then ICON='\(SketchyBarSymbol.volumeLow.rawValue)'; fi
     LABEL=$(printf '%02d%%' "$VOLUME")
     "$BAR" --set macarchy.volume label="$LABEL" label.color="$MACARCHY_TEXT_COLOR" \\
       --set macarchy.volume.icon label="$ICON" label.color="$MACARCHY_TEXT_COLOR" \\

@@ -127,7 +127,8 @@ struct SketchyBarMedia {
       changed || preview == "hover" || Double(preview).map { $0 > uptime() * 1000 } == true
     var args = [
       "--set", "macarchy.media", "drawing=on", "label.drawing=off", "label=\(identity)",
-      "icon.drawing=\(media.artwork == nil ? "on" : "off")", "icon=􀑪",
+      "icon.drawing=\(media.artwork == nil ? "on" : "off")",
+      "icon=\(SketchyBarSymbol.music.rawValue)",
       "--set", "macarchy.media.artist", "drawing=on", "label=\(media.artist)",
       "--set", "macarchy.media.title", "drawing=on", "label=\(media.title)",
     ]
