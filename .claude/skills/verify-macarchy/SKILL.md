@@ -26,7 +26,9 @@ command or proof of a Homebrew installation.
   `packaged-lean` builds/validates a release archive inside the guest and proves
   stable-path repair across two owned Cellar copies, then the same lifecycle.
   Actual Homebrew execution and native managed-Borders handoff remain unqualified.
-  Broad aggregate setup, keybindings and GUI acceptance remain **not covered**.
+  A bounded source bar-font install/remap check is recorded in features/setup.md;
+  no new journey. Broad aggregate setup, keybindings and GUI acceptance remain
+  **not covered**.
 - Last qualified on 2026-10-18 at `0a499fff`: clone, start, guest source build,
   doctor, theme drive, cleanup and evidence survival passed in
   `setup-5a1787da27ab/verify-c1c43d2d47fc`. 28 helper checks passed.

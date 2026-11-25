@@ -22,7 +22,7 @@ Missing prerequisites block; failures remain failures.
 | [Focus borders](borders.md) | Journey `borders`: accepted VM motion/1/8/24 preview predates 2026-10-16 helper changes; 2026-10-18 re-run passed 1-window cases, failed none-8 capture; hardware/Retina/real-app gaps explicit |
 | [Managed lean focus](lean.md) | `lean`: source lifecycle; `packaged-lean`: release archive, stable Cellar upgrade, zero idle writes; bounded teardown limitation |
 | [Keybindings](keybindings.md) | Mapped, not covered |
-| [Setup](setup.md) | Mapped, not covered; no onboarding claim |
+| [Setup](setup.md) | Bounded source bar-font install/remap check; aggregate setup/onboarding not covered |
 | [Action menu](menu.md) | Mapped, not covered; GUI needs separate qualification |
 
 Unmapped, with no journey: `capture`, `preferences`, `desktop` beyond

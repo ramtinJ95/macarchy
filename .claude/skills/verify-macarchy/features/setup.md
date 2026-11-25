@@ -1,7 +1,8 @@
 # Setup lifecycle
 
 Users review and install the curated environment, then inspect convergence and drift.
-This surface is mapped but **not covered**; fresh onboarding remains a separate gate.
+Aggregate setup is **not covered**; fresh onboarding remains a separate gate.
+A bounded source-CLI bar-font prerequisite/remap check is qualified below.
 
 ## Sub-features
 
@@ -39,6 +40,30 @@ evidence, not setup coverage. A JSON object or exit 1
 cannot establish correct setup behavior. Define source-grounded intended plan and
 status first; capture reviewed actions plus actual provider/ownership results.
 Never replace normal onboarding with internal state setters.
+
+### Bounded bar-font qualification (not a verify.py journey)
+
+On 2026-11-25, source e3e5382 in test-base clone setup-d4850e54d8ac /
+verify-4c90de5d458c passed the font-only slice. Launch/doctor and one inspected
+password submission preceded a bar-only personal package baseline with Kitty
+and all other roles disabled. Required Meslo and developer SF faces were absent.
+The real setup plan selected the normal Meslo cask from top_bar.provider; its
+approved first setup apply installed the missing packages and completed.
+
+CoreText mapped and shaped 58 factory glyph/font combinations with both exact
+MesloLGSNFM faces, without fallback. Bar/item queries confirmed the generated
+fonts/symbols; the three formerly broken center icons visibly rendered without
+boxes. Evidence: that run's font-e2e/report.json, plan.json, apply.json,
+06-font-before.log, 14-font-after.log, item JSON, bar.png and center-icons.png.
+Earlier failed fresh attempts remain recorded; post-cask visibility required
+bounded fresh-process observations, not another installer or a second apply.
+
+The guest native menu still overlaid the outer bar edges; this is not a clean
+whole-desktop/menu-toggle visual pass. Guest-only pointer input revealed the
+bar without setting its hidden state. The guest was stopped and deleted after
+evidence capture. No packaged/Homebrew Macarchy, native permissions, real audio
+controls, hardware or general onboarding qualification is implied. There is no
+new --journey setup or persistent arbitrary-command driver.
 
 ## Gotchas
 
