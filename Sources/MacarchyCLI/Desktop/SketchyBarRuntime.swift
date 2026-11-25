@@ -1043,7 +1043,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
   }
 
   private static func isBatteryLabel(_ value: String) -> Bool {
-    value == "No battery" || isVolumeLabel(value)
+    value == "No battery" || isPercentageLabel(value, zeroPadded: true)
   }
 
   private static func isBatteryEstimate(_ value: String) -> Bool {
@@ -1052,9 +1052,14 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
   }
 
   private static func isVolumeLabel(_ value: String) -> Bool {
+    // Current labels are unpadded; retained pre-change volume generations remain valid.
+    isPercentageLabel(value, zeroPadded: false) || isPercentageLabel(value, zeroPadded: true)
+  }
+
+  private static func isPercentageLabel(_ value: String, zeroPadded: Bool) -> Bool {
     guard value.hasSuffix("%"), let level = Int(value.dropLast()), (0...100).contains(level)
     else { return false }
-    return value == String(format: "%02d%%", level)
+    return value == (zeroPadded ? String(format: "%02d%%", level) : "\(level)%")
   }
 
   private static func isCanonicalUInt64(_ value: String) -> Bool {

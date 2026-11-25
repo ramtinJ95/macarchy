@@ -675,10 +675,16 @@ struct SketchyBarRuntimeTests {
 
     for (label, updateMask, sliderLevel, rowState, expected) in [
       ("42%", UInt64(4_111), "42", "absent", SketchyBarCoreRuntimeStatus.converged),
+      ("0%", UInt64(4_111), "0", "absent", .converged),
+      ("7%", UInt64(4_111), "7", "absent", .converged),
+      ("9%", UInt64(4_111), "9", "absent", .converged),
+      ("100%", UInt64(4_111), "100", "absent", .converged),
+      // Retained volume generations still report their zero-padded labels.
+      ("00%", UInt64(4_111), "0", "absent", .converged),
+      ("07%", UInt64(4_111), "7", "absent", .converged),
       ("09%", UInt64(4_111), "9", "absent", .converged),
       ("42%", UInt64(8), "42", "absent", .drifted),
       ("042%", UInt64(4_111), "42", "absent", .drifted),
-      ("9%", UInt64(4_111), "9", "absent", .drifted),
       ("42%", UInt64(4_111), "101", "absent", .drifted),
       ("42%", UInt64(4_111), "42", "valid", .converged),
       ("42%", UInt64(4_111), "42", "unmanaged", .drifted),
