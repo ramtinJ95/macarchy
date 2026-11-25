@@ -152,10 +152,13 @@ struct DependencyCapability: Sendable {
   }
 
   /// CoreText enumeration can retain this process's pre-install font inventory.
-  /// Only the post-install gate needs a new process; do not register or scan fonts here.
+  /// Fontd can also publish cask-installed faces asynchronously. Observe exact names
+  /// within a bounded post-install window; never register or scan fonts here.
   func isAvailableWithFreshFonts(
     executableURL: URL = RuntimeEnvironment.live.executableURL,
-    runner: ProcessRunner = .live
+    runner: ProcessRunner = .live,
+    now: @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+    wait: @Sendable (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
   ) throws -> Bool {
     let names: [String] = probes.compactMap {
       if case .postScriptFont(let name) = $0 { return name }
@@ -168,20 +171,41 @@ struct DependencyCapability: Sendable {
         return $0.isSatisfied()
       })
     else { return false }
-    let result = try runner.run(
-      .init(
-        executableURL: executableURL, arguments: ["setup", "_check-fonts"] + names, timeout: 2))
-    switch (result.terminationStatus, result.output) {
-    case (0, "registered"): return true
-    case (1, "missing"): return false
-    default: throw DependencyFontVerificationError()
+    let deadline = now() + 5
+    while now() < deadline {
+      let remaining = deadline - now()
+      guard remaining > 0 else { break }
+      let result = try runner.run(
+        .init(
+          executableURL: executableURL, arguments: ["setup", "_check-fonts"] + names,
+          timeout: min(2, remaining)))
+      switch (result.terminationStatus, result.output) {
+      case (0, "registered"):
+        guard now() < deadline else { break }
+        return true
+      case (1, "missing"): break
+      default: throw DependencyFontVerificationError.invalidReply
+      }
+      let delay = min(0.5, deadline - now())
+      if delay > 0 { wait(delay) }
     }
+    throw DependencyFontVerificationError.registrationUnconfirmed(names)
   }
 }
 
-struct DependencyFontVerificationError: Error, CustomStringConvertible {
+enum DependencyFontVerificationError: Error, CustomStringConvertible {
+  case invalidReply
+  case registrationUnconfirmed([String])
+
   var description: String {
-    "Fresh registered-font verification returned an invalid reply; no font availability is assumed."
+    switch self {
+    case .invalidReply:
+      "Fresh registered-font verification returned an invalid reply; no font availability is assumed."
+    case .registrationUnconfirmed(let names):
+      "font_registration_unconfirmed: Exact registered fonts were not confirmed within 5 seconds: "
+        + names.joined(separator: ", ")
+        + ". Installed packages are retained; no font fallback is assumed."
+    }
   }
 }
 

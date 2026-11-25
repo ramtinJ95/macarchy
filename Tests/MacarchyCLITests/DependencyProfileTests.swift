@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 import ThemeCore
 
@@ -20,8 +21,8 @@ struct DependencyProfileTests {
         }))
   }
 
-  @Test(arguments: [true, false])
-  func postInstallFontGateUsesAFreshExactExecutable(available: Bool) throws {
+  @Test
+  func postInstallFontGateUsesAFreshExactExecutable() throws {
     let capability = DependencyCapability(
       id: "sketchybar-symbol-font", category: .desktopSubstrate,
       probes: [.postScriptFont("MesloLGSNFM-Regular"), .postScriptFont("MesloLGSNFM-Bold")],
@@ -37,9 +38,58 @@ struct DependencyProfileTests {
           ])
         #expect(request.timeout == 2)
         return .init(
-          terminationStatus: available ? 0 : 1, output: available ? "registered" : "missing")
+          terminationStatus: 0, output: "registered")
       })
-    #expect(result == available)
+    #expect(result)
+  }
+
+  @Test(arguments: [true, false])
+  func freshFontGateWaitsOnlyForMissingRegistration(eventuallyRegistered: Bool) throws {
+    let clock = Mutex(0.0)
+    let calls = Mutex(0)
+    let capability = DependencyCapability(
+      id: "font", category: .desktopSubstrate, probes: [.postScriptFont("Fixture")],
+      remediation: .cask("font-meslo-lg-nerd-font"))
+    do {
+      let available = try capability.isAvailableWithFreshFonts(
+        runner: ProcessRunner { request in
+          calls.withLock { $0 += 1 }
+          let time = clock.withLock { $0 }
+          #expect(request.timeout == min(2, 5 - time))
+          let registered = eventuallyRegistered && time >= 2
+          return .init(
+            terminationStatus: registered ? 0 : 1, output: registered ? "registered" : "missing")
+        },
+        now: { clock.withLock { $0 } },
+        wait: { delay in
+          #expect(delay > 0 && delay <= 0.5)
+          clock.withLock { $0 += delay }
+        })
+      #expect(eventuallyRegistered && available)
+      #expect(clock.withLock { $0 } == 2)
+      #expect(calls.withLock { $0 } == 5)
+    } catch DependencyFontVerificationError.registrationUnconfirmed(let names) {
+      #expect(!eventuallyRegistered)
+      #expect(names == ["Fixture"])
+      #expect(clock.withLock { $0 } == 5)
+      #expect(calls.withLock { $0 } == 10)
+    }
+  }
+
+  @Test func fontRegistrationReportedAfterDeadlineIsNotAccepted() {
+    let clock = Mutex(0.0)
+    let capability = DependencyCapability(
+      id: "font", category: .desktopSubstrate, probes: [.postScriptFont("Fixture")],
+      remediation: .cask("font-meslo-lg-nerd-font"))
+    #expect(throws: DependencyFontVerificationError.self) {
+      try capability.isAvailableWithFreshFonts(
+        runner: ProcessRunner { _ in
+          clock.withLock { $0 = 5 }
+          return .init(terminationStatus: 0, output: "registered")
+        },
+        now: { clock.withLock { $0 } },
+        wait: { _ in Issue.record("Deadline must not sleep or retry") })
+    }
   }
 
   @Test(arguments: [
@@ -53,7 +103,9 @@ struct DependencyProfileTests {
       id: "font", category: .desktopSubstrate, probes: [.postScriptFont("Missing")],
       remediation: .cask("font-meslo-lg-nerd-font"))
     #expect(throws: DependencyFontVerificationError.self) {
-      try capability.isAvailableWithFreshFonts(runner: ProcessRunner { _ in reply })
+      try capability.isAvailableWithFreshFonts(
+        runner: ProcessRunner { _ in reply },
+        wait: { _ in Issue.record("Invalid replies must not retry") })
     }
   }
 
@@ -63,7 +115,9 @@ struct DependencyProfileTests {
       remediation: .cask("font-meslo-lg-nerd-font"))
     struct Unavailable: Error {}
     #expect(throws: Unavailable.self) {
-      try capability.isAvailableWithFreshFonts(runner: ProcessRunner { _ in throw Unavailable() })
+      try capability.isAvailableWithFreshFonts(
+        runner: ProcessRunner { _ in throw Unavailable() },
+        wait: { _ in Issue.record("Transport failures must not retry") })
     }
     let system = DependencyCapability(
       id: "system", category: .platformRuntime, probes: [.executable(URL(filePath: "/bin/sh"))],
