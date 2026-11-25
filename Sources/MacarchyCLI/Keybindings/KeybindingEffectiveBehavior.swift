@@ -100,7 +100,7 @@ struct KeybindingProcessInspector: Sendable {
 
   static func with(
     processRunner: ProcessRunner,
-    expectedExecutable: String = supportedExecutablePath,
+    expectedExecutable: @escaping @Sendable () -> String = { supportedExecutablePath },
     snapshot: @escaping @Sendable (Int32) throws -> KeybindingProcessSnapshot = processSnapshot
   ) -> Self {
     Self {
@@ -115,7 +115,8 @@ struct KeybindingProcessInspector: Sendable {
           }
           return validated(
             processIDs: processIDs,
-            expectedExecutable: expectedExecutable,
+            // Planning may construct this inspector before Homebrew installs skhd.
+            expectedExecutable: expectedExecutable(),
             snapshot: snapshot
           )
         case 1:
