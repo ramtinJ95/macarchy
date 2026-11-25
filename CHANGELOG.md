@@ -7,6 +7,36 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-11-25
+
+### Changed
+
+- Macarchy is now in beta, and the README has a new overview video covering
+  tiling, workspaces, themes and the apps themed out of the box (#350).
+
+### Fixed
+
+- Guided setup waits for System Events launch readiness and makes one
+  nonprompting re-check after a process-not-found result, including after consent.
+  After native consent, bounded fresh-process read-only checks attempt to verify
+  access; unconfirmed consent has an explicit state and recovery command.
+  Denial and timeouts remain explicit failures, never assumed grants (#348).
+- Setup review now summarizes packages, configuration backups, permissions and
+  blockers instead of repeating the full inventory. Every planned action remains
+  visible, including user scripts and native accent/icon-style changes. Use
+  `setup guided --resume --full` for a retained profile's full guided inventory,
+  including starters/replacements; JSON and status/doctor remain complete (#348).
+- Render the stock SketchyBar icons with the normally provisioned Meslo Nerd Font instead of assuming SF Pro is installed. Bar-only setups now require that font even with Kitty disabled (#349).
+- Bound post-install exact-font registration checks so normal cask publication delay does not abort fresh setup; unconfirmed registration remains an explicit failure with installed-package evidence retained (#349).
+- Detect the current-user skhd process when opening the keybinding viewer from a hotkey, while retaining drift reporting when skhd is absent. Resolve its supported executable on each inspection so planning before installation does not leave a stale identity (#349).
+- Show unpadded volume percentages (0%, 7%, 42%, 100%) in SketchyBar instead of displaying zero as 00% (#349).
+
+### Known limitations
+
+- Immediate System Events verification can remain `consent_unconfirmed` after
+  native Allow. Configuration is retained, appearance stays pending, and setup
+  gives the read-only `macarchy setup check-appearance --json` recovery check (#348).
+
 ## [0.18.0] - 2026-11-24
 
 ### Added
