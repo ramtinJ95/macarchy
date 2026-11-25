@@ -638,6 +638,44 @@ struct KeybindingsEffectiveCommandTests {
   }
 
   @Test
+  func supportedIdentityIsResolvedAfterInstallationInsteadOfInspectorConstruction() {
+    let installed = Mutex(false)
+    let expectedPath = Mutex("/opt/homebrew/bin/skhd")
+    let resolutions = Mutex(0)
+    let cellarPath = "/opt/homebrew/Cellar/skhd/0.3.9/bin/skhd"
+    let inspector = KeybindingProcessInspector.with(
+      processRunner: ProcessRunner { _ in
+        let running = installed.withLock { $0 }
+        return .init(terminationStatus: running ? 0 : 1, output: running ? "42" : "")
+      },
+      expectedExecutable: {
+        resolutions.withLock { $0 += 1 }
+        return expectedPath.withLock { $0 }
+      },
+      snapshot: { pid in
+        KeybindingProcessSnapshot(
+          processID: pid, executablePath: cellarPath, arguments: ["skhd"])
+      })
+
+    // Guided planning creates the live singleton while skhd is still absent.
+    #expect(resolutions.withLock { $0 } == 0)
+    #expect(inspector.inspect() == .notRunning)
+
+    // The same inspector must observe Homebrew's new symlink destination.
+    expectedPath.withLock { $0 = cellarPath }
+    installed.withLock { $0 = true }
+    let process = inspector.inspect()
+    #expect(process.status == .running)
+    #expect(process.executablePath == cellarPath)
+    #expect(resolutions.withLock { $0 } == 1)
+
+    // Resolve on every inspection, not just the first observation after install.
+    expectedPath.withLock { $0 = "/opt/homebrew/Cellar/skhd/other/bin/skhd" }
+    #expect(inspector.inspect().status == .unsupported)
+    #expect(resolutions.withLock { $0 } == 2)
+  }
+
+  @Test
   func absentSkhdStillReportsManagedDriftInTheViewer() throws {
     let fixture = try EffectiveCommandFixture()
     defer { fixture.remove() }
