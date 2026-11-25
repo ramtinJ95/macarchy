@@ -64,7 +64,7 @@ enum SketchyBarVolumeScript {
     ICON='\(SketchyBarSymbol.volumeOff.rawValue)'
     if [ "$VOLUME" -gt 60 ]; then ICON='\(SketchyBarSymbol.volumeHigh.rawValue)'
     elif [ "$VOLUME" -gt 0 ]; then ICON='\(SketchyBarSymbol.volumeLow.rawValue)'; fi
-    LABEL=$(printf '%02d%%' "$VOLUME")
+    LABEL=$(printf '%d%%' "$VOLUME")
     "$BAR" --set macarchy.volume label="$LABEL" label.color="$MACARCHY_TEXT_COLOR" \\
       --set macarchy.volume.icon label="$ICON" label.color="$MACARCHY_TEXT_COLOR" \\
       --set macarchy.volume.slider slider.percentage="$VOLUME"

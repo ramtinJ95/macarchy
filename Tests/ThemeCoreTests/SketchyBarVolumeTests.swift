@@ -9,11 +9,19 @@ struct SketchyBarVolumeTests {
   func rendersLevelIconsAndSlider(level: Int) throws {
     let result = try run(environment: ["SENDER": "volume_change", "INFO": String(level)])
     #expect(result.status == 0)
-    #expect(result.output.contains("label=\(String(format: "%02d%%", level))\n"))
+    #expect(result.output.contains("label=\(String(level) + "%")\n"))
     #expect(result.output.contains("slider.percentage=\(level)\n"))
     let icon = level > 60 ? "" : level > 30 ? "" : level > 10 ? "" : level > 0 ? "" : ""
     #expect(result.output.contains("macarchy.volume.icon\nlabel=\(icon)\n"))
     #expect(!result.output.contains("osascript:"))
+  }
+
+  @Test(arguments: [(0, "0%"), (7, "7%"), (42, "42%"), (100, "100%")])
+  func volumeLabelsHaveNoLeadingZeroAndRetainAllDigits(level: Int, label: String) throws {
+    let result = try run(environment: ["SENDER": "volume_change", "INFO": String(level)])
+    #expect(result.status == 0)
+    #expect(result.output.contains("macarchy.volume\nlabel=\(label)\n"))
+    #expect(result.output.contains("slider.percentage=\(level)\n"))
   }
 
   @Test(arguments: ["", "101", "-1", "1.2", "2\n3", "1; touch /tmp/unsafe"])
