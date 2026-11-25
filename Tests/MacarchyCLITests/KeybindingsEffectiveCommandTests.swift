@@ -605,6 +605,58 @@ struct KeybindingsEffectiveCommandTests {
     #expect(behavior.statusMessage.contains("changed during bounded inspection"))
   }
 
+  @Test(arguments: [true, false])
+  func discoveryFindsHotkeyAncestorAndLaunchdStartedNonAncestor(isAncestor: Bool) throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    try fixture.arrange(.converged)
+    let supported = KeybindingProcessInspector.supportedExecutablePath
+    let inspector = KeybindingProcessInspector.with(
+      processRunner: ProcessRunner { request in
+        let expected = ProcessRequest.processLookup(
+          "skhd", owner: .effectiveUser, includeAncestors: true, timeout: 1)
+        #expect(request.executableURL == expected.executableURL)
+        #expect(request.arguments == expected.arguments)
+        #expect(request.timeout == 1)
+        // Model macOS pgrep: a launchd-started service outside our ancestry is
+        // always eligible; a hotkey-launching ancestor requires -a. No -P filter.
+        let found = !isAncestor || request.arguments.contains("-a")
+        return .init(terminationStatus: found ? 0 : 1, output: found ? "42" : "")
+      },
+      snapshot: { pid in
+        #expect(pid == 42)
+        return KeybindingProcessSnapshot(
+          processID: pid, executablePath: supported, arguments: ["skhd"])
+      })
+    let process = inspector.inspect()
+    #expect(process.status == .running)
+    #expect(process.processID == 42)
+    let behavior = fixture.inspect(process: process)
+    #expect(behavior.status == .converged)
+    let popup = try fixture.show(behavior)
+    #expect(!popup.stateMessage.contains("No skhd process"))
+  }
+
+  @Test
+  func absentSkhdStillReportsManagedDriftInTheViewer() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    try fixture.arrange(.converged)
+    let inspector = KeybindingProcessInspector.with(
+      processRunner: ProcessRunner { _ in .init(terminationStatus: 1, output: "") },
+      snapshot: { pid in
+        Issue.record("No-match discovery must not inspect a process or assume a service is running")
+        return KeybindingProcessSnapshot(processID: pid, executablePath: "", arguments: [])
+      })
+    let process = inspector.inspect()
+    #expect(process == .notRunning)
+    let behavior = fixture.inspect(process: process)
+    #expect(behavior.status == .drifted)
+    #expect(behavior.statusMessage == KeybindingProcessInspection.notRunning.message)
+    let popup = try fixture.show(behavior)
+    #expect(popup.stateMessage.contains("No skhd process is running"))
+  }
+
   @Test
   func processInspectionValidatesExecutableIdentityAndConfigSelection() {
     let expected = "/supported/skhd"

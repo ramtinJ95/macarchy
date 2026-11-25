@@ -96,34 +96,43 @@ struct KeybindingProcessInspector: Sendable {
     self.inspect = inspect
   }
 
-  static let live = KeybindingProcessInspector {
-    do {
-      let result = try ProcessRunner.live.run(
-        .processLookup("skhd", owner: .effectiveUser, timeout: 1))
-      switch result.terminationStatus {
-      case 0:
-        let processIDs = result.output.split(whereSeparator: \.isNewline).compactMap {
-          Int32($0.trimmingCharacters(in: .whitespaces))
+  static let live = with(processRunner: .live)
+
+  static func with(
+    processRunner: ProcessRunner,
+    expectedExecutable: String = supportedExecutablePath,
+    snapshot: @escaping @Sendable (Int32) throws -> KeybindingProcessSnapshot = processSnapshot
+  ) -> Self {
+    Self {
+      do {
+        // The hotkey viewer runs below skhd; pgrep otherwise hides its launching ancestor.
+        let result = try processRunner.run(
+          .processLookup("skhd", owner: .effectiveUser, includeAncestors: true, timeout: 1))
+        switch result.terminationStatus {
+        case 0:
+          let processIDs = result.output.split(whereSeparator: \.isNewline).compactMap {
+            Int32($0.trimmingCharacters(in: .whitespaces))
+          }
+          return validated(
+            processIDs: processIDs,
+            expectedExecutable: expectedExecutable,
+            snapshot: snapshot
+          )
+        case 1:
+          return .notRunning
+        default:
+          return KeybindingProcessInspection.unobserved(
+            .unavailable,
+            "skhd process evidence is unavailable (pgrep status "
+              + "\(result.terminationStatus))."
+          )
         }
-        return validated(
-          processIDs: processIDs,
-          expectedExecutable: supportedExecutablePath,
-          snapshot: processSnapshot
-        )
-      case 1:
-        return .notRunning
-      default:
+      } catch {
         return KeybindingProcessInspection.unobserved(
           .unavailable,
-          "skhd process evidence is unavailable (pgrep status "
-            + "\(result.terminationStatus))."
+          "skhd process evidence is unavailable: \(error)"
         )
       }
-    } catch {
-      return KeybindingProcessInspection.unobserved(
-        .unavailable,
-        "skhd process evidence is unavailable: \(error)"
-      )
     }
   }
 
