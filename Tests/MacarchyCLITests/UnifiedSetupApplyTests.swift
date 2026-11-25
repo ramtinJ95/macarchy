@@ -8,6 +8,54 @@ import Testing
 @testable import ThemeCore
 
 struct UnifiedSetupApplyTests {
+
+  @Test func fontVerificationFailureRetainsCompletedPackageEvidenceBeforeConfiguration()
+    async throws
+  {
+    let fixture = try ApplyFixture()
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    try "schema_version = 1\n[packages]\nbaseline = 'standard'\n".write(
+      to: fixture.context.profileURL, atomically: true, encoding: .utf8)
+    let inventory = try InventoryFixture()
+    defer { inventory.cleanup() }
+    let installed = Mutex(false)
+    struct ProbeFailure: Error, CustomStringConvertible {
+      var description: String { "Font child verification failed" }
+    }
+    let runner = fixture.runner(
+      available: { _ in true },
+      postInstallAvailable: { _ in throw ProbeFailure() },
+      packages: try SetupBrewfile.parse("brew 'jq'\n"),
+      inventory: { inventory.reader(formulae: installed.withLock { $0 } ? "jq" : "").read() },
+      installer: .init(apply: { _, _ in
+        try inventory.formula("jq", tap: "homebrew/core")
+        installed.withLock { $0 = true }
+        return .init(status: 0, diagnostic: "installed")
+      }),
+      theme: { _, _ in throw UnexpectedComponentCall() },
+      desktop: { _, _, _, _, _ in throw UnexpectedComponentCall() },
+      environment: { _, _, _, _, _ in throw UnexpectedComponentCall() })
+    let plan = try runner.planner.prepare(context: fixture.context).report
+    let execution = try await runner.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths(),
+      packageApproval: plan.packageInstallation?.approvalDigest, json: true)
+    let report = try jsonObject(execution.output)
+    #expect(installed.withLock { $0 })
+    #expect(!execution.succeeded)
+    #expect(report["outcome"] as? String == "failed")
+    #expect(report["mutated"] as? Bool == true)
+    #expect(
+      (report["message"] as? String)?.contains(
+        "Post-install capability verification failed: Font child verification failed") == true)
+    #expect((report["packages"] as? [String: Any])?["mutated"] as? Bool == true)
+    #expect((report["packages"] as? [String: Any])?["outcome"] as? String == "installed")
+    #expect(report["desktop"] == nil && report["environment"] == nil)
+    #expect(
+      try SetupCoreOwnershipStore(stateRoot: fixture.state).read()?.themeGenerationID
+        == manifest.generationID)
+  }
+
   @Test func blockedPostInstallGuidanceResumesWithoutRepeatingHomebrew() async throws {
     let fixture = try ApplyFixture()
     let manifest = try fixture.activateSetupOwnedTheme()

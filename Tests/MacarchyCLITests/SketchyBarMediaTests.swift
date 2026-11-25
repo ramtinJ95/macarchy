@@ -44,6 +44,7 @@ struct SketchyBarMediaTests {
     try media.execute(name: "macarchy.media", sender: "routine")
     let calls = state.value.withLock { $0.calls }
     #expect(artworkCalls == 1)
+    #expect(calls.contains { $0.contains("icon=\u{f001}") })
     #expect(
       calls.contains {
         $0.contains("label=Title $(bad) 'quoted'")

@@ -427,10 +427,14 @@ package struct SketchyBarConfigurationComposer: Sendable {
     nativeConfiguration: Bool,
     macarchyExecutablePath: String
   ) -> String {
-    let font = DesktopShellSyntax.literal("\(settings.font):Semibold:\(settings.fontSize).0")
-    let iconFont = DesktopShellSyntax.literal("\(settings.font):Bold:\(settings.fontSize).0")
+    func textFont(_ style: String, _ size: Int) -> String {
+      DesktopShellSyntax.literal("\(settings.font):\(style):\(size).0")
+    }
+    let font = DesktopShellSyntax.literal("\(settings.font):Regular:\(settings.fontSize).0")
+    let iconFont = DesktopShellSyntax.literal(
+      "\(SketchyBarSymbol.fontFamily):Bold:\(settings.fontSize).0")
     let labelFont = DesktopShellSyntax.literal(
-      "\(settings.font):Semibold:\(max(8, settings.fontSize - 1)).0")
+      "\(settings.font):Regular:\(max(8, settings.fontSize - 1)).0")
     var lines = [
       "#!/bin/sh",
       "set -eu",
@@ -484,7 +488,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
           lines += [
             "\"$SKETCHYBAR\" --add item \(preview) right --set \(preview) drawing=off label=0",
             "\"$SKETCHYBAR\" --add item \(clock) \(position.rawValue) \\",
-            "  --set \(clock) icon.drawing=off label.font='SF Mono:Semibold:13.0' label.align=center updates=on update_freq=30 script=\"$PLUGIN_DIR/\(SketchyBarContract.clockPlugin).sh\"",
+            "  --set \(clock) icon.drawing=off label.font=\(textFont("Regular", 13)) label.align=center updates=on update_freq=30 script=\"$PLUGIN_DIR/\(SketchyBarContract.clockPlugin).sh\"",
             "\"$SKETCHYBAR\" --subscribe \(clock) mouse.clicked display_change system_woke",
           ]
           for companion in SketchyBarClockCompanion.all {
@@ -493,7 +497,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
               lines.append("\"$SKETCHYBAR\" --add event \(event)")
             }
             lines += [
-              "\"$SKETCHYBAR\" --add item \(item) \(position.rawValue) --set \(item) drawing=\(companion.initiallyDrawn ? "on" : "off") icon='\(companion.icon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$\(companion.iconColor)\" label.drawing=off updates=on update_freq=\(companion.updateFrequency) script=\"$PLUGIN_DIR/\(companion.plugin).sh\" popup.align=center",
+              "\"$SKETCHYBAR\" --add item \(item) \(position.rawValue) --set \(item) drawing=\(companion.initiallyDrawn ? "on" : "off") icon='\(companion.icon)' icon.font='\(SketchyBarSymbol.fontFamily):Regular:14.0' icon.color=\"$\(companion.iconColor)\" label.drawing=off updates=on update_freq=\(companion.updateFrequency) script=\"$PLUGIN_DIR/\(companion.plugin).sh\" popup.align=center",
               "\"$SKETCHYBAR\" --add item \(companion.detailItem) popup.\(item) --set \(companion.detailItem) icon.drawing=off label='\(companion.initialDetail)'",
               "\"$SKETCHYBAR\" --subscribe \(item) \(companion.events.joined(separator: " "))",
             ]
@@ -515,7 +519,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
           lines += [
             // Permission events must run even when the toggle hides the bar.
             // update_freq=0 keeps this event-driven rather than adding a poller.
-            "\"$SKETCHYBAR\" --add item macarchy.apple \(position.rawValue) --set macarchy.apple icon='􀣺' icon.font='SF Pro:Bold:14.0' icon.padding_left=2 icon.padding_right=6 label.drawing=off padding_left=0 padding_right=4 updates=on update_freq=0 script=\"$PLUGIN_DIR/apple.sh\"",
+            "\"$SKETCHYBAR\" --add item macarchy.apple \(position.rawValue) --set macarchy.apple icon='\(SketchyBarSymbol.apple.rawValue)' icon.font='\(SketchyBarSymbol.fontFamily):Bold:14.0' icon.padding_left=2 icon.padding_right=6 label.drawing=off padding_left=0 padding_right=4 updates=on update_freq=0 script=\"$PLUGIN_DIR/apple.sh\"",
             "\"$SKETCHYBAR\" --add event macarchy_permission_check",
             "\"$SKETCHYBAR\" --subscribe macarchy.apple mouse.clicked macarchy_permission_check",
           ]
@@ -527,29 +531,36 @@ package struct SketchyBarConfigurationComposer: Sendable {
           ]
           for (part, size, offset, limit) in [("artist", 9, 6, 18), ("title", 11, -5, 16)] {
             lines += [
-              "\"$SKETCHYBAR\" --add item macarchy.media.\(part) \(position.rawValue) --set macarchy.media.\(part) drawing=off \(part == "artist" ? "width=0 " : "")padding_left=3 padding_right=0 icon.drawing=off label.width=0 label.font='SF Pro:Semibold:\(size).0' label.max_chars=\(limit) label.y_offset=\(offset) label.color=\"$\(part == "artist" ? "MACARCHY_MUTED_COLOR" : "MACARCHY_TEXT_COLOR")\" script=\"$PLUGIN_DIR/media.sh\"",
+              "\"$SKETCHYBAR\" --add item macarchy.media.\(part) \(position.rawValue) --set macarchy.media.\(part) drawing=off \(part == "artist" ? "width=0 " : "")padding_left=3 padding_right=0 icon.drawing=off label.width=0 label.font=\(textFont("Regular", size)) label.max_chars=\(limit) label.y_offset=\(offset) label.color=\"$\(part == "artist" ? "MACARCHY_MUTED_COLOR" : "MACARCHY_TEXT_COLOR")\" script=\"$PLUGIN_DIR/media.sh\"",
               "\"$SKETCHYBAR\" --subscribe macarchy.media.\(part) mouse.entered mouse.exited mouse.exited.global",
             ]
           }
-          for (part, icon) in [("previous", "􀊊"), ("playpause", "􀊈"), ("next", "􀊌")] {
+          for (part, icon) in [
+            ("previous", SketchyBarSymbol.previous.rawValue),
+            ("playpause", SketchyBarSymbol.play.rawValue), ("next", SketchyBarSymbol.next.rawValue),
+          ] {
             lines += [
               "\"$SKETCHYBAR\" --add item macarchy.media.\(part) popup.macarchy.media --set macarchy.media.\(part) label.drawing=off icon='\(icon)' click_script=\(DesktopShellSyntax.literal(Self.pluginClickScript(sender: "macarchy.media.\(part)", pluginPath: "\(pluginPath)/media.sh")))"
             ]
           }
         case .wifi:
-          for (suffix, icon, offset) in [("up", "􀄨", 4), ("down", "􀄩", -4)] {
+          for (suffix, icon, offset) in [
+            ("up", SketchyBarSymbol.upload.rawValue, 4),
+            ("down", SketchyBarSymbol.download.rawValue, -4),
+          ] {
             lines += [
-              "\"$SKETCHYBAR\" --add item macarchy.wifi.\(suffix) \(position.rawValue) --set macarchy.wifi.\(suffix) padding_left=-5 \(suffix == "up" ? "width=0 " : "")y_offset=\(offset) icon='\(icon)' icon.font='SF Pro:Bold:9.0' icon.padding_right=0 label.font='SF Mono:Bold:9.0' label='--' script=\"$PLUGIN_DIR/wifi.sh\"",
+              "\"$SKETCHYBAR\" --add item macarchy.wifi.\(suffix) \(position.rawValue) --set macarchy.wifi.\(suffix) padding_left=-5 \(suffix == "up" ? "width=0 " : "")y_offset=\(offset) icon='\(icon)' icon.font='\(SketchyBarSymbol.fontFamily):Bold:9.0' icon.padding_right=0 label.font=\(textFont("Bold", 9)) label='--' script=\"$PLUGIN_DIR/wifi.sh\"",
               "\"$SKETCHYBAR\" --subscribe macarchy.wifi.\(suffix) mouse.clicked",
             ]
           }
           lines += [
-            "\"$SKETCHYBAR\" --add item macarchy.wifi \(position.rawValue) --set macarchy.wifi label.drawing=off icon='􀙈' icon.padding_right=8 update_freq=2 script=\"$PLUGIN_DIR/wifi.sh\"",
+            "\"$SKETCHYBAR\" --add item macarchy.wifi \(position.rawValue) --set macarchy.wifi label.drawing=off icon='\(SketchyBarSymbol.disconnected.rawValue)' icon.padding_right=8 update_freq=2 script=\"$PLUGIN_DIR/wifi.sh\"",
             "\"$SKETCHYBAR\" --add bracket macarchy.wifi.bracket macarchy.wifi macarchy.wifi.up macarchy.wifi.down --set macarchy.wifi.bracket position=\(position.rawValue) label.drawing=off icon.drawing=off background.color=0x00000000 background.border_width=0 popup.align=center popup.height=30",
             "\"$SKETCHYBAR\" --subscribe macarchy.wifi mouse.clicked mouse.exited.global system_woke",
           ]
           for (field, title) in [
-            ("ssid", "􁓤"), ("hostname", "Hostname:"), ("ip", "IP:"), ("mask", "Subnet mask:"),
+            ("ssid", SketchyBarSymbol.network.rawValue), ("hostname", "Hostname:"), ("ip", "IP:"),
+            ("mask", "Subnet mask:"),
             ("router", "Router:"),
           ] {
             lines += [
@@ -560,22 +571,22 @@ package struct SketchyBarConfigurationComposer: Sendable {
         case .cpu, .memory:
           let name = "macarchy.\(module.rawValue)"
           lines += [
-            "\"$SKETCHYBAR\" --add item \(name) \(position.rawValue) --set \(name) icon.drawing=off width=54 padding_left=2 padding_right=2 label.font='SF Mono:Bold:10.0' label.padding_left=0 label.padding_right=0 label.align=left label='--%' update_freq=\(module == .cpu ? 2 : 5) script=\"$PLUGIN_DIR/\(module.rawValue).sh\" click_script='/usr/bin/open -a \"Activity Monitor\"'"
+            "\"$SKETCHYBAR\" --add item \(name) \(position.rawValue) --set \(name) icon.drawing=off width=54 padding_left=2 padding_right=2 label.font=\(textFont("Bold", 10)) label.padding_left=0 label.padding_right=0 label.align=left label='--%' update_freq=\(module == .cpu ? 2 : 5) script=\"$PLUGIN_DIR/\(module.rawValue).sh\" click_script='/usr/bin/open -a \"Activity Monitor\"'"
           ]
         case .battery:
           lines += [
-            "\"$SKETCHYBAR\" --add item macarchy.battery \(position.rawValue) --set macarchy.battery icon.font='SF Pro:Regular:15.0' label.font='SF Mono:Semibold:10.0' label='--%' update_freq=180 script=\"$PLUGIN_DIR/battery.sh\"",
+            "\"$SKETCHYBAR\" --add item macarchy.battery \(position.rawValue) --set macarchy.battery icon.font='\(SketchyBarSymbol.fontFamily):Regular:15.0' label.font=\(textFont("Regular", 10)) label='--%' update_freq=180 script=\"$PLUGIN_DIR/battery.sh\"",
             "\"$SKETCHYBAR\" --add item macarchy.battery.remaining popup.macarchy.battery --set macarchy.battery.remaining icon.drawing=off label='No estimate'",
             "\"$SKETCHYBAR\" --subscribe macarchy.battery power_source_change system_woke mouse.clicked mouse.exited.global",
           ]
         case .volume:
           lines += [
             "\"$SKETCHYBAR\" --add item macarchy.volume \(position.rawValue) \\",
-            "  --set macarchy.volume icon.drawing=off label.font='SF Mono:Semibold:10.0' label.padding_left=-1 label=\"--%\" script=\"$PLUGIN_DIR/volume.sh\"",
-            "\"$SKETCHYBAR\" --add item macarchy.volume.icon \(position.rawValue) --set macarchy.volume.icon padding_right=-1 icon='􀊩' icon.width=0 icon.align=left icon.color=\"$MACARCHY_MUTED_COLOR\" icon.font='SF Pro:Regular:13.0' label='􀊣' label.width=25 label.align=left label.font='SF Pro:Regular:13.0' script=\"$PLUGIN_DIR/volume.sh\"",
+            "  --set macarchy.volume icon.drawing=off label.font=\(textFont("Regular", 10)) label.padding_left=-1 label=\"--%\" script=\"$PLUGIN_DIR/volume.sh\"",
+            "\"$SKETCHYBAR\" --add item macarchy.volume.icon \(position.rawValue) --set macarchy.volume.icon padding_right=-1 icon='\(SketchyBarSymbol.volumeHigh.rawValue)' icon.width=0 icon.align=left icon.color=\"$MACARCHY_MUTED_COLOR\" icon.font='\(SketchyBarSymbol.fontFamily):Regular:13.0' label='\(SketchyBarSymbol.volumeOff.rawValue)' label.width=25 label.align=left label.font='\(SketchyBarSymbol.fontFamily):Regular:13.0' script=\"$PLUGIN_DIR/volume.sh\"",
             "\"$SKETCHYBAR\" --add bracket macarchy.volume.bracket macarchy.volume.icon macarchy.volume --set macarchy.volume.bracket position=\(position.rawValue) icon.drawing=off label.drawing=off background.color=0x00000000 background.border_width=0 popup.align=center",
             "\"$SKETCHYBAR\" --add item macarchy.volume.padding \(position.rawValue) --set macarchy.volume.padding width=8 icon.drawing=off label.drawing=off",
-            "\"$SKETCHYBAR\" --add slider macarchy.volume.slider popup.macarchy.volume.bracket 250 --set macarchy.volume.slider slider.highlight_color=\"$MACARCHY_ACCENT_COLOR\" slider.background.height=6 slider.background.corner_radius=3 slider.background.color=\"$MACARCHY_MUTED_COLOR\" slider.knob='􀀁' background.height=2 background.y_offset=-20 icon.drawing=off label.drawing=off click_script=\(DesktopShellSyntax.literal(Self.pluginClickScript(sender: "macarchy.slider", pluginPath: "\(pluginPath)/volume.sh")))",
+            "\"$SKETCHYBAR\" --add slider macarchy.volume.slider popup.macarchy.volume.bracket 250 --set macarchy.volume.slider slider.highlight_color=\"$MACARCHY_ACCENT_COLOR\" slider.background.height=6 slider.background.corner_radius=3 slider.background.color=\"$MACARCHY_MUTED_COLOR\" slider.knob='\(SketchyBarSymbol.sliderKnob.rawValue)' slider.knob.font='\(SketchyBarSymbol.fontFamily):Regular:13.0' background.height=2 background.y_offset=-20 icon.drawing=off label.drawing=off click_script=\(DesktopShellSyntax.literal(Self.pluginClickScript(sender: "macarchy.slider", pluginPath: "\(pluginPath)/volume.sh")))",
             "\"$SKETCHYBAR\" --subscribe macarchy.volume volume_change system_woke mouse.clicked mouse.scrolled mouse.exited.global",
             "\"$SKETCHYBAR\" --subscribe macarchy.volume.icon mouse.clicked mouse.scrolled",
           ]

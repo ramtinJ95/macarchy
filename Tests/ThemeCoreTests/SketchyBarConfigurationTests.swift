@@ -5,6 +5,45 @@ import Testing
 @testable import ThemeCore
 
 struct SketchyBarConfigurationTests {
+
+  @Test(arguments: [false, true])
+  func factorySymbolsDoNotDependOnTheTextFont(custom: Bool) throws {
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let textFont = custom ? "A'Font;$HOME" : "MesloLGS Nerd Font Mono"
+    let defaults = root.appending(path: "defaults.toml")
+    try String(contentsOf: defaultsURL, encoding: .utf8)
+      .replacingOccurrences(
+        of: "font = \"MesloLGS Nerd Font Mono\"", with: "font = \"\(textFont)\""
+      )
+      .write(to: defaults, atomically: true, encoding: .utf8)
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n", source: root.appending(path: "profile.toml"))
+    let composition = try SketchyBarConfigurationComposer().compose(
+      defaultsURL: defaults, profile: profile, stateRoot: root)
+    let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
+    let all = composition.artifacts.map(\.contents).joined()
+    #expect(!all.contains("SF Pro"))
+    #expect(!all.contains("SF Mono"))
+    #expect(!all.unicodeScalars.contains { (0xF0000...0x10FFFF).contains($0.value) })
+    #expect(entry.contents.contains("icon.font='MesloLGS Nerd Font Mono:Bold:13.0'"))
+    #expect(entry.contents.contains("slider.knob.font='MesloLGS Nerd Font Mono:Regular:13.0'"))
+    #expect(
+      entry.contents.contains(
+        "label.font=" + DesktopShellSyntax.literal("\(textFont):Regular:13.0")))
+    #expect(SketchyBarClockCompanion.keepAwakeIcon == "\u{f0f4}")
+    #expect(SketchyBarClockCompanion.microphoneLiveIcon == "\u{f130}")
+    #expect(SketchyBarClockCompanion.microphoneMutedIcon == "\u{f131}")
+    #expect(SketchyBarClockCompanion.saverIdleIcon == "\u{f26c}")
+    #expect(SketchyBarClockCompanion.saverPausedIcon == "\u{f04c}")
+    #expect(
+      SketchyBarSymbol.allCases.allSatisfy {
+        $0.rawValue.unicodeScalars.count == 1
+          && (0xE000...0xF8FF).contains($0.rawValue.unicodeScalars.first!.value)
+      })
+    try requireValidShellSyntax(composition.artifacts, root: root)
+  }
+
   @Test(arguments: [false, true])
   func generatedCommandsPreserveNativeArguments(toggle: Bool) throws {
     let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
@@ -175,9 +214,9 @@ struct SketchyBarConfigurationTests {
       let lines = entry.contents.split(separator: "\n").map(String.init)
       // The toggles are always drawn, dimmed until their script reads the feature's state.
       for (name, event, icon) in [
-        ("keep-awake", "macarchy_keep_awake_changed", "\u{100E19}"),
-        ("microphone", "macarchy_microphone_changed", "\u{1002B1}"),
-        ("saver-paused", "macarchy_saver_idle_changed", "\u{10114B}"),
+        ("keep-awake", "macarchy_keep_awake_changed", "\u{f0f4}"),
+        ("microphone", "macarchy_microphone_changed", "\u{f130}"),
+        ("saver-paused", "macarchy_saver_idle_changed", "\u{f26c}"),
       ] {
         let declaration = try #require(
           lines.firstIndex(of: "\"$SKETCHYBAR\" --add event \(event)"))
@@ -363,8 +402,8 @@ struct SketchyBarConfigurationTests {
     )
     let entry = try #require(first.artifacts.first { $0.path == "sketchybarrc" })
     #expect(entry.contents.contains("topmost=window padding_left=8 padding_right=8"))
-    #expect(entry.contents.contains("icon.font='SF Pro:Bold:13.0'"))
-    #expect(entry.contents.contains("label.font='SF Pro:Semibold:12.0'"))
+    #expect(entry.contents.contains("icon.font='MesloLGS Nerd Font Mono:Bold:13.0'"))
+    #expect(entry.contents.contains("label.font='MesloLGS Nerd Font Mono:Regular:12.0'"))
     #expect(entry.contents.contains("icon.width=24"))
     #expect(entry.contents.contains("popup.blur_radius=50"))
     #expect(entry.contents.contains("SPACE_INDICES="))

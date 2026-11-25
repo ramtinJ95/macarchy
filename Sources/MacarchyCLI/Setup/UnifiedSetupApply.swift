@@ -24,7 +24,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   let planner: UnifiedSetupPlanCommandRunner
   let themeInspection: UnifiedSetupThemeInspection
   var packageInstaller: HomebrewBundleInstaller
-  let capabilityIsAvailable: @Sendable (DependencyCapability) -> Bool
+  let capabilityIsAvailable: @Sendable (DependencyCapability) throws -> Bool
   var writePreMutationPlan: @Sendable (String) throws -> Void
   var themeApply: ThemeApply
   var beforeConfiguration: @Sendable (UnifiedSetupPlanContext, PortableProfile) throws -> String? =
@@ -41,7 +41,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     planner: UnifiedSetupPlanCommandRunner,
     themeInspection: @escaping UnifiedSetupThemeInspection,
     packageInstaller: HomebrewBundleInstaller,
-    capabilityIsAvailable: @escaping @Sendable (DependencyCapability) -> Bool,
+    capabilityIsAvailable: @escaping @Sendable (DependencyCapability) throws -> Bool,
     writePreMutationPlan: @escaping @Sendable (String) throws -> Void,
     themeApply: @escaping ThemeApply,
     themeRefresh: @escaping ThemeRefresh = UnifiedSetupApplyCommandRunner.liveThemeRefresh,
@@ -163,7 +163,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     planner: .live,
     themeInspection: UnifiedSetupThemeLifecycleStatus.preflightApply,
     packageInstaller: .live(homeDirectory: FileManager.default.homeDirectoryForCurrentUser),
-    capabilityIsAvailable: { $0.isAvailable() },
+    capabilityIsAvailable: { try $0.isAvailableWithFreshFonts() },
     writePreMutationPlan: { output in
       try FileHandle.standardError.write(contentsOf: Data("\(output)\n".utf8))
     },
@@ -366,14 +366,21 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
             outcome: "blocked", mutated: packages.mutated, plan: currentPlan,
             packages: packages, message: reason, json: json)
         }
-        let unresolved = try DependencyProfile.personal(homeDirectory: context.homeDirectory)
-          .selectedForSetup(
-            currentModel.profile,
-            defaultsURL: DesktopDesiredState.sketchyBarDefaultsURL(
-              resourcesRoot: context.desktopResourcesRoot)
-          )
-          .filter { !capabilityIsAvailable($0) }
-          .map(\.id)
+        let unresolved: [String]
+        do {
+          unresolved = try DependencyProfile.personal(homeDirectory: context.homeDirectory)
+            .selectedForSetup(
+              currentModel.profile,
+              defaultsURL: DesktopDesiredState.sketchyBarDefaultsURL(
+                resourcesRoot: context.desktopResourcesRoot)
+            )
+            .filter { try !capabilityIsAvailable($0) }
+            .map(\.id)
+        } catch {
+          return try result(
+            outcome: "failed", mutated: packages.mutated, plan: currentPlan, packages: packages,
+            message: "Post-install capability verification failed: \(error)", json: json)
+        }
         guard unresolved.isEmpty else {
           return try result(
             outcome: "failed",

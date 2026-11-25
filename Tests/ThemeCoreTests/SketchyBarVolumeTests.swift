@@ -11,7 +11,7 @@ struct SketchyBarVolumeTests {
     #expect(result.status == 0)
     #expect(result.output.contains("label=\(String(format: "%02d%%", level))\n"))
     #expect(result.output.contains("slider.percentage=\(level)\n"))
-    let icon = level > 60 ? "􀊩" : level > 30 ? "􀊧" : level > 10 ? "􀊥" : level > 0 ? "􀊡" : "􀊣"
+    let icon = level > 60 ? "" : level > 30 ? "" : level > 10 ? "" : level > 0 ? "" : ""
     #expect(result.output.contains("macarchy.volume.icon\nlabel=\(icon)\n"))
     #expect(!result.output.contains("osascript:"))
   }

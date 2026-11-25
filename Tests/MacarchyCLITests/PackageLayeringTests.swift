@@ -198,7 +198,8 @@ struct PackageLayeringTests {
     let fixture = try PackageLayeringFixture()
     defer { fixture.inventory.cleanup() }
     try fixture.profiles(
-      portable: override + "[packages]\nexclude_casks = [\"font-meslo-lg-nerd-font\"]\n")
+      portable: "[top_bar]\nprovider = \"disabled\"\n" + override
+        + "[packages]\nexclude_casks = [\"font-meslo-lg-nerd-font\"]\n")
     if override.isEmpty {
       let preparation = try fixture.planner().prepare(context: fixture.context)
       #expect(!preparation.succeeded)
@@ -212,6 +213,50 @@ struct PackageLayeringTests {
         context: fixture.context, adoptionState: .available(nil))
       #expect(!inventory.proposed.contains { $0.identity.name == "font-meslo-lg-nerd-font" })
     }
+  }
+
+  @Test(arguments: [false, true])
+  func barFontIsAProviderRequirementWithoutKitty(barEnabled: Bool) throws {
+    let fixture = try PackageLayeringFixture()
+    defer { fixture.inventory.cleanup() }
+    let profile = """
+      [terminal]
+      provider = "disabled"
+      [top_bar]
+      provider = "\(barEnabled ? "sketchybar" : "disabled")"
+      [packages]
+      baseline = "personal"
+      brewfile = "Brewfile"
+      """
+    try fixture.write("", layer: "portable")
+    try fixture.profiles(portable: profile)
+    let inventory = try fixture.planner().packageInventory(
+      context: fixture.context, adoptionState: .available(nil))
+    let font = inventory.proposed.first { $0.identity.name == "font-meslo-lg-nerd-font" }
+    #expect((font != nil) == barEnabled)
+    if let font {
+      #expect(font.requirements.map(\.capabilityID) == ["sketchybar-symbol-font"])
+      #expect(font.requirements.first?.selectionField == "top_bar.provider")
+      #expect(font.requirements.first?.layer == "portable")
+      #expect(font.requirements.first?.runtimeRequirement.contains("MesloLGSNFM-Regular") == true)
+      #expect(font.requirements.first?.runtimeRequirement.contains("MesloLGSNFM-Bold") == true)
+      #expect(font.standardDeclaration == nil)
+    }
+    try fixture.profiles(
+      portable: profile + "\nexclude_casks = [\"font-meslo-lg-nerd-font\"]\n")
+    if barEnabled {
+      let preparation = try fixture.planner().prepare(context: fixture.context)
+      #expect(!preparation.succeeded)
+      #expect(
+        preparation.report.diagnostics.contains {
+          $0.message.contains("excludes required cask:font-meslo-lg-nerd-font")
+        })
+    } else {
+      let excluded = try fixture.planner().packageInventory(
+        context: fixture.context, adoptionState: .available(nil))
+      #expect(!excluded.proposed.contains { $0.identity.name == "font-meslo-lg-nerd-font" })
+    }
+    #expect(!FileManager.default.fileExists(atPath: fixture.context.stateRoot.path))
   }
 
   @Test(arguments: [false, true])

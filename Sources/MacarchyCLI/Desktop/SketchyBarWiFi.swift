@@ -36,7 +36,7 @@ struct SketchyBarWiFi {
       let value = try SketchyBarLabelQuery.value(from: bar(["--query", name]))
       guard value.utf8.count <= 1024, !value.isEmpty else { throw WiFiError.invalidInvocation }
       try copy(value)
-      try bar(["--set", name, "label=􀉄"])
+      try bar(["--set", name, "label=Copied"])
       sleep(1)
       try bar(["--set", name, "label=\(value)"])
       return
@@ -67,7 +67,8 @@ struct SketchyBarWiFi {
         rates.download == "000 Bps" || current.interface == nil ? colors.muted : colors.accent
       let connected = current.address != nil
       var arguments = [
-        "--set", "macarchy.wifi", "icon=\(connected ? "􀙇" : "􀙈")",
+        "--set", "macarchy.wifi",
+        "icon=\(connected ? SketchyBarSymbol.wifi.rawValue : SketchyBarSymbol.disconnected.rawValue)",
         "icon.color=\(connected ? colors.text : colors.error)",
         "--set", "macarchy.wifi.up", "label=\(rates.upload)", "label.color=\(uploadColor)",
         "icon.color=\(uploadColor)",

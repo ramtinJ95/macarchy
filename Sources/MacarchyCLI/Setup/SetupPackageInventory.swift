@@ -266,7 +266,7 @@ struct SetupPackageInventory: Encodable, Sendable {
   private static func selectionField(for capabilityID: String) -> String? {
     switch capabilityID {
     case "skhd", "yabai": "desktop.provider"
-    case "sketchybar": "top_bar.provider"
+    case "sketchybar", "sketchybar-symbol-font": "top_bar.provider"
     case "borders": "focus_ring.provider"
     case "kitty", "kitty-meslo-font": "terminal.provider"
     case "zsh-autosuggestions", "zsh-syntax-highlighting", "fzf", "zoxide": "shell.provider"

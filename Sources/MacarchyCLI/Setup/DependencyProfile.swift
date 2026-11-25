@@ -150,6 +150,39 @@ struct DependencyCapability: Sendable {
   func isAvailable() -> Bool {
     probes.allSatisfy { $0.isSatisfied() }
   }
+
+  /// CoreText enumeration can retain this process's pre-install font inventory.
+  /// Only the post-install gate needs a new process; do not register or scan fonts here.
+  func isAvailableWithFreshFonts(
+    executableURL: URL = RuntimeEnvironment.live.executableURL,
+    runner: ProcessRunner = .live
+  ) throws -> Bool {
+    let names: [String] = probes.compactMap {
+      if case .postScriptFont(let name) = $0 { return name }
+      return nil
+    }
+    guard !names.isEmpty else { return isAvailable() }
+    guard
+      probes.allSatisfy({
+        if case .postScriptFont = $0 { return true }
+        return $0.isSatisfied()
+      })
+    else { return false }
+    let result = try runner.run(
+      .init(
+        executableURL: executableURL, arguments: ["setup", "_check-fonts"] + names, timeout: 2))
+    switch (result.terminationStatus, result.output) {
+    case (0, "registered"): return true
+    case (1, "missing"): return false
+    default: throw DependencyFontVerificationError()
+    }
+  }
+}
+
+struct DependencyFontVerificationError: Error, CustomStringConvertible {
+  var description: String {
+    "Fresh registered-font verification returned an invalid reply; no font availability is assumed."
+  }
 }
 
 struct DependencyProfile: Sendable {
@@ -163,7 +196,7 @@ struct DependencyProfile: Sendable {
     var ids = Set(["macos-26", "arm64", "homebrew"])
     if profile.desktop.provider == .yabaiSkhd { ids.formUnion(["skhd", "yabai"]) }
     if profile.topBar == .sketchybar {
-      ids.insert("sketchybar")
+      ids.formUnion(["sketchybar", "sketchybar-symbol-font"])
       let layout = try SketchyBarConfigurationComposer().effectiveLayout(
         defaultsURL: defaultsURL, profile: profile)
       if layout.position(of: .media) != nil { ids.insert("nowplaying-cli") }
@@ -318,6 +351,11 @@ struct DependencyProfile: Sendable {
           .sketchyBar,
           probes: executable(ExternalTool.sketchybar.path),
           remediation: .externallyTrustedFormula("felixkratz/formulae/sketchybar")
+        ),
+        consumerCapability(
+          .sketchyBar, dependencyID: "sketchybar-symbol-font",
+          probes: SketchyBarSymbol.postScriptNames.map { .postScriptFont($0) },
+          remediation: .cask("font-meslo-lg-nerd-font")
         ),
         consumerCapability(
           .sketchyBar, dependencyID: "nowplaying-cli",
