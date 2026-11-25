@@ -52,11 +52,13 @@ remain after rollback or teardown; user configuration is not deleted.
 
 Enabled zsh, Kitty, Atuin, Starship and Neovim receive writable user configurations
 at their standard application paths, separate from generated state. The plan shows
-their destinations before creation. Add `--full` to `setup guided` (including
-`--resume`) to review exact starter contents and the complete inventory.
-`macarchy setup plan --full` shows the read-only full inventory for the same
-profile/state options; JSON is always complete. Absent-only starters remain user-owned and
-survive failures and teardown. Existing zsh, Kitty and Neovim entries can instead
+their destinations before creation. Add `--full` to `setup guided` to review exact
+starter contents and the complete inventory. For a retained profile, use
+`macarchy setup guided --resume --full` with the same profile/state options,
+including pending starters and replacement proposals; review before confirming
+changes. `setup plan --full` does not prepare that guided starter inventory.
+JSON retains the complete report for the selected command. Absent-only starters
+remain user-owned and survive failures and teardown. Existing zsh, Kitty and Neovim entries can instead
 use the [reviewed backup-and-replace path](#existing-configuration-and-backups).
 Declining Install & apply creates no starters or replacements; the saved profile
 and any earlier permission/trust grants remain. Retained v0.9.6 questionnaires

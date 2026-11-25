@@ -889,11 +889,10 @@ struct UnifiedSetupPlanReport: CommandReport {
         "Services (start/reload/restart, with rollback/restoration): "
           + services.map(\.id).joined(separator: ", "))
     }
-    // Side effects which are not captured by the provider/service names.
-    lines += actions.filter {
-      $0.id == "prepare_fresh_neovim_plugins" || $0.id == "configure_borders"
-    }
-    .map { "- \($0.id): \($0.message)" }
+    // Every executable action is part of consent, even when a provider name
+    // appears above. Never allow-list effects: retained profiles/overlays can
+    // enable scripts or native changes outside the guided selection menu.
+    lines += actions.map { "- \($0.id): \($0.message)" }
     if let preferences = components?.preferences.report, preferences.outcome != "disabled" {
       lines.append(preferences.target)
       lines += preferences.preferences.map {
@@ -939,7 +938,7 @@ struct UnifiedSetupPlanReport: CommandReport {
     // Never truncate failures or consent boundaries, even if this exceeds a screen.
     lines += PlanDiagnostic.renderLines(diagnostics)
     lines.append(
-      "Full inventory: macarchy setup plan --full (same profile/state options); guided --full also shows starter contents."
+      "Full inventory: macarchy setup guided --resume --full (same profile/state options; review before confirming changes)."
     )
     lines.append("This plan made no installation or configuration changes.")
     return lines.joined(separator: "\n")

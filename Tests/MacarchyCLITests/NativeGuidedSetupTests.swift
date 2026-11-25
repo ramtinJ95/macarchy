@@ -6,6 +6,55 @@ import Testing
 @testable import ThemeCore
 
 struct NativeGuidedSetupTests {
+  @Test func fullResumeReviewIncludesNativeStartersAndReplacementInventory() async throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    let context = context(fixture)
+    var intent = answers()
+    intent.terminal = false
+    intent.prompt = false
+    intent.history = false
+    intent.editor = false
+    let source = EnvironmentNativeSeed.Provider.zsh.standardURL(
+      homeDirectory: context.homeDirectory)
+    let original = "export PERSONAL_ORIGINAL=1\n"
+    try original.write(to: source, atomically: true, encoding: .utf8)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.withoutEscapingSlashes]
+    let path = try encoder.encode(
+      UnifiedSetupNativeStarters.profilePath(.zsh, context: context))
+    _ = try GuidedSetupProfileWriter.write(
+      answers: intent,
+      nativeSources: "[zsh]\nconfiguration = " + String(decoding: path, as: UTF8.self),
+      to: context.profileURL)
+    let options = try Macarchy.Setup.Guided.parse(["--resume", "--full"])
+    let transcript = Mutex("")
+    var guided = GuidedSetupCommandRunner(
+      packageTrust: .testAlreadyTrusted, planner: planner(fixture),
+      apply: { _, _, _, _, _, _ in
+        Issue.record("Inventory review must not apply after cancellation")
+        return ("unexpected", false)
+      },
+      io: .init(read: { "no" }, write: { text in transcript.withLock { $0 += text } }))
+    guided.fullReview = options.full
+    guided.selectReplacements = { Set($0.map { $0.provider.rawValue }) }
+    let result = try await guided.execute(
+      context: context, consumerPaths: testConsumerPaths(), resume: options.resume)
+    let text = transcript.withLock { $0 }
+    #expect(result.succeeded, "Declining a reviewed apply is a successful no-op")
+    #expect(result.output.contains("stopped before installation or configuration mutation"))
+    #expect(text.contains("Writable native starters"))
+    #expect(text.contains("- zsh: " + source.path))
+    #expect(text.contains("- Back up and replace:"))
+    #expect(text.contains("# User-owned configuration."))
+    #expect(text.contains("Core capabilities:"))
+    #expect(try String(contentsOf: source, encoding: .utf8) == original)
+    #expect(
+      try SetupNativeReplacement(
+        homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
+      ).read().records.isEmpty)
+  }
+
   @Test
   func retainedLegacyGuidedProfileResumesWithoutRelocatingSources() async throws {
     let fixture = try ApplyFixture()

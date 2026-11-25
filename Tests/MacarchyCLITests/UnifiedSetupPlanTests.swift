@@ -7,6 +7,41 @@ import Testing
 @testable import ThemeCore
 
 struct UnifiedSetupPlanTests {
+  @Test(arguments: [false, true])
+  func conciseReviewDisclosesAllActionsFromRetainedProfilesAndMachineOverlays(
+    machineOverlay: Bool
+  ) throws {
+    let root = try makeTemporaryDirectory(named: "macarchy-setup-review-effects")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profile = root.appending(path: "profile.toml")
+    let effects = """
+      [scripts]
+      run = ["reviewed-script.sh"]
+      [macos_look]
+      accent = true
+      icon_style = true
+      """
+    try ("schema_version = 1\n" + (machineOverlay ? "" : effects)).write(
+      to: profile, atomically: true, encoding: .utf8)
+    let context = try liveContext(root: root, machine: "review", profile: profile)
+    if machineOverlay {
+      try ("schema_version = 1\n" + effects).write(
+        to: context.machineProfileURL, atomically: true, encoding: .utf8)
+    }
+    let before = try inventory(root)
+    let plan = try readyPlan(context).report
+    let text = plan.renderReview()
+    for id in ["run_user_scripts", "configure_macos_accent", "configure_macos_icon_style"] {
+      #expect(plan.actions.contains { $0.id == id })
+      #expect(text.contains("- \(id):"))
+    }
+    #expect(text.contains("reviewed-script.sh"))
+    for action in plan.actions {
+      #expect(text.split(separator: "\n").contains("- \(action.id): \(action.message)"))
+    }
+    #expect(try inventory(root) == before)
+  }
+
   @Test
   func firstInstallPreviewsHerdrWithoutPublishingThemeAndPreservesAdoptionAfterBootstrap() throws {
     let root = try makeTemporaryDirectory(named: "macarchy-unified-setup-plan-tests")
