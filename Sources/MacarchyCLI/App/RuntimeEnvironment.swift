@@ -23,7 +23,7 @@ struct InvalidBuildInformationError: Error, CustomStringConvertible, Equatable {
 }
 
 struct RuntimeEnvironment: Sendable {
-  static let sourceVersion = "0.18.1"
+  static let sourceVersion = "0.18.2"
 
   static let live = RuntimeEnvironment(executableURL: MacarchyCommandPath.currentExecutableURL)
 
