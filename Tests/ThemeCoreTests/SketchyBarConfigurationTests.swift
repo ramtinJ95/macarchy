@@ -184,7 +184,13 @@ struct SketchyBarConfigurationTests {
       #expect(entry.contents.contains("popup.macarchy.media") == enabled)
       #expect(composition.artifacts.contains { $0.path == "plugins/media.sh" } == enabled)
       #expect(!entry.contents.contains("media_change"))
-      if enabled { #expect(entry.contents.contains("updates=on update_freq=2")) }
+      if enabled {
+        #expect(entry.contents.contains("updates=on update_freq=2"))
+        let script = try #require(composition.artifacts.first { $0.path == "plugins/media.sh" })
+        #expect(
+          script.contents.contains(
+            "drawing=on icon.drawing=off background.image.drawing=off label.drawing=on label=ERR"))
+      }
       try requireValidShellSyntax(composition.artifacts, root: root)
     }
   }

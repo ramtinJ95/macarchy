@@ -77,6 +77,27 @@ struct SketchyBarMedia {
 
   func execute(name: String, sender: String) throws {
     guard SketchyBarContract.mediaItems.contains(name) else { throw MediaError.invalidInvocation }
+    do {
+      try update(name: name, sender: sender)
+    } catch {
+      // Retained scripts only show ERR; they do not clear an old private-use icon
+      // or artwork. Clear both here so their shell error handler cannot leave boxes.
+      do {
+        try bar([
+          "--set", "macarchy.media", "drawing=on", "icon.drawing=off",
+          "background.image.drawing=off", "label.drawing=on", "label=ERR", "popup.drawing=off",
+          "--set", "macarchy.media.artist", "drawing=off",
+          "--set", "macarchy.media.title", "drawing=off",
+        ])
+      } catch let reportingError {
+        throw MediaError.errorPresentation(
+          "media update failed (\(error)); error presentation failed (\(reportingError))")
+      }
+      throw error
+    }
+  }
+
+  private func update(name: String, sender: String) throws {
     if sender == "mouse.exited.global" {
       try bar(["--set", "macarchy.media", "popup.drawing=off"])
       return
@@ -222,6 +243,7 @@ struct SketchyBarMedia {
 enum MediaError: Error {
   case invalidMetadata, invalidInvocation, invalidPreview, providerFailed, invalidArtwork
   case artworkCleanup(String)
+  case errorPresentation(String)
 }
 
 extension Desktop {

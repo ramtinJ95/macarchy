@@ -125,9 +125,14 @@ struct SketchyBarMediaTests {
     let media = SketchyBarMedia(
       symbolFont: .init(supports: { _, _ in true }),
       processRunner: ProcessRunner { request in
-        #expect(request.arguments == ["get-raw"])
-        #expect(request.timeout == 5)
-        throw ProcessRunnerError.timedOut(request.executableURL, 5)
+        if request.executableURL.path == "/opt/homebrew/bin/nowplaying-cli" {
+          #expect(request.arguments == ["get-raw"])
+          #expect(request.timeout == 5)
+          throw ProcessRunnerError.timedOut(request.executableURL, 5)
+        }
+        #expect(request.arguments.contains("icon.drawing=off"))
+        #expect(request.arguments.contains("label=ERR"))
+        return .init(terminationStatus: 0, output: "")
       },
       uptime: { 0 }, sleep: { _ in }, withArtwork: { _, _ in }, launch: { _ in })
     #expect(throws: ProcessRunnerError.self) {
@@ -163,6 +168,56 @@ struct SketchyBarMediaTests {
     }
   }
 
+  @Test(arguments: ["SF Pro", "MesloLGS Nerd Font Mono"])
+  func fontFailurePresentationSurvivesRetainedScriptsAndRecovers(family: String) throws {
+    let state = State()
+    state.value.withLock {
+      $0.properties["macarchy.media"] = [
+        "icon": "\u{f001}", "icon.drawing": "on", "background.image.drawing": "on",
+        "label.drawing": "off", "popup.drawing": "on",
+      ]
+    }
+    let output =
+      #"{"kMRMediaRemoteNowPlayingInfoClientBundleIdentifier":"com.spotify.client","kMRMediaRemoteNowPlayingInfoTitle":"Title","kMRMediaRemoteNowPlayingInfoPlaybackRate":1}"#
+    let process = runner(state, font: "\(family):Bold:13.00", output: output)
+    func helper(available: Bool) -> SketchyBarMedia {
+      SketchyBarMedia(
+        symbolFont: .init(supports: { _, _ in available }), processRunner: process,
+        uptime: { 100 }, sleep: { _ in },
+        withArtwork: { _, _ in Issue.record("unexpected artwork") }, launch: { _ in })
+    }
+    #expect(throws: SketchyBarSymbolFont.Failure.self) {
+      try helper(available: false).execute(name: "macarchy.media", sender: "routine")
+    }
+    // Replay the error handler already deployed in pre-0.18.2 scripts. Its ERR
+    // update must not undo the helper's clearing of stale private-use icons/artwork.
+    let bar = SketchyBarControl(
+      processRunner: process, timeout: 2,
+      failure: { _, _ in MediaError.providerFailed })
+    try bar([
+      "--set", "macarchy.media", "drawing=on", "label.drawing=on", "label=ERR",
+      "label.color=0xffff0000", "popup.drawing=off",
+      "--set", "macarchy.media.artist", "drawing=off",
+      "--set", "macarchy.media.title", "drawing=off",
+    ])
+    let failed = state.value.withLock { $0.properties }
+    #expect(failed["macarchy.media"]?["icon"] == "\u{f001}")
+    #expect(failed["macarchy.media"]?["icon.drawing"] == "off")
+    #expect(failed["macarchy.media"]?["background.image.drawing"] == "off")
+    #expect(failed["macarchy.media"]?["drawing"] == "on")
+    #expect(failed["macarchy.media"]?["label.drawing"] == "on")
+    #expect(failed["macarchy.media"]?["label"] == "ERR")
+    #expect(failed["macarchy.media"]?["popup.drawing"] == "off")
+    #expect(failed["macarchy.media.artist"]?["drawing"] == "off")
+    #expect(failed["macarchy.media.title"]?["drawing"] == "off")
+    try helper(available: true).execute(name: "macarchy.media", sender: "routine")
+    let recovered = state.value.withLock { $0.properties["macarchy.media"]! }
+    #expect(recovered["icon.drawing"] == "on")
+    #expect(recovered["label.drawing"] == "off")
+    #expect(recovered["icon"] == (family == "SF Pro" ? "\u{10046a}" : "\u{f001}"))
+    #expect(recovered["label"] != "ERR")
+  }
+
   private func metadata(bundle: String = "com.spotify.client") -> String {
     """
     { "kMRMediaRemoteNowPlayingInfoClientBundleIdentifier": "\(bundle)",
@@ -175,6 +230,7 @@ struct SketchyBarMediaTests {
   private final class State: Sendable {
     struct Value {
       var calls: [[String]] = []
+      var properties: [String: [String: String]] = [:]
       var provider: [[String]] = []
       var labels = ["macarchy.media": "inactive", "macarchy.media.preview": "0"]
     }
@@ -204,6 +260,10 @@ struct SketchyBarMediaTests {
         for (index, arg) in request.arguments.enumerated() {
           if index > 0 && request.arguments[index - 1] == "--set" { target = arg }
           if arg.hasPrefix("label=") { $0.labels[target] = String(arg.dropFirst(6)) }
+          let pair = arg.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+          if !target.isEmpty, pair.count == 2 {
+            $0.properties[target, default: [:]][String(pair[0])] = String(pair[1])
+          }
         }
         return .init(terminationStatus: 0, output: "")
       }

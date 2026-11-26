@@ -140,6 +140,43 @@ struct SketchyBarWiFiTests {
     }
   }
 
+  @Test(arguments: ["SF Pro", "MesloLGS Nerd Font Mono"])
+  func fontFailuresHideStaleSymbolsShowErrorsAndRecoverWithoutReapplication(family: String) throws {
+    let requests = RequestLog()
+    requests.withLock {
+      $0.append(["--set", "macarchy.wifi", "icon=\u{f1eb}", "icon.drawing=on"])
+    }
+    let process = recording(requests, font: "\(family):Bold:13.00")
+    func helper(available: Bool) -> SketchyBarWiFi {
+      SketchyBarWiFi(
+        symbolFont: .init(supports: { _, _ in available }), processRunner: process,
+        read: { state(interface: nil, address: nil) }, sleep: { _ in }, uptime: { 0 },
+        copy: { _ in Issue.record("unexpected copy") }, launch: { _ in })
+    }
+    #expect(throws: SketchyBarSymbolFont.Failure.self) {
+      try helper(available: false).execute(name: "macarchy.wifi", sender: "routine", colors: colors)
+    }
+    #expect(requests.properties("macarchy.wifi")["icon"] == "\u{f1eb}")
+    for item in ["macarchy.wifi", "macarchy.wifi.up", "macarchy.wifi.down"] {
+      #expect(requests.properties(item)["icon.drawing"] == "off")
+    }
+    for item in ["macarchy.wifi.up", "macarchy.wifi.down"] {
+      #expect(requests.properties(item)["label.drawing"] == "on")
+      #expect(requests.properties(item)["label"] == "ERR")
+    }
+    #expect(
+      requests.properties("macarchy.wifi.ssid")["label"]
+        == "Symbol font unavailable; run macarchy setup plan and apply")
+    try helper(available: true).execute(name: "macarchy.wifi", sender: "routine", colors: colors)
+    for item in ["macarchy.wifi", "macarchy.wifi.up", "macarchy.wifi.down"] {
+      #expect(requests.properties(item)["icon.drawing"] == "on")
+    }
+    #expect(
+      requests.properties("macarchy.wifi")["icon"]
+        == (family == "SF Pro" ? "\u{100648}" : "\u{f127}"))
+    #expect(requests.properties("macarchy.wifi.down")["label"] == "Unavailable")
+  }
+
   private func state(
     interface: String? = "en7", address: String? = "192.0.2.10",
     received: UInt32 = 0, sent: UInt32 = 0
@@ -151,6 +188,21 @@ struct SketchyBarWiFiTests {
 
   private final class RequestLog: Sendable {
     let values = Mutex<[[String]]>([])
+    func properties(_ item: String) -> [String: String] {
+      values.withLock { calls in
+        var properties: [String: String] = [:]
+        for arguments in calls {
+          var target = ""
+          for (index, argument) in arguments.enumerated() {
+            if index > 0, arguments[index - 1] == "--set" { target = argument }
+            let pair = argument.split(
+              separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            if target == item, pair.count == 2 { properties[String(pair[0])] = String(pair[1]) }
+          }
+        }
+        return properties
+      }
+    }
     func withLock<T>(_ body: (inout [[String]]) -> T) -> T {
       values.withLock { body(&$0) }
     }
