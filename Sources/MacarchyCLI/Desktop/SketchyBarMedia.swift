@@ -68,6 +68,7 @@ struct NowPlayingMedia: Equatable {
 }
 
 struct SketchyBarMedia {
+  var symbolFont = SketchyBarSymbolFont()
   let processRunner: ProcessRunner
   let uptime: () -> TimeInterval
   let sleep: (TimeInterval) -> Void
@@ -128,7 +129,7 @@ struct SketchyBarMedia {
     var args = [
       "--set", "macarchy.media", "drawing=on", "label.drawing=off", "label=\(identity)",
       "icon.drawing=\(media.artwork == nil ? "on" : "off")",
-      "icon=\(SketchyBarSymbol.music.rawValue)",
+      "icon=\(try symbolFont.icon(SketchyBarSymbol.music.rawValue, item: "macarchy.media", bar: bar))",
       "--set", "macarchy.media.artist", "drawing=on", "label=\(media.artist)",
       "--set", "macarchy.media.title", "drawing=on", "label=\(media.title)",
     ]
