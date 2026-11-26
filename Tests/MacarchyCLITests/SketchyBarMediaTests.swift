@@ -30,12 +30,15 @@ struct SketchyBarMediaTests {
     #expect(throws: (any Error).self) { try NowPlayingMedia.parse(output) }
   }
 
-  @Test func rendersArtworkAndDetailsThenCollapsesWithoutPersistingArtwork() throws {
+  @Test(arguments: ["SF Pro", "MesloLGS Nerd Font Mono"])
+  func rendersArtworkAndDetailsThenCollapsesWithoutPersistingArtwork(family: String) throws {
     let state = State()
     var now = 100.0
     var artworkCalls = 0
     let media = SketchyBarMedia(
-      processRunner: runner(state), uptime: { now }, sleep: { now += $0 },
+      symbolFont: .init(supports: { _, _ in true }),
+      processRunner: runner(state, font: "\(family):Bold:13.00"), uptime: { now },
+      sleep: { now += $0 },
       withArtwork: {
         artworkCalls += 1
         #expect($0 == Data([0, 1]))
@@ -44,7 +47,8 @@ struct SketchyBarMediaTests {
     try media.execute(name: "macarchy.media", sender: "routine")
     let calls = state.value.withLock { $0.calls }
     #expect(artworkCalls == 1)
-    #expect(calls.contains { $0.contains("icon=\u{f001}") })
+    #expect(
+      calls.contains { $0.contains("icon=\(family == "SF Pro" ? "\u{10046a}" : "\u{f001}")") })
     #expect(
       calls.contains {
         $0.contains("label=Title $(bad) 'quoted'")
@@ -59,6 +63,7 @@ struct SketchyBarMediaTests {
   @Test func hoverOwnsExpansionAndControlsUseClosedExternalArguments() throws {
     let state = State()
     let media = SketchyBarMedia(
+      symbolFont: .init(supports: { _, _ in true }),
       processRunner: runner(state), uptime: { 100 },
       sleep: { _ in Issue.record("hover should not sleep") },
       withArtwork: { _, use in try use("/tmp/cover") },
@@ -82,6 +87,7 @@ struct SketchyBarMediaTests {
     let state = State()
     var launches: [[String]] = []
     let media = SketchyBarMedia(
+      symbolFont: .init(supports: { _, _ in true }),
       processRunner: ProcessRunner { request in
         #expect(request.executableURL.path == "/opt/homebrew/bin/sketchybar")
         state.value.withLock { $0.calls.append(request.arguments) }
@@ -101,11 +107,13 @@ struct SketchyBarMediaTests {
   @Test func inactiveMediaHidesAllPresentationAndProviderFailuresPropagate() throws {
     let state = State()
     let media = SketchyBarMedia(
+      symbolFont: .init(supports: { _, _ in true }),
       processRunner: runner(state, output: "(null)"), uptime: { 0 }, sleep: { _ in },
       withArtwork: { _, _ in Issue.record("unexpected artwork") }, launch: { _ in })
     try media.execute(name: "macarchy.media", sender: "forced")
     #expect(state.value.withLock { $0.calls.last?.contains("label=inactive") } == true)
     let failed = SketchyBarMedia(
+      symbolFont: .init(supports: { _, _ in true }),
       processRunner: ProcessRunner { _ in .init(terminationStatus: 1, output: "failure") },
       uptime: { 0 }, sleep: { _ in }, withArtwork: { _, _ in }, launch: { _ in })
     #expect(throws: MediaError.self) {
@@ -115,6 +123,7 @@ struct SketchyBarMediaTests {
 
   @Test func metadataDeadlineAllowsNativeInactivePollingButTimeoutIsStillFailure() throws {
     let media = SketchyBarMedia(
+      symbolFont: .init(supports: { _, _ in true }),
       processRunner: ProcessRunner { request in
         #expect(request.arguments == ["get-raw"])
         #expect(request.timeout == 5)
@@ -171,7 +180,9 @@ struct SketchyBarMediaTests {
     }
     let value = Mutex(Value())
   }
-  private func runner(_ state: State, output: String? = nil) -> ProcessRunner {
+  private func runner(
+    _ state: State, font: String = "MesloLGS Nerd Font Mono:Bold:13.00", output: String? = nil
+  ) -> ProcessRunner {
     let metadata = output ?? metadata()
     return ProcessRunner { request in
       if request.executableURL.path == "/opt/homebrew/bin/nowplaying-cli" {
@@ -185,7 +196,9 @@ struct SketchyBarMediaTests {
         if request.arguments.first == "--query" {
           return .init(
             terminationStatus: 0,
-            output: "{\"label\":{\"value\":\"\($0.labels[request.arguments[1]] ?? "")\"}}")
+            output:
+              "{\"name\":\"\(request.arguments[1])\",\"icon\":{\"font\":\"\(font)\"},\"label\":{\"value\":\"\($0.labels[request.arguments[1]] ?? "")\"}}"
+          )
         }
         var target = ""
         for (index, arg) in request.arguments.enumerated() {

@@ -22,6 +22,7 @@ struct CompanionToggle: Equatable {
 
 /// Drives one always-visible clock companion that toggles its feature on click.
 struct SketchyBarCompanionToggle {
+  var symbolFont = SketchyBarSymbolFont()
   let companion: SketchyBarClockCompanion
   let stateRoot: URL
   let processRunner: ProcessRunner
@@ -66,7 +67,9 @@ struct SketchyBarCompanionToggle {
       return
     }
     try bar([
-      "--set", companion.item, "drawing=on", "icon=\(toggle.icon)", "icon.color=\(color)",
+      "--set", companion.item, "drawing=on",
+      "icon=\(try symbolFont.icon(toggle.icon, item: companion.item, bar: bar))",
+      "icon.color=\(color)",
       "--set", companion.detailItem, "label=\(toggle.detail)",
     ])
   }

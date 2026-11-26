@@ -2,6 +2,7 @@ import Foundation
 import ThemeCore
 
 struct SketchyBarWiFi {
+  var symbolFont = SketchyBarSymbolFont()
   struct Colors {
     let text: String
     let accent: String
@@ -68,7 +69,7 @@ struct SketchyBarWiFi {
       let connected = current.address != nil
       var arguments = [
         "--set", "macarchy.wifi",
-        "icon=\(connected ? SketchyBarSymbol.wifi.rawValue : SketchyBarSymbol.disconnected.rawValue)",
+        "icon=\(try symbolFont.icon(connected ? SketchyBarSymbol.wifi.rawValue : SketchyBarSymbol.disconnected.rawValue, item: "macarchy.wifi", bar: bar))",
         "icon.color=\(connected ? colors.text : colors.error)",
         "--set", "macarchy.wifi.up", "label=\(rates.upload)", "label.color=\(uploadColor)",
         "icon.color=\(uploadColor)",

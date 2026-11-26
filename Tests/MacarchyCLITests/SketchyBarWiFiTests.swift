@@ -32,13 +32,17 @@ struct SketchyBarWiFiTests {
     }
   }
 
-  @Test(arguments: ["connected", "disconnected", "no_interface"])
-  func updatesStackedRatesAndExplicitPrivacyAndConnectionState(condition: String) throws {
+  @Test(
+    arguments: ["connected", "disconnected", "no_interface"], ["SF Pro", "MesloLGS Nerd Font Mono"])
+  func updatesStackedRatesAndExplicitPrivacyAndConnectionState(condition: String, family: String)
+    throws
+  {
     let requests = RequestLog()
     var reads = 0
     var time = 0.0
     let runner = SketchyBarWiFi(
-      processRunner: recording(requests),
+      symbolFont: .init(supports: { _, _ in true }),
+      processRunner: recording(requests, font: "\(family):Bold:13.00"),
       read: {
         reads += 1
         return state(
@@ -56,7 +60,12 @@ struct SketchyBarWiFiTests {
         "label=\(condition == "no_interface" ? "No Wi-Fi interface" : condition == "connected" ? "Privacy restricted" : "Disconnected / no IPv4")"
       ))
     #expect(arguments.contains("label.color=0xff888888"))
-    #expect(arguments.contains("icon=\(condition == "connected" ? "\u{f1eb}" : "\u{f127}")"))
+    let icon =
+      family == "SF Pro"
+      ? (condition == "connected" ? "\u{100647}" : "\u{100648}")
+      : (condition == "connected" ? "\u{f1eb}" : "\u{f127}")
+    #expect(arguments.contains("icon=\(icon)"))
+    #expect(requests.withLock { $0.contains(["--query", "macarchy.wifi"]) })
     #expect(reads == (condition == "no_interface" ? 1 : 2))
   }
 
@@ -70,6 +79,7 @@ struct SketchyBarWiFiTests {
     var reads = 0
     var launches: [[String]] = []
     let runner = SketchyBarWiFi(
+      symbolFont: .init(supports: { _, _ in true }),
       processRunner: recording(requests) { arguments in
         arguments == ["--query", "macarchy.wifi.bracket"] ? Self.popupQuery(drawing: "off") : reply
       },
@@ -101,6 +111,7 @@ struct SketchyBarWiFiTests {
     let requests = RequestLog()
     var launches = 0
     let runner = SketchyBarWiFi(
+      symbolFont: .init(supports: { _, _ in true }),
       processRunner: recording(requests) { _ in Self.popupQuery(drawing: "on") },
       read: { state() }, sleep: { _ in }, uptime: { 0 }, copy: { _ in },
       launch: { _ in launches += 1 })
@@ -114,6 +125,7 @@ struct SketchyBarWiFiTests {
   func queryFailuresReplaceStaleRatesAndUnknownItemsAreRejected() throws {
     let requests = RequestLog()
     let runner = SketchyBarWiFi(
+      symbolFont: .init(supports: { _, _ in true }),
       processRunner: recording(requests),
       read: {
         throw WiFiError.queryFailed("fixture failure")
@@ -149,11 +161,17 @@ struct SketchyBarWiFiTests {
   }
 
   private func recording(
-    _ requests: RequestLog, output: @escaping @Sendable ([String]) -> String = { _ in "" }
+    _ requests: RequestLog, font: String = "MesloLGS Nerd Font Mono:Bold:13.00",
+    output: @escaping @Sendable ([String]) -> String = { _ in "" }
   ) -> ProcessRunner {
     ProcessRunner { request in
       #expect(request.executableURL.path == "/opt/homebrew/bin/sketchybar")
       requests.withLock { $0.append(request.arguments) }
+      if request.arguments == ["--query", "macarchy.wifi"] {
+        return .init(
+          terminationStatus: 0,
+          output: #"{"name":"macarchy.wifi","icon":{"font":"\#(font)"}}"#)
+      }
       return ProcessResult(terminationStatus: 0, output: output(request.arguments))
     }
   }
