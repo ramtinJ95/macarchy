@@ -70,22 +70,29 @@ struct SketchyBarWiFi {
       var arguments = [
         "--set", "macarchy.wifi",
         "icon=\(try symbolFont.icon(connected ? SketchyBarSymbol.wifi.rawValue : SketchyBarSymbol.disconnected.rawValue, item: "macarchy.wifi", bar: bar))",
-        "icon.color=\(connected ? colors.text : colors.error)",
+        "icon.drawing=on", "icon.color=\(connected ? colors.text : colors.error)",
         "--set", "macarchy.wifi.up", "label=\(rates.upload)", "label.color=\(uploadColor)",
-        "icon.color=\(uploadColor)",
+        "icon.drawing=on", "icon.color=\(uploadColor)",
         "--set", "macarchy.wifi.down", "label=\(rates.download)", "label.color=\(downloadColor)",
-        "icon.color=\(downloadColor)",
+        "icon.drawing=on", "icon.color=\(downloadColor)",
       ]
       for (field, value) in current.details {
         arguments += ["--set", "macarchy.wifi.\(field)", "label=\(value)"]
       }
       try bar(arguments)
     } catch {
+      let detail =
+        error is SketchyBarSymbolFont.Failure
+        ? "Symbol font unavailable; run macarchy setup plan and apply"
+        : "Network query failed"
       do {
         try bar([
-          "--set", "macarchy.wifi.up", "label=ERR", "label.color=\(colors.error)",
-          "--set", "macarchy.wifi.down", "label=ERR", "label.color=\(colors.error)",
-          "--set", "macarchy.wifi.ssid", "label=Network query failed",
+          "--set", "macarchy.wifi", "icon.drawing=off",
+          "--set", "macarchy.wifi.up", "icon.drawing=off", "label.drawing=on",
+          "label=ERR", "label.color=\(colors.error)",
+          "--set", "macarchy.wifi.down", "icon.drawing=off", "label.drawing=on",
+          "label=ERR", "label.color=\(colors.error)",
+          "--set", "macarchy.wifi.ssid", "label=\(detail)",
         ])
       } catch let reportingError {
         throw WiFiError.queryFailed(
